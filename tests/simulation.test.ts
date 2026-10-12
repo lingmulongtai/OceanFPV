@@ -8,6 +8,14 @@ import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
 import { closedHullGeometry } from '../src/hull';
 import { vesselPose } from '../src/navigation';
+import { terrainHeight } from '../src/terrain';
+
+test('terrain sampling stays finite and continuous through the coastline',()=> {
+  for(let x=-400;x<400;x+=31)for(let z=-400;z<400;z+=43) {
+    const y=terrainHeight(x,z,260,130);assert.ok(Number.isFinite(y)&&y>=-9&&y<210);
+    assert.ok(Math.abs(terrainHeight(x+0.001,z,260,130)-y)<0.02);
+  }
+});
 
 test('vessel routes move continuously and the bow follows the travel direction',()=> {
   for(const kind of ['explorer','cruise','yacht'] as const)for(let t=0;t<800;t+=13) {

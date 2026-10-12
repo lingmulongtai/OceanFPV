@@ -11,6 +11,7 @@ import { Race, GATES, formatTime } from './race';
 import { type SeaState } from './sea';
 import { FlightAudio } from './audio';
 import { readStored, writeStored } from './storage';
+import { loadPhotographicSky } from './sky';
 
 const $ = <E extends HTMLElement = HTMLElement>(id:string) => document.getElementById(id) as E;
 const value = (id:string) => $<HTMLInputElement>(id).value;
@@ -68,15 +69,15 @@ async function boot() {
     writeStored('settings',settings);
   }
   function resize() {
-    const cap=value('quality')==='ultra'?2:value('quality')==='high'?1.5:1;
+    const ratio=value('quality')==='ultra'?2:Math.min(devicePixelRatio||1,value('quality')==='high'?1.5:1);
     world.ocean.setQuality(value('quality'));
     renderer.shadowMap.enabled=value('quality')!=='balanced';
     const samples=value('quality')==='balanced'?0:Math.min(4,renderer.capabilities.maxSamples);
     for(const target of [composer.renderTarget1,composer.renderTarget2]) {
       if(target.samples!==samples) {target.samples=samples;target.dispose();}
     }
-    renderer.setPixelRatio(Math.min(devicePixelRatio||1,cap));renderer.setSize(innerWidth,innerHeight);
-    composer.setPixelRatio(Math.min(devicePixelRatio||1,cap));composer.setSize(innerWidth,innerHeight);
+    renderer.setPixelRatio(ratio);renderer.setSize(innerWidth,innerHeight);
+    composer.setPixelRatio(ratio);composer.setSize(innerWidth,innerHeight);
     camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
   }
   function applySettings() {
@@ -91,6 +92,10 @@ async function boot() {
       const generator=new T.PMREMGenerator(renderer);environment.dispose();
       environment=generator.fromCubemap(skyTarget.texture);world.scene.environment=environment.texture;generator.dispose();
     }
+    if(world.light==='day'&&photoSky&&photoEnvironment) {
+      world.scene.background=photoSky.texture;world.scene.environment=photoEnvironment.texture;world.scene.environmentIntensity=0.6;
+      world.sun.copy(photoSky.sun);world.sunlight.position.copy(world.sun).multiplyScalar(280);
+    }else {world.scene.background=skyTarget.texture;world.scene.environment=environment.texture;world.scene.environmentIntensity=1;}
     world.ocean.material.uniforms.foamEnabled.value=checked('foam');bloom.enabled=checked('bloom')&&value('quality')!=='balanced';
     renderer.toneMappingExposure=value('light')==='day'?0.68:value('light')==='golden'?0.7:0.58;
     input.useMouse=checked('mouse');input.source=value('input-source') as Inputs['source'];input.deadzone=Number(value('deadzone'))/100;
@@ -265,10 +270,13 @@ async function boot() {
     ctx.strokeStyle='#c9eed521';ctx.lineWidth=1;
     for(const radius of [38,76,114]) {ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.stroke();}
     ctx.beginPath();ctx.moveTo(-120,0);ctx.lineTo(120,0);ctx.moveTo(0,-120);ctx.lineTo(0,120);ctx.stroke();
-    const scale=1.7;ctx.fillStyle='#d2e3d755';ctx.beginPath();ctx.moveTo(0,-46*scale);ctx.lineTo(4.4*scale,-20*scale);ctx.lineTo(4.4*scale,33*scale);ctx.lineTo(0,46*scale);ctx.lineTo(-4.4*scale,33*scale);ctx.lineTo(-4.4*scale,-20*scale);ctx.closePath();ctx.fill();
-    if(race.active) GATES.forEach((g,i)=> {ctx.fillStyle=i===race.next?'#b5ebd4':'#769488';ctx.beginPath();ctx.arc(g.position.x*scale,g.position.z*scale,4,0,Math.PI*2);ctx.fill();});
+    const scale=race.active?1.7:0.14,origin=race.active?new T.Vector3():flight.position;
+    const project=(x:number,z:number)=>[(x-origin.x)*scale,(z-origin.z)*scale];
+    if(!race.active)for(const island of world.islands){const [x,z]=project(island.x,island.z);ctx.fillStyle='#90af8b30';ctx.beginPath();ctx.arc(x,z,island.size*scale,0,Math.PI*2);ctx.fill();}
+    for(const [root,length,width]of [[world.ship,92,4.4],[world.cruise.root,260,17],[world.yacht,28,4.5]]as const){const [x,z]=project(root.position.x,root.position.z);ctx.save();ctx.translate(x,z);ctx.rotate(-root.rotation.y);ctx.fillStyle='#d2e3d799';ctx.beginPath();ctx.moveTo(0,-length*0.5*scale);ctx.lineTo(width*scale,-length*0.35*scale);ctx.lineTo(width*scale,length*0.45*scale);ctx.lineTo(-width*scale,length*0.45*scale);ctx.lineTo(-width*scale,-length*0.35*scale);ctx.closePath();ctx.fill();ctx.restore();}
+    if(race.active) GATES.forEach((g,i)=> {const [x,z]=project(g.position.x,g.position.z);ctx.fillStyle=i===race.next?'#b5ebd4':'#769488';ctx.beginPath();ctx.arc(x,z,4,0,Math.PI*2);ctx.fill();});
     const pos=flight.position.clone();const direction=new T.Vector3(0,0,-1).applyQuaternion(flight.orientation);const angle=Math.atan2(direction.x,-direction.z);
-    const x=Math.max(-108,Math.min(108,pos.x*scale)),z=Math.max(-108,Math.min(108,pos.z*scale));ctx.translate(x,z);ctx.rotate(angle);
+    const [px,pz]=project(pos.x,pos.z);const x=Math.max(-108,Math.min(108,px)),z=Math.max(-108,Math.min(108,pz));ctx.translate(x,z);ctx.rotate(angle);
     ctx.fillStyle='#eeb982';ctx.beginPath();ctx.moveTo(0,-8);ctx.lineTo(5,5);ctx.lineTo(0,2);ctx.lineTo(-5,5);ctx.closePath();ctx.fill();ctx.restore();
   }
   function hud() {
@@ -338,6 +346,8 @@ async function boot() {
     camera.updateProjectionMatrix();
     world.update(time,camera.position,sea,flight.position,flight.orientation,flight.motor);
     world.scene.backgroundRotation.y=time*0.00015;
+    world.scene.environmentRotation.y=world.scene.backgroundRotation.y;
+    if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280);}
     world.ship.updateMatrixWorld(true);
     sound.update(flight.motor,playing&&!paused&&flight.armed);
     renderer.info.reset();composer.render();
@@ -347,13 +357,16 @@ async function boot() {
     if(now-fpsTime>1000) {$('fps').textContent=`${Math.round(frameCount*1000/(now-fpsTime))} FPS`;frameCount=0;fpsTime=now;}
   }
   world.updateGates(false,0);
-  camera.position.set(52,18,76);camera.lookAt(-24,4,-8);
+  const [missingSurfaces,loadedSky]=await Promise.all([world.loadSurfaceTextures(renderer.capabilities.getMaxAnisotropy()),loadPhotographicSky()]);
+  photoSky=loadedSky;
+  if(photoSky){const generator=new T.PMREMGenerator(renderer);photoEnvironment=generator.fromEquirectangular(photoSky.texture);generator.dispose();applySettings();}
+  camera.position.set(112,42,137);camera.lookAt(-25,10,-125);
   world.update(0,camera.position,sea,flight.position,flight.orientation,0);
   composer.render();
   $<HTMLButtonElement>('start').disabled=false;
-  $('start-note').textContent=innerWidth<600?'PCのキーボードまたは接続コントローラーでプレイできます。':'インストール不要 · キーボード / Xbox / USB送信機';
+  $('start-note').textContent=missingSurfaces.length?'一部の素材を読み込めませんでした。標準素材でプレイできます。':innerWidth<600?'PCのキーボードまたは接続コントローラーでプレイできます。':'インストール不要 · キーボード / Xbox / USB送信機';
   if(import.meta.env.DEV&&new URLSearchParams(location.search).has('test')) {
-    Object.assign(window,{__OCEANFPV__:{flight,race,input,world,getState:()=>({playing,paused,time,flightTime,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})}});
+    Object.assign(window,{__OCEANFPV__:{flight,race,input,world,camera,getState:()=>({playing,paused,time,flightTime,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})}});
   }
   requestAnimationFrame(frame);
 }

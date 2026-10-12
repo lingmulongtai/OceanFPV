@@ -9,9 +9,10 @@
 
 | Asset | Artist | Use |
 | --- | --- | --- |
-| [Blue Metal Plate](https://polyhaven.com/a/blue_metal_plate) | See asset page | Fine painted-metal normal and roughness detail |
+| [Blue Metal Plate](https://polyhaven.com/a/blue_metal_plate) | Rob Tuytel | Fine painted-metal normal and roughness detail |
 | [Rocky Terrain](https://polyhaven.com/a/rocky_terrain) | Amal Kumar | Coastal rock/terrain colour, normal and roughness |
 | [Wood Floor Deck](https://polyhaven.com/a/wood_floor_deck) | Dimitrios Savva | Passenger-vessel teak deck |
+| [Kloofendal 48d Partly Cloudy (Pure Sky)](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky) | Greg Zaal, Jarod Guest | 4K HDR daylight sky and matching environment illumination |
 
 Downloaded from the official asset service on 2026-10-12. Source URLs, original MD5 and SHA-256 hashes are retained in `public/textures/manifest.json`. [Asset license](https://polyhaven.com/license), [CC0 legal code](https://creativecommons.org/publicdomain/zero/1.0/legalcode). OceanFPV is independent of and not endorsed by Poly Haven. The asset API was used only during development with an identifying user-agent; the game makes no live API calls.
 

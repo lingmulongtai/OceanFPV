@@ -16,6 +16,18 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
 });
+test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
+  await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);
+  await expect(page.locator('#start-note')).toContainText('標準素材');
+  const first=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());
+  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.x)).not.toBe(first[0]);
+  await page.locator('#start').click();await page.keyboard.press('Escape');
+  await expect(page.locator('#pause-dialog')).toBeVisible();
+  const app=await page.evaluate(()=> {const a=(window as any).__OCEANFPV__,local=a.world.ship.worldToLocal(a.flight.position.clone());return {local:local.toArray(),time:a.getState().time};});
+  expect(Math.abs(app.local[0])).toBeLessThan(1);expect(Math.abs(app.local[2]-38)).toBeLessThan(2);
+  const stopped=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());await page.waitForTimeout(300);
+  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray())).toEqual(stopped);
+});
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
   await ready(page);await page.locator('#start').click();
   await page.keyboard.down('Space');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(8);await page.keyboard.up('Space');

@@ -17,6 +17,7 @@ export function buildCruiseShip() {
   const boxes:VesselBox[]=[],buckets=new Map<T.Material,T.BufferGeometry[]>();
   const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1))=> {
     g.applyMatrix4(new T.Matrix4().compose(new T.Vector3(...p),new T.Quaternion().setFromEuler(rotation),scale));
+    if(m===teak){const position=g.attributes.position,uv=g.attributes.uv;for(let i=0;i<position.count;i++)uv.setXY(i,position.getX(i)/1.8,position.getZ(i)/1.8);}
     if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(g.index?g.toNonIndexed():g);
   };
   const box=(s:number[],p:number[],m=white,solid=false,round=0)=> {
@@ -38,7 +39,7 @@ export function buildCruiseShip() {
   for(let deck=0;deck<8;deck++) {
     const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3;
     box([27.5,2.56,length],[0,y,z],white,true,0.1);
-    box([32.6,0.28,length+3],[0,y+1.44,z],white);
+    box([32.6,0.28,length+3],[0,y+1.44,z],white,true);
     const start=z-length/2+2,end=z+length/2-2;
     for(const side of [-1,1]) {
       box([0.09,1.62,length-4],[side*13.8,y+0.02,z],glass);
@@ -68,7 +69,8 @@ export function buildCruiseShip() {
   // Eighteen enclosed orange lifeboats, davits and survival equipment.
   for(const side of [-1,1]) for(let z=-68;z<=60;z+=16) {
     add(new T.SphereGeometry(1,24,12),[side*18,11.65,z],orange,new T.Euler(),new T.Vector3(2,1.25,5.3));
-    box([3.3,1,7.2],[side*18,12.8,z],white,false,0.28);box([3.4,0.5,0.08],[side*18,12.9,z-3.65],glass);
+    box([3.3,1,7.2],[side*18,12.8,z],white,true,0.28);box([3.4,0.5,0.08],[side*18,12.9,z-3.65],glass);
+    boxes.push({min:new T.Vector3(side*18-2,10.4,z-5.3),max:new T.Vector3(side*18+2,12.9,z+5.3)});
     for(const dz of [-3.8,3.8]) {rod([side*14,14,z+dz],[side*19,14.7,z+dz],0.12,white);rod([side*19,14.7,z+dz],[side*19,13,z+dz],0.055,chrome);}
   }
   // Funnel, exhaust stacks, radar domes, communications mast and railings.

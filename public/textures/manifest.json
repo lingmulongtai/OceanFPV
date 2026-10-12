@@ -79,5 +79,14 @@
     "md5": "ff891ac48e0a9db02a665d2ae9bba36a",
     "asset": "wood_floor_deck",
     "license": "CC0-1.0"
+  },
+  {
+    "bytes": 20674857,
+    "license": "CC0-1.0",
+    "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/4k/kloofendal_48d_partly_cloudy_puresky_4k.hdr",
+    "asset": "kloofendal_48d_partly_cloudy_puresky",
+    "sha256": "3061c00a16ecae748e84fd6c44c04804f539c118bb66325db858bad87b11bf88",
+    "file": "kloofendal_48d_partly_cloudy_puresky_4k.hdr",
+    "md5": "816340c969d2e60d659051d13ac3c4dc"
   }
 ]

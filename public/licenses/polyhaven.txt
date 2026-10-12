@@ -3,6 +3,8 @@ Poly Haven photographic PBR assets: CC0 1.0 Universal.
 Blue Metal Plate: https://polyhaven.com/a/blue_metal_plate
 Rocky Terrain by Amal Kumar: https://polyhaven.com/a/rocky_terrain
 Wood Floor Deck by Dimitrios Savva: https://polyhaven.com/a/wood_floor_deck
+Kloofendal 48d Partly Cloudy (Pure Sky) by Greg Zaal and Jarod Guest:
+https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky
 
 Asset license: https://polyhaven.com/license
 CC0 legal code: https://creativecommons.org/publicdomain/zero/1.0/legalcode
