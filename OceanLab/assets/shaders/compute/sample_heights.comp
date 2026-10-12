@@ -1,0 +1,24 @@
+#[compute]
+#version 450
+layout(local_size_x=32) in;
+layout(rgba16f,set=0,binding=0) readonly uniform image2DArray displacements;
+layout(std430,set=0,binding=1) buffer Queries { vec4 points[]; };
+layout(push_constant) uniform Params { float gain; uint count; uint pad0; uint pad1; };
+const float lengths[5]=float[](2003.0,433.0,97.0,23.3,5.3);
+vec3 bilinear(vec2 uv,int layer) {
+ ivec2 dims=imageSize(displacements).xy;
+ vec2 coord=fract(uv)*vec2(dims)-0.5; ivec2 p=ivec2(floor(coord)); vec2 f=fract(coord);
+ ivec2 a=(p%dims+dims)%dims,b=(a+ivec2(1))%dims;
+ return mix(mix(imageLoad(displacements,ivec3(a,layer)).xyz,imageLoad(displacements,ivec3(b.x,a.y,layer)).xyz,f.x),
+  mix(imageLoad(displacements,ivec3(a.x,b.y,layer)).xyz,imageLoad(displacements,ivec3(b,layer)).xyz,f.x),f.y);
+}
+vec3 sample_sea(vec2 p) {
+ vec3 d=vec3(0); for(int i=0;i<5;i++) d+=bilinear(p/lengths[i],i)*gain; return d;
+}
+void main() {
+ uint i=gl_GlobalInvocationID.x; if(i>=count) return;
+ vec2 world=points[i].xz, q=world;
+ // Invert the horizontal chop displacement, so buoyancy samples the rendered surface.
+ for(int j=0;j<3;j++) { vec3 d=sample_sea(q); q=world-d.xz; }
+ points[i].y=sample_sea(q).y;
+}

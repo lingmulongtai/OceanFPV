@@ -1,0 +1,71 @@
+#[compute]
+#version 450
+layout(local_size_x=8,local_size_y=8) in;
+layout(rgba16f,set=0,binding=0) readonly uniform image2DArray old_foam;
+layout(rgba16f,set=0,binding=1) writeonly uniform image2DArray new_foam;
+layout(rgba16f,set=0,binding=2) readonly uniform image2DArray normals;
+layout(rgba16f,set=0,binding=3) writeonly uniform image2DArray wake_a;
+layout(rgba16f,set=0,binding=4) writeonly uniform image2DArray wake_b;
+layout(std430,set=0,binding=5) readonly buffer History { vec4 points[]; };
+layout(push_constant) uniform Params {
+ vec2 origin; vec2 previous_origin; float tile_length; float dt; float time; float wind;
+ uint clip; uint count; uint enable_wake; uint enable_foam; vec2 wind_dir; float coverage; float pad;
+};
+const float lengths[5]=float[](2003.0,433.0,97.0,23.3,5.3);
+float hash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float noise(vec2 p) {
+ vec2 q=floor(p),f=fract(p); f=f*f*(3.-2.*f);
+ return mix(mix(hash(q),hash(q+vec2(1,0)),f.x),mix(hash(q+vec2(0,1)),hash(q+vec2(1,1)),f.x),f.y);
+}
+vec4 read_old(vec2 world) {
+ vec2 uv=(world-previous_origin)/tile_length+0.5;
+ if(any(lessThan(uv,vec2(0)))||any(greaterThanEqual(uv,vec2(1)))) return vec4(0);
+ ivec2 sz=imageSize(old_foam).xy;
+ vec2 c=uv*vec2(sz)-0.5; ivec2 p=ivec2(floor(c)); vec2 f=fract(c);
+ ivec2 a=clamp(p,ivec2(0),sz-1), b=clamp(p+1,ivec2(0),sz-1);
+ return mix(mix(imageLoad(old_foam,ivec3(a,int(clip))),imageLoad(old_foam,ivec3(b.x,a.y,int(clip))),f.x),
+  mix(imageLoad(old_foam,ivec3(a.x,b.y,int(clip))),imageLoad(old_foam,ivec3(b,int(clip))),f.x),f.y);
+}
+void main() {
+ ivec2 p=ivec2(gl_GlobalInvocationID.xy),sz=imageSize(new_foam).xy;
+ if(any(greaterThanEqual(p,sz))) return;
+ ivec3 out_p=ivec3(p,int(clip));
+ vec2 world=origin+((vec2(p)+0.5)/vec2(sz)-0.5)*tile_length;
+ vec4 old=read_old(world-wind_dir*0.055*wind*dt);
+ // Four separate lifetimes: coverage / freshness / bubbles / slick (seconds).
+ old*=exp(-dt/vec4(9.0,1.6,5.0,55.0));
+ float source=0.0;
+ ivec2 normal_size=imageSize(normals).xy;
+ for(int i=0;i<5;i++) {
+  ivec2 q=ivec2(fract(world/lengths[i])*vec2(normal_size));
+  source+=imageLoad(normals,ivec3(q,i)).a;
+ }
+ float best=1e10,age=0.,speed=0.;
+ for(uint i=0u;i+1u<count;i++) {
+  vec2 a=points[i].xy,b=points[i+1u].xy,ab=b-a;
+  float t=clamp(dot(world-a,ab)/max(dot(ab,ab),0.001),0.,1.);
+  float d=length(world-(a+t*ab));
+  if(d<best) { best=d;age=max(0.,time-mix(points[i].z,points[i+1u].z,t));
+   speed=length(ab)/max(abs(points[i].z-points[i+1u].z),0.05); }
+ }
+ // Deep-water Kelvin half-angle asin(1/3)=19.4712 degrees; tan=1/sqrt(8).
+ float v_distance=abs(best-speed*age*0.35355339);
+ float v_width=1.5+age*0.065;
+ float kelvin=exp(-pow(v_distance/v_width,2.))*exp(-age/90.);
+ float centre=exp(-pow(best/(3.5+age*0.18),2.))*exp(-age/42.);
+ float lace=smoothstep(0.20,0.67,noise(world*0.24+wind_dir*time*0.09)*0.6+noise(world*0.87)*0.4);
+ float activity=smoothstep(0.5,4.,speed)*float(enable_wake);
+ float wake_foam=(kelvin*0.7+centre)*lace*activity;
+ float wake_height=sin(v_distance*1.8-age*0.7)*kelvin*0.30*activity;
+ // Bow mound around newest ship position, tapering away from the hull.
+ if(count>0u) wake_height+=exp(-pow(length(world-points[0].xy)/8.,2.))*0.35*activity;
+ float bubbles=centre*0.6*activity;
+ float slick=centre*0.75*activity;
+ float injection=clamp(source*3.0+source*coverage*15.0,0.0,3.0)*float(enable_foam);
+ vec4 stamp=vec4(injection+wake_foam*1.9,injection+wake_foam*3.,bubbles,slick);
+ vec4 result=clamp(old+(1.-old)*(1.-exp(-stamp*dt)),0.,1.);
+ if(enable_foam==0u) result=vec4(0);
+ imageStore(new_foam,out_p,result);
+ imageStore(wake_a,out_p,vec4(wake_height,centre*activity,kelvin*activity,0));
+ imageStore(wake_b,out_p,vec4(wake_foam,slick,bubbles,lace*activity));
+}
