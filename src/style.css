@@ -11,3 +11,4 @@ dialog{color:#edf3ed}dialog::backdrop{background:#061b2299;backdrop-filter:blur(
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 
 body.flying .grain{background:linear-gradient(180deg,rgba(8,25,29,.30),transparent 20%),linear-gradient(0deg,rgba(8,25,29,.32),transparent 25%)}.hud{text-shadow:0 1px 5px rgba(2,17,22,.65)}
+.topbar{background:linear-gradient(180deg,rgba(7,24,31,.42),transparent);text-shadow:0 1px 7px rgba(2,15,22,.7)}.topbar .icon-button{background:rgba(9,25,31,.28)}
