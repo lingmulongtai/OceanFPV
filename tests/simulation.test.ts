@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
 import { Flight, NEUTRAL, rateCurve } from '../src/flight';
-import { DEFAULT_RADIO, mapGamepad, normalizeAxis } from '../src/input';
+import { DEFAULT_RADIO, Inputs, mapGamepad, normalizeAxis } from '../src/input';
 import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
 
@@ -76,4 +76,24 @@ test('All sea presets produce continuous finite heights for collision sampling',
     assert.ok(Number.isFinite(h));assert.ok(Math.abs(h)<8);
     assert.ok(Math.abs(h-seaHeight(i*11+0.001,-i*9,i*0.15,state))<0.01);
   }
+});
+
+test('Held Xbox buttons dispatch once even when reset re-polls synchronously', () => {
+  Object.assign(globalThis,{window:{addEventListener(){}},document:{addEventListener(){}}});
+  let currentPads:Gamepad[]=[];
+  Object.defineProperty(navigator,'getGamepads',{configurable:true,value:()=>currentPads});
+  const input=new Inputs();input.source='xbox';let resets=0;
+  const pad={id:'Xbox',index:0,connected:true,axes:[0,0,0,0],buttons:Array.from({length:17},()=>({pressed:false,value:0}))};
+  currentPads=[pad as unknown as Gamepad];input.poll();
+  input.onAction=action=> {if(action==='reset') {resets++;assert.ok(resets<2);input.clear();input.poll();}};
+  pad.buttons[2].pressed=true;input.poll();input.poll();input.poll();assert.equal(resets,1);
+});
+test('Losing the selected pad pauses even if another pad is still connected', () => {
+  Object.assign(globalThis,{window:{addEventListener(){}},document:{addEventListener(){}}});
+  const first={id:'Radio A',index:0,connected:true,axes:[0,0,0,1],buttons:[]} as unknown as Gamepad;
+  const second={id:'Radio B',index:1,connected:true,axes:[0,0,0,-1],buttons:[]} as unknown as Gamepad;
+  let pads=[first,second];Object.defineProperty(navigator,'getGamepads',{configurable:true,value:()=>pads});
+  const input=new Inputs();input.source='radio';let disconnects=0;input.onDisconnect=()=>disconnects++;
+  input.poll();assert.equal(input.sticks().throttle,0);
+  pads=[second];input.poll();assert.equal(disconnects,1);
 });

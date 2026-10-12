@@ -53,8 +53,10 @@ export class Inputs {
 
   constructor() {
     window.addEventListener('keydown', e => {
+      if (e.code === 'Tab' && document.querySelector('dialog[open]')) return;
+      if (e.code === 'Escape' && document.querySelector('dialog[open]:not(#pause-dialog)')) return;
       if (e.target instanceof HTMLElement && (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || (e.target.tagName === 'BUTTON' && ['Space', 'Enter'].includes(e.code)))) return;
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Escape'].includes(e.code)) e.preventDefault();
       this.keys.add(e.code);
       if (!e.repeat) {
         const action: Record<string, string> = { Escape: 'pause', KeyR: 'reset', KeyF: 'arm', KeyC: 'camera', KeyM: 'mute', KeyH: 'hud', Tab: 'settings' };
@@ -72,7 +74,7 @@ export class Inputs {
     });
   }
 
-  clear() { this.keys.clear(); this.mouse = { x: 0, y: 0 }; this.previousButtons.clear(); }
+  clear() { this.keys.clear(); this.mouse = { x: 0, y: 0 }; }
   pads(): Gamepad[] {
     try { return Array.from(navigator.getGamepads?.() ?? []).filter((p): p is Gamepad => !!p && p.connected); }
     catch { return []; }
@@ -81,7 +83,7 @@ export class Inputs {
     const pads = this.pads();
     const previous = this.pad;
     this.pad = pads.find(p => p.index === this.selectedIndex) ?? (this.selectedIndex < 0 ? pads[0] : null) ?? null;
-    if (previous && !this.pad && this.source !== 'keyboard') this.onDisconnect();
+    if (previous && (!this.pad || previous.index !== this.pad.index || previous.id !== this.pad.id) && this.source !== 'keyboard') this.onDisconnect();
     if (this.pad && this.pad.id !== this.calibratedDevice) {
       const saved = readStored<RadioProfile | null>(`radio:${this.pad.id}`, null);
       if (saved && Object.values(saved.axes ?? {}).length === 4 && Object.values(saved.axes).every(v => Number.isInteger(v) && v >= 0 && v < 32) && saved.invert && Array.isArray(saved.calibration)) this.profile = saved;
@@ -97,11 +99,14 @@ export class Inputs {
     }
     if (this.source === 'xbox') {
       const actions: Record<number, string> = { 0: 'arm', 2: 'reset', 3: 'camera', 9: 'pause' };
+      const edges: string[] = [];
       Object.entries(actions).forEach(([index, action]) => {
         const i = Number(index); const pressed = !!this.pad?.buttons[i]?.pressed;
-        if (pressed && !this.previousButtons.has(i)) this.onAction(action);
+        if (pressed && !this.previousButtons.has(i)) edges.push(action);
         if (pressed) this.previousButtons.add(i); else this.previousButtons.delete(i);
       });
+      // Latch all edges before callbacks: a reset can synchronously poll again.
+      edges.forEach(action => this.onAction(action));
     }
   }
   sticks(): StickInput {
