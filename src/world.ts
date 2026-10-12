@@ -3,7 +3,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Ocean } from './ocean';
-import { seaHeight, type SeaState } from './sea';
+import { type SeaState } from './sea';
 import { GATES } from './race';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
@@ -292,17 +292,17 @@ export class World {
   update(time: number,camera: T.Vector3,state: SeaState,dronePosition:T.Vector3,orientation:T.Quaternion,motor:number) {
     this.ocean.update(time,camera,state);
     this.sky.material.uniforms.time.value=time;
-    this.hullY=seaHeight(0,0,time,state)*0.4;
+    this.hullY=this.ocean.heightAt(0,0)*0.4;
     this.ship.position.y=this.hullY;
-    this.ship.rotation.x=(seaHeight(0,25,time,state)-seaHeight(0,-25,time,state))/50*0.32;
-    this.ship.rotation.z=(seaHeight(-4,0,time,state)-seaHeight(4,0,time,state))/8*0.18;
+    this.ship.rotation.x=(this.ocean.heightAt(0,25)-this.ocean.heightAt(0,-25))/50*0.32;
+    this.ship.rotation.z=(this.ocean.heightAt(-4,0)-this.ocean.heightAt(4,0))/8*0.18;
     this.radar.rotation.y=time*0.7;
     this.drone.position.copy(dronePosition);this.drone.quaternion.copy(orientation);
     this.propellers.forEach((p,i)=>p.rotation.y=time*(i%2?-1:1)*motor*170);
-    this.ocean.material.uniforms.vessel.value.copy(this.ship.position);
+    this.ocean.material.uniforms.vessels.value[0].set(this.ship.position.x,0,this.ship.position.z,92);
   }
-  collision(p:T.Vector3,time:number,state:SeaState):string|null {
-    if(p.y < seaHeight(p.x,p.z,time,state)+0.18) return '海面に接触しました';
+  collision(p:T.Vector3,_time:number,_state:SeaState):string|null {
+    if(p.y < this.ocean.heightAt(p.x,p.z)+0.18) return '海面に接触しました';
     if(p.y>500||Math.hypot(p.x,p.z)>1900) return '飛行エリアの外に出ました';
     const local=p.clone();this.ship.worldToLocal(local);
     if(local.z>-46&&local.z<46) {

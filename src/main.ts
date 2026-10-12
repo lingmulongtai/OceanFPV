@@ -8,7 +8,7 @@ import { World, type LightPreset } from './world';
 import { Flight, type FlightMode } from './flight';
 import { Inputs, type Channel } from './input';
 import { Race, GATES, formatTime } from './race';
-import { seaHeight, type SeaState } from './sea';
+import { type SeaState } from './sea';
 import { FlightAudio } from './audio';
 import { readStored, writeStored } from './storage';
 
@@ -270,7 +270,7 @@ async function boot() {
   }
   function hud() {
     $('speed').textContent=String(Math.round(flight.velocity.length()*3.6));
-    $('altitude').textContent=(flight.position.y-seaHeight(flight.position.x,flight.position.z,time,sea)).toFixed(1);
+    $('altitude').textContent=(flight.position.y-world.ocean.heightAt(flight.position.x,flight.position.z)).toFixed(1);
     $('vertical').textContent=(flight.velocity.y>=0?'+':'')+flight.velocity.y.toFixed(1);
     $('flight-mode').textContent=flight.mode.toUpperCase();$('arm-state').textContent=flight.armed?'ARMED':'DISARMED';
     $('input-label').textContent=input.source.toUpperCase();
@@ -297,6 +297,7 @@ async function boot() {
     if(now-lastControllerUI>180) {updateControllerUI();lastControllerUI=now;}
     if(!supported||document.hidden) return;
     if(!paused) time+=dt;
+    world.ocean.advance(time,sea);
     if(playing&&!paused&&!flight.crashed&&!race.finished) {
       accumulator+=dt;
       const sticks=input.sticks();

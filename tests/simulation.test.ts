@@ -5,6 +5,26 @@ import { Flight, NEUTRAL, rateCurve } from '../src/flight';
 import { DEFAULT_RADIO, Inputs, mapGamepad, normalizeAxis } from '../src/input';
 import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
+import { inverseFFT, SpectralSea } from '../src/spectrum';
+
+test('two dimensional inverse FFT reconstructs an impulse and a cosine',()=> {
+  const size=8,real=new Float64Array(size*size),imaginary=new Float64Array(size*size);
+  real.fill(1);inverseFFT(real,imaginary,size);
+  assert.ok(Math.abs(real[0]-1)<1e-12);assert.ok(real.slice(1).every(v=>Math.abs(v)<1e-12));
+  real.fill(0);imaginary.fill(0);real[1]=real[size-1]=size*size/2;inverseFFT(real,imaginary,size);
+  for(let z=0;z<size;z++) for(let x=0;x<size;x++) assert.ok(Math.abs(real[z*size+x]-Math.cos(x*Math.PI*2/size))<1e-10);
+});
+test('spectral waves evolve, remain periodic within each cascade and produce finite contact heights',()=> {
+  const sea=new SpectralSea(),first=sea.heightAt(17,39);
+  for(const c of sea.cascades) {
+    assert.ok(Math.abs(c.sample(13,19)-c.sample(13+c.length,19-c.length))<1e-6);
+    assert.ok(c.displacement.every(Number.isFinite));assert.ok(c.normal.every(Number.isFinite));
+    const rms=Math.sqrt(c.displacement.reduce((s,v,i)=>s+(i%4===1?v*v:0),0)/(c.size*c.size));assert.ok(rms>0.02&&rms<2);
+  }
+  sea.update(9);assert.notEqual(sea.heightAt(17,39),first);
+  for(let x=-1800;x<1800;x+=79) assert.ok(Number.isFinite(sea.heightAt(x,x*0.3,2)));
+  assert.ok(Math.abs(sea.heightAt(20,35)-sea.heightAt(20.001,35))<0.01);
+});
 
 test('Angle spring throttle holds altitude after spool-up', () => {
   const flight = new Flight(); flight.armed = true;
