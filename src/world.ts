@@ -57,7 +57,7 @@ export class World {
   light: LightPreset = 'golden';
   private propellers: T.Mesh[] = [];
   private vesselTime=-1;
-  private shipVerticalVelocity=0;
+  private launchVelocity:T.Vector3|null=null;
   private surfaceGroups:SurfaceGroup[]=[];
   private naturalObstacles:{x:number;z:number;y:number;radius:number;height:number}[]=[];
   private rockMaterial=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});
@@ -321,7 +321,7 @@ export class World {
   }
   advanceVessels(time:number) {
     if(time===this.vesselTime)return;
-    const oldY=this.ship.position.y,dt=time-this.vesselTime;
+    const oldLaunch=this.ship.localToWorld(new T.Vector3(0,5.4,38)),dt=time-this.vesselTime;
     for(const [i,kind,root,length,width]of [[0,'explorer',this.ship,92,4.4],[1,'cruise',this.cruise.root,260,17],[2,'yacht',this.yacht,28,4.5]] as const) {
       const p=vesselPose(kind,time),forward=new T.Vector3(-Math.sin(p.heading),0,-Math.cos(p.heading));
       const h=this.ocean.heightAt(p.x,p.z)*(kind==='cruise'?0.2:0.45),half=length*0.3;
@@ -330,13 +330,13 @@ export class World {
       this.ocean.material.uniforms.vessels.value[i].set(p.x,0,p.z,length);this.ocean.material.uniforms.headings.value[i]=p.heading;
       this.ocean.material.uniforms.vesselWidths.value[i]=width;this.ocean.material.uniforms.vesselSpeeds.value[i]=p.speed;
     }
-    this.shipVerticalVelocity=dt>0&&dt<0.2?(this.ship.position.y-oldY)/dt:0;this.vesselTime=time;
+    this.launchVelocity=dt>0&&dt<0.2?this.ship.localToWorld(new T.Vector3(0,5.4,38)).sub(oldLaunch).divideScalar(dt):null;this.vesselTime=time;
   }
   launchPose(time:number) {
     this.advanceVessels(time);const pose=vesselPose('explorer',time);
     const before=vesselPose('explorer',time-0.01),after=vesselPose('explorer',time+0.01),turn=Math.atan2(Math.sin(after.heading-before.heading),Math.cos(after.heading-before.heading))/0.02;
     const offset=new T.Vector3(0,5.4,38).applyQuaternion(this.ship.quaternion);
-    return {position:this.ship.localToWorld(new T.Vector3(0,5.4,38)),velocity:new T.Vector3(pose.vx+turn*offset.z,this.shipVerticalVelocity,pose.vz-turn*offset.x),heading:pose.heading};
+    return {position:this.ship.localToWorld(new T.Vector3(0,5.4,38)),velocity:this.launchVelocity?.clone()??new T.Vector3(pose.vx+turn*offset.z,0,pose.vz-turn*offset.x),heading:pose.heading};
   }
   collision(p:T.Vector3,_time:number,_state:SeaState):string|null {
     if(p.y < this.ocean.heightAt(p.x,p.z)+0.18) return '海面に接触しました';

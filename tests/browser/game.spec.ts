@@ -29,6 +29,12 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
   expect(Math.abs(app.local[0])).toBeLessThan(1);expect(Math.abs(app.local[2]-38)).toBeLessThan(2);
   const stopped=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());await page.waitForTimeout(300);
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray())).toEqual(stopped);
+  const mismatch=await page.evaluate(()=> {
+    const a=(window as any).__OCEANFPV__,t=a.getState().time,before=a.world.launchPose(t).position;
+    a.world.ocean.advance(t+0.05,'breeze');a.world.advanceVessels(t+0.05);
+    const after=a.world.launchPose(t+0.05);return after.position.clone().sub(before).divideScalar(0.05).distanceTo(after.velocity);
+  });
+  expect(mismatch).toBeLessThan(1e-6);
 });
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
   await ready(page);await page.locator('#start').click();
