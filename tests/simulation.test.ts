@@ -5,6 +5,65 @@ import { Flight, NEUTRAL, rateCurve } from '../src/flight';
 import { DEFAULT_RADIO, Inputs, mapGamepad, normalizeAxis } from '../src/input';
 import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
+import { inverseFFT, SpectralSea } from '../src/spectrum';
+import { closedHullGeometry } from '../src/hull';
+import { vesselPose } from '../src/navigation';
+import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
+
+test('terrain contact height follows the rendered triangle grid continuously',()=> {
+  const size=260,height=130,step=size*2.4/192;
+  for(let i=0;i<190;i+=17) {
+    const x=-size*1.2+i*step,z=-size*1.2+(i+1)*step;
+    assert.ok(Math.abs(terrainSurfaceHeight(x,z,size,height)-terrainHeight(x,z,size,height))<1e-8);
+    const expected=(terrainHeight(x,z,size,height)+terrainHeight(x+step,z,size,height))/2;
+    assert.ok(Math.abs(terrainSurfaceHeight(x+step/2,z,size,height)-expected)<1e-8);
+    assert.ok(Math.abs(terrainSurfaceHeight(x-0.0001,z,size,height)-terrainSurfaceHeight(x+0.0001,z,size,height))<0.01);
+  }
+});
+
+test('terrain sampling stays finite and continuous through the coastline',()=> {
+  for(let x=-400;x<400;x+=31)for(let z=-400;z<400;z+=43) {
+    const y=terrainHeight(x,z,260,130);assert.ok(Number.isFinite(y)&&y>=-9&&y<210);
+    assert.ok(Math.abs(terrainHeight(x+0.001,z,260,130)-y)<0.02);
+  }
+});
+
+test('vessel routes move continuously and the bow follows the travel direction',()=> {
+  for(const kind of ['explorer','cruise','yacht'] as const)for(let t=0;t<800;t+=13) {
+    const pose=vesselPose(kind,t),next=vesselPose(kind,t+0.001);
+    assert.ok(pose.speed>1);assert.ok(Math.hypot(next.x-pose.x,next.z-pose.z)>0);
+    assert.ok(Math.abs((next.x-pose.x)/0.001-pose.vx)<0.002);assert.ok(Math.abs((next.z-pose.z)/0.001-pose.vz)<0.002);
+    assert.ok(Math.abs(-Math.sin(pose.heading)*pose.speed-pose.vx)<1e-10);
+    assert.ok(Math.abs(-Math.cos(pose.heading)*pose.speed-pose.vz)<1e-10);
+  }
+});
+
+test('bow and stern are closed with every hull edge shared by two faces',()=> {
+  for(const geo of [closedHullGeometry(),closedHullGeometry(260,34,9,7,true)]) {
+    const edges=new Map<string,number>(),index=geo.index!;
+    for(let i=0;i<index.count;i+=3)for(let j=0;j<3;j++) {const a=index.getX(i+j),b=index.getX(i+(j+1)%3),key=a<b?`${a}:${b}`:`${b}:${a}`;edges.set(key,(edges.get(key)??0)+1);}
+    assert.ok(Array.from(edges.values()).every(count=>count===2));assert.ok(Array.from(geo.attributes.position.array).every(Number.isFinite));geo.dispose();
+  }
+});
+
+test('two dimensional inverse FFT reconstructs an impulse and a cosine',()=> {
+  const size=8,real=new Float64Array(size*size),imaginary=new Float64Array(size*size);
+  real.fill(1);inverseFFT(real,imaginary,size);
+  assert.ok(Math.abs(real[0]-1)<1e-12);assert.ok(real.slice(1).every(v=>Math.abs(v)<1e-12));
+  real.fill(0);imaginary.fill(0);real[1]=real[size-1]=size*size/2;inverseFFT(real,imaginary,size);
+  for(let z=0;z<size;z++) for(let x=0;x<size;x++) assert.ok(Math.abs(real[z*size+x]-Math.cos(x*Math.PI*2/size))<1e-10);
+});
+test('spectral waves evolve, remain periodic within each cascade and produce finite contact heights',()=> {
+  const sea=new SpectralSea(),first=sea.heightAt(17,39);
+  for(const c of sea.cascades) {
+    assert.ok(Math.abs(c.sample(13,19)-c.sample(13+c.length,19-c.length))<1e-6);
+    assert.ok(c.displacement.every(Number.isFinite));assert.ok(c.normal.every(Number.isFinite));
+    const rms=Math.sqrt(c.displacement.reduce((s,v,i)=>s+(i%4===1?v*v:0),0)/(c.size*c.size));assert.ok(rms>0.02&&rms<2);
+  }
+  sea.update(9);assert.notEqual(sea.heightAt(17,39),first);
+  for(let x=-1800;x<1800;x+=79) assert.ok(Number.isFinite(sea.heightAt(x,x*0.3,2)));
+  assert.ok(Math.abs(sea.heightAt(20,35)-sea.heightAt(20.001,35))<0.01);
+});
 
 test('Angle spring throttle holds altitude after spool-up', () => {
   const flight = new Flight(); flight.armed = true;

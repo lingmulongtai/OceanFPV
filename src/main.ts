@@ -8,9 +8,10 @@ import { World, type LightPreset } from './world';
 import { Flight, type FlightMode } from './flight';
 import { Inputs, type Channel } from './input';
 import { Race, GATES, formatTime } from './race';
-import { seaHeight, type SeaState } from './sea';
+import { type SeaState } from './sea';
 import { FlightAudio } from './audio';
 import { readStored, writeStored } from './storage';
+import { loadPhotographicSky } from './sky';
 
 const $ = <E extends HTMLElement = HTMLElement>(id:string) => document.getElementById(id) as E;
 const value = (id:string) => $<HTMLInputElement>(id).value;
@@ -29,12 +30,14 @@ async function boot() {
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;
   renderer.info.autoReset=false;
   const world=new World();
+  world.ocean.configureFiltering(renderer.extensions.has('OES_texture_float_linear'));
   // Bake the expensive procedural atmosphere once; the visible background and
   // water reflection sample the same HDR sky. Slow rotation gives cloud drift.
   const skyScene=new T.Scene();skyScene.add(world.sky);const skyTarget=new T.WebGLCubeRenderTarget(512,{type:T.HalfFloatType});
   const skyCamera=new T.CubeCamera(1,20000,skyTarget);skyCamera.update(renderer,skyScene);
   world.scene.background=skyTarget.texture;
   const pmrem=new T.PMREMGenerator(renderer);let environment=pmrem.fromCubemap(skyTarget.texture);world.scene.environment=environment.texture;pmrem.dispose();
+  let photoSky:Awaited<ReturnType<typeof loadPhotographicSky>>=null,photoEnvironment:T.WebGLRenderTarget|null=null;
   const camera=new T.PerspectiveCamera(65,innerWidth/innerHeight,0.06,18000);
   const renderTarget=new T.WebGLRenderTarget(innerWidth,innerHeight,{type:T.HalfFloatType,samples:Math.min(4,renderer.capabilities.maxSamples)});
   const composer=new EffectComposer(renderer,renderTarget);composer.addPass(new RenderPass(world.scene,camera));
@@ -66,15 +69,16 @@ async function boot() {
     writeStored('settings',settings);
   }
   function resize() {
-    const cap=value('quality')==='ultra'?2:value('quality')==='high'?1.5:1;
+    const ratio=value('quality')==='ultra'?2:Math.min(devicePixelRatio||1,value('quality')==='high'?1.5:1);
     world.ocean.setQuality(value('quality'));
+    world.quality=value('quality');
     renderer.shadowMap.enabled=value('quality')!=='balanced';
     const samples=value('quality')==='balanced'?0:Math.min(4,renderer.capabilities.maxSamples);
     for(const target of [composer.renderTarget1,composer.renderTarget2]) {
       if(target.samples!==samples) {target.samples=samples;target.dispose();}
     }
-    renderer.setPixelRatio(Math.min(devicePixelRatio||1,cap));renderer.setSize(innerWidth,innerHeight);
-    composer.setPixelRatio(Math.min(devicePixelRatio||1,cap));composer.setSize(innerWidth,innerHeight);
+    renderer.setPixelRatio(ratio);renderer.setSize(innerWidth,innerHeight);
+    composer.setPixelRatio(ratio);composer.setSize(innerWidth,innerHeight);
     camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
   }
   function applySettings() {
@@ -89,6 +93,10 @@ async function boot() {
       const generator=new T.PMREMGenerator(renderer);environment.dispose();
       environment=generator.fromCubemap(skyTarget.texture);world.scene.environment=environment.texture;generator.dispose();
     }
+    if(world.light==='day'&&photoSky&&photoEnvironment) {
+      world.scene.background=photoSky.texture;world.scene.environment=photoEnvironment.texture;world.scene.environmentIntensity=0.6;
+      world.sun.copy(photoSky.sun);world.sunlight.position.copy(world.sun).multiplyScalar(280);
+    }else {world.scene.background=skyTarget.texture;world.scene.environment=environment.texture;world.scene.environmentIntensity=1;}
     world.ocean.material.uniforms.foamEnabled.value=checked('foam');bloom.enabled=checked('bloom')&&value('quality')!=='balanced';
     renderer.toneMappingExposure=value('light')==='day'?0.68:value('light')==='golden'?0.7:0.58;
     input.useMouse=checked('mouse');input.source=value('input-source') as Inputs['source'];input.deadzone=Number(value('deadzone'))/100;
@@ -114,12 +122,16 @@ async function boot() {
     return true;
   }
   function arm() {
+    if(!supported||$<HTMLButtonElement>('start').disabled)return;
     if(!canArm()) return;
     flight.armed=true;flight.crashed=false;void sound.start();toast('ARMED · フライト開始');
   }
   function startFlight() {
+    if(!supported||$<HTMLButtonElement>('start').disabled)return;
     input.poll();if(!canArm()) {openDialog('settings-dialog');return;}
+    if(selectedRace){time=0;world.ocean.advance(time,sea);}
     flight.reset();race.reset(selectedRace);flightTime=0;playing=true;paused=false;accumulator=0;input.clear();
+    const launch=world.launchPose(time);flight.position.copy(launch.position);flight.previous.copy(launch.position);flight.velocity.copy(launch.velocity);flight.orientation.setFromAxisAngle(new T.Vector3(0,1,0),launch.heading);
     show('intro',false);show('intro-footer',false);show('scene-label',false);show('hud',hudVisible);document.body.classList.add('flying');
     flight.armed=true;world.updateGates(race.active,race.next);void sound.start();
     toast(selectedRace?'緑のゲートを番号順に通過。6ゲート × 3周。':'Spaceで上昇、WASDで傾き、Q/Eで旋回。Escで一時停止。',5500);
@@ -137,7 +149,7 @@ async function boot() {
     $<HTMLDialogElement>('pause-dialog').showModal();
   }
   function resume() {
-    if(flight.crashed||race.finished) return;
+    if(!supported||flight.crashed||race.finished) return;
     input.poll();if(!canArm()) return;
     closeAll();paused=false;last=performance.now();accumulator=0;input.clear();void sound.start();
   }
@@ -146,7 +158,7 @@ async function boot() {
     show('intro',true);show('intro-footer',true);show('scene-label',true);show('hud',false);document.body.classList.remove('flying');world.updateGates(false,0);
   }
   function openDialog(id:string) {
-    if($<HTMLDialogElement>(id).open) return;
+    if(!supported||$<HTMLDialogElement>(id).open) return;
     returnToPause=$<HTMLDialogElement>('pause-dialog').open;
     if(returnToPause) $<HTMLDialogElement>('pause-dialog').close();
     if(playing) paused=true;
@@ -254,7 +266,7 @@ async function boot() {
   });
   document.addEventListener('visibilitychange',()=> {if(document.hidden) {pause('フライトを一時停止','別のタブに移動したため一時停止しました。');sound.suspend();input.clear();}});
   window.addEventListener('blur',()=>pause('フライトを一時停止','画面から離れたため一時停止しました。'));
-  canvas.addEventListener('webglcontextlost',e=> {e.preventDefault();supported=false;pause('描画が停止しました','GPUの描画状態を失いました。再読み込みしてください。');show('unsupported',true);$('unsupported-reason').textContent='GPUの描画状態を失いました。再読み込みしてください。';sound.suspend();});
+  canvas.addEventListener('webglcontextlost',e=> {e.preventDefault();supported=false;paused=true;flight.armed=false;flight.motor=0;input.clear();input.enabled=false;closeAll();document.exitPointerLock?.();$<HTMLButtonElement>('start').disabled=true;show('unsupported',true);$('unsupported-reason').textContent='GPUの描画状態を失いました。再読み込みしてください。';$('unsupported').querySelector<HTMLButtonElement>('button')!.focus();sound.suspend();});
 
   const minimap=$<HTMLCanvasElement>('minimap').getContext('2d')!;
   function drawMinimap() {
@@ -262,15 +274,18 @@ async function boot() {
     ctx.strokeStyle='#c9eed521';ctx.lineWidth=1;
     for(const radius of [38,76,114]) {ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.stroke();}
     ctx.beginPath();ctx.moveTo(-120,0);ctx.lineTo(120,0);ctx.moveTo(0,-120);ctx.lineTo(0,120);ctx.stroke();
-    const scale=1.7;ctx.fillStyle='#d2e3d755';ctx.beginPath();ctx.moveTo(0,-46*scale);ctx.lineTo(4.4*scale,-20*scale);ctx.lineTo(4.4*scale,33*scale);ctx.lineTo(0,46*scale);ctx.lineTo(-4.4*scale,33*scale);ctx.lineTo(-4.4*scale,-20*scale);ctx.closePath();ctx.fill();
-    if(race.active) GATES.forEach((g,i)=> {ctx.fillStyle=i===race.next?'#b5ebd4':'#769488';ctx.beginPath();ctx.arc(g.position.x*scale,g.position.z*scale,4,0,Math.PI*2);ctx.fill();});
+    const scale=race.active?1.7:0.14,origin=race.active?new T.Vector3():flight.position;
+    const project=(x:number,z:number)=>[(x-origin.x)*scale,(z-origin.z)*scale];
+    if(!race.active)for(const island of world.islands){const [x,z]=project(island.x,island.z);ctx.fillStyle='#90af8b30';ctx.beginPath();ctx.arc(x,z,island.size*scale,0,Math.PI*2);ctx.fill();}
+    for(const [root,length,width]of [[world.ship,92,4.4],[world.cruise.root,260,17],[world.yacht,28,4.5]]as const){const [x,z]=project(root.position.x,root.position.z);ctx.save();ctx.translate(x,z);ctx.rotate(-root.rotation.y);ctx.fillStyle='#d2e3d799';ctx.beginPath();ctx.moveTo(0,-length*0.5*scale);ctx.lineTo(width*scale,-length*0.35*scale);ctx.lineTo(width*scale,length*0.45*scale);ctx.lineTo(-width*scale,length*0.45*scale);ctx.lineTo(-width*scale,-length*0.35*scale);ctx.closePath();ctx.fill();ctx.restore();}
+    if(race.active) GATES.forEach((g,i)=> {const [x,z]=project(g.position.x,g.position.z);ctx.fillStyle=i===race.next?'#b5ebd4':'#769488';ctx.beginPath();ctx.arc(x,z,4,0,Math.PI*2);ctx.fill();});
     const pos=flight.position.clone();const direction=new T.Vector3(0,0,-1).applyQuaternion(flight.orientation);const angle=Math.atan2(direction.x,-direction.z);
-    const x=Math.max(-108,Math.min(108,pos.x*scale)),z=Math.max(-108,Math.min(108,pos.z*scale));ctx.translate(x,z);ctx.rotate(angle);
+    const [px,pz]=project(pos.x,pos.z);const x=Math.max(-108,Math.min(108,px)),z=Math.max(-108,Math.min(108,pz));ctx.translate(x,z);ctx.rotate(angle);
     ctx.fillStyle='#eeb982';ctx.beginPath();ctx.moveTo(0,-8);ctx.lineTo(5,5);ctx.lineTo(0,2);ctx.lineTo(-5,5);ctx.closePath();ctx.fill();ctx.restore();
   }
   function hud() {
     $('speed').textContent=String(Math.round(flight.velocity.length()*3.6));
-    $('altitude').textContent=(flight.position.y-seaHeight(flight.position.x,flight.position.z,time,sea)).toFixed(1);
+    $('altitude').textContent=(flight.position.y-world.ocean.heightAt(flight.position.x,flight.position.z)).toFixed(1);
     $('vertical').textContent=(flight.velocity.y>=0?'+':'')+flight.velocity.y.toFixed(1);
     $('flight-mode').textContent=flight.mode.toUpperCase();$('arm-state').textContent=flight.armed?'ARMED':'DISARMED';
     $('input-label').textContent=input.source.toUpperCase();
@@ -297,6 +312,8 @@ async function boot() {
     if(now-lastControllerUI>180) {updateControllerUI();lastControllerUI=now;}
     if(!supported||document.hidden) return;
     if(!paused) time+=dt;
+    world.ocean.advance(time,sea);
+    world.advanceVessels(time);
     if(playing&&!paused&&!flight.crashed&&!race.finished) {
       accumulator+=dt;
       const sticks=input.sticks();
@@ -318,7 +335,7 @@ async function boot() {
     if(!playing) {
       const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
       const drift=reduced?0:Math.sin(time*0.045)*4;
-      camera.fov=58;camera.position.set(52+drift,18,76+drift);camera.lookAt(-24,4,-8);
+      camera.fov=58;camera.position.set(112+drift,42,137+drift);camera.lookAt(-25,10,-125);
       world.drone.visible=false;
     } else {
       camera.fov=fov;
@@ -333,6 +350,8 @@ async function boot() {
     camera.updateProjectionMatrix();
     world.update(time,camera.position,sea,flight.position,flight.orientation,flight.motor);
     world.scene.backgroundRotation.y=time*0.00015;
+    world.scene.environmentRotation.y=world.scene.backgroundRotation.y;
+    if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280);}
     world.ship.updateMatrixWorld(true);
     sound.update(flight.motor,playing&&!paused&&flight.armed);
     renderer.info.reset();composer.render();
@@ -342,13 +361,17 @@ async function boot() {
     if(now-fpsTime>1000) {$('fps').textContent=`${Math.round(frameCount*1000/(now-fpsTime))} FPS`;frameCount=0;fpsTime=now;}
   }
   world.updateGates(false,0);
-  camera.position.set(52,18,76);camera.lookAt(-24,4,-8);
+  const [missingSurfaces,loadedSky]=await Promise.all([world.loadSurfaceTextures(renderer),loadPhotographicSky()]);
+  if(!supported)return;
+  photoSky=loadedSky;
+  if(photoSky){const generator=new T.PMREMGenerator(renderer);photoEnvironment=generator.fromEquirectangular(photoSky.texture);generator.dispose();applySettings();}
+  camera.position.set(112,42,137);camera.lookAt(-25,10,-125);
   world.update(0,camera.position,sea,flight.position,flight.orientation,0);
   composer.render();
   $<HTMLButtonElement>('start').disabled=false;
-  $('start-note').textContent=innerWidth<600?'PCのキーボードまたは接続コントローラーでプレイできます。':'インストール不要 · キーボード / Xbox / USB送信機';
+  $('start-note').textContent=missingSurfaces.length?'一部の素材を読み込めませんでした。標準素材でプレイできます。':innerWidth<600?'PCのキーボードまたは接続コントローラーでプレイできます。':'インストール不要 · キーボード / Xbox / USB送信機';
   if(import.meta.env.DEV&&new URLSearchParams(location.search).has('test')) {
-    Object.assign(window,{__OCEANFPV__:{flight,race,input,world,getState:()=>({playing,paused,time,flightTime,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})}});
+    Object.assign(window,{__OCEANFPV__:{flight,race,input,world,camera,getState:()=>({playing,paused,time,flightTime,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})}});
   }
   requestAnimationFrame(frame);
 }

@@ -1,0 +1,17 @@
+Poly Haven photographic PBR assets: CC0 1.0 Universal.
+
+Blue Metal Plate: https://polyhaven.com/a/blue_metal_plate
+Rocky Terrain by Amal Kumar: https://polyhaven.com/a/rocky_terrain
+Wood Floor Deck by Dimitrios Savva: https://polyhaven.com/a/wood_floor_deck
+Kloofendal 48d Partly Cloudy (Pure Sky) by Greg Zaal and Jarod Guest:
+https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky
+Island Tree 02 by Rob Tuytel and Rico Cilliers:
+https://polyhaven.com/a/island_tree_02
+
+Asset license: https://polyhaven.com/license
+CC0 legal code: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+Download provenance and hashes: textures/manifest.json
+Tree provenance and hashes: models/island_tree_02/manifest.json
+
+Self-hosted assets. No Poly Haven API connection is required at runtime.
+OceanFPV is not made by or endorsed by Poly Haven.

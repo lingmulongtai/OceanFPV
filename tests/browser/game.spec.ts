@@ -3,18 +3,39 @@ import { test, expect, type Page } from '@playwright/test';
 async function ready(page: Page) {
   await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
   await page.goto('/?test=1');
-  await expect(page.locator('#start')).toBeEnabled({timeout:60000});
+  await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   await page.evaluate(() => document.querySelector<HTMLSelectElement>('#quality')!.value='balanced');
   await page.locator('#quality').dispatchEvent('input');
 }
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
+  await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
   await expect(page.locator('#unsupported')).toBeHidden();
   const render=await page.evaluate(()=> (window as any).__OCEANFPV__.getState());
   expect(render.triangles).toBeGreaterThan(30000);
+  const forest=await page.evaluate(()=> (window as any).__OCEANFPV__.world.forest?.sourceTriangles??0);
+  expect(forest).toBeGreaterThan(1000000);
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
+});
+test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
+  await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);
+  await expect(page.locator('#start-note')).toContainText('標準素材');
+  const first=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());
+  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.x)).not.toBe(first[0]);
+  await page.locator('#start').click();await page.keyboard.press('Escape');
+  await expect(page.locator('#pause-dialog')).toBeVisible();
+  const app=await page.evaluate(()=> {const a=(window as any).__OCEANFPV__,local=a.world.ship.worldToLocal(a.flight.position.clone());return {local:local.toArray(),time:a.getState().time};});
+  expect(Math.abs(app.local[0])).toBeLessThan(1);expect(Math.abs(app.local[2]-38)).toBeLessThan(2);
+  const stopped=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());await page.waitForTimeout(300);
+  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray())).toEqual(stopped);
+  const mismatch=await page.evaluate(()=> {
+    const a=(window as any).__OCEANFPV__,t=a.getState().time,before=a.world.launchPose(t).position;
+    a.world.ocean.advance(t+0.05,'breeze');a.world.advanceVessels(t+0.05);
+    const after=a.world.launchPose(t+0.05);return after.position.clone().sub(before).divideScalar(0.05).distanceTo(after.velocity);
+  });
+  expect(mismatch).toBeLessThan(1e-6);
 });
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
   await ready(page);await page.locator('#start').click();
@@ -35,8 +56,24 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   await page.locator('[data-close="settings-dialog"]').last().click();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(true);
 });
+test('lost WebGL context closes modal layers and leaves recovery reachable',async({page})=> {
+  await ready(page);await page.locator('#start').click();await page.keyboard.press('Escape');
+  await expect(page.locator('#pause-dialog')).toBeVisible();
+  await page.evaluate(()=> {
+    const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,extension=gl.getExtension('WEBGL_lose_context');
+    if(!extension)throw new Error('Context-loss extension unavailable');extension.loseContext();
+  });
+  await expect(page.locator('#unsupported')).toBeVisible();await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await expect(page.locator('#unsupported button')).toBeVisible();await expect(page.locator('#start')).toBeDisabled();
+  await expect(page.locator('#unsupported button')).toBeFocused();
+  await page.keyboard.press('Tab');await expect(page.locator('dialog[open]')).toHaveCount(0);
+  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(false);
+});
 test('race registers actual ordered gate crossing and saves a completed run', async ({page})=> {
-  await ready(page);await page.locator('#race-mode').click();await page.locator('#start').click();
+  await ready(page);
+  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.getState().time),{timeout:60000}).toBeGreaterThan(2);
+  await page.locator('#race-mode').click();await page.locator('#start').click();
+  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().time)).toBeLessThan(1);
   for(let i=0;i<18;i++) {
     await page.evaluate((index)=> {
       const app=(window as any).__OCEANFPV__,g=app.world.gateMeshes[index%6];
@@ -86,7 +123,7 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
 });
 test('settings persist, help is keyboard accessible and mobile panels fit', async ({page})=> {
   await ready(page);await page.locator('#open-settings').click();await page.locator('#light').selectOption('day');await page.locator('#sea').selectOption('calm');
-  await page.keyboard.press('Escape');await page.reload();await expect(page.locator('#start')).toBeEnabled();
+  await page.keyboard.press('Escape');await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   expect(await page.locator('#light').inputValue()).toBe('day');expect(await page.locator('#sea').inputValue()).toBe('calm');
   await page.setViewportSize({width:390,height:844});await page.locator('#open-help').click();await expect(page.locator('#help-dialog')).toBeVisible();
   const box=await page.locator('#help-dialog').boundingBox();expect(box!.width).toBeLessThan(390);

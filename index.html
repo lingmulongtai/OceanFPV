@@ -23,9 +23,9 @@
       <div class="mode-picker" role="group" aria-label="ゲームモード"><button class="active" id="free-mode" aria-pressed="true"><span>01</span> 自由飛行</button><button id="race-mode" aria-pressed="false"><span>02</span> タイムトライアル</button></div>
       <button class="primary launch" id="start" disabled>海へ飛び立つ <span>↗</span></button>
       <div class="start-note" id="start-note">海と空を準備しています…</div>
-      <div class="intro-meta"><span><b>92 m</b> EXPLORATION VESSEL</span><span><b>3 laps</b> FLIGHT COURSE</span></div>
+      <div class="intro-meta"><span><b>260 m</b> OCEAN LINER</span><span><b>3 ships</b> MOVING FLEET</span></div>
     </section>
-    <div id="scene-label" class="scene-label"><span>01 / THE OPEN SEA</span><b>OCEAN EXPLORER 07</b><small>35° 04′ N &nbsp; 135° 46′ E · FICTIONAL WATERS</small></div>
+    <div id="scene-label" class="scene-label"><span>01 / THE OPEN SEA</span><b>OCEAN MERIDIAN</b><small>260 m LINER · ESCORT / YACHT · FICTIONAL WATERS</small></div>
     <div id="intro-footer" class="intro-footer"><span>WEBGL 2.0 <i>•</i> BROWSER FLIGHT</span><span>XBOX / USB RADIO / KEYBOARD</span><button id="footer-help">操作を確認 <span>→</span></button></div>
     <section id="hud" class="hud hidden" aria-label="飛行情報">
       <div class="compass"><div id="heading-ticks">W &nbsp; · &nbsp; NW &nbsp; · &nbsp; N &nbsp; · &nbsp; NE &nbsp; · &nbsp; E</div><b id="heading">000° N</b></div>
@@ -50,9 +50,9 @@
         <div class="setting-grid">
           <label>飛行モード<select id="mode"><option value="angle">ANGLE — 傾き・高度を補助</option><option value="acro">ACRO — 回転速度を操作</option></select></label>
           <label>カメラ<select id="camera"><option value="fpv">FPV / 一人称</option><option value="chase">CHASE / 追従カメラ</option></select></label>
-          <label>光と空<select id="light"><option value="golden">GOLDEN HOUR / 夕景</option><option value="day">CLEAR DAY / 晴天</option><option value="blue">AFTERGLOW / 残照</option></select></label>
+          <label>光と空<select id="light"><option value="golden">GOLDEN HOUR / 夕景</option><option value="day" selected>CLEAR DAY / 晴天</option><option value="blue">AFTERGLOW / 残照</option></select></label>
           <label>海況<select id="sea"><option value="calm">CALM / 穏やか</option><option value="breeze" selected>BREEZE / そよ風</option><option value="swell">SWELL / うねり</option></select></label>
-          <label>画質<select id="quality"><option value="ultra">ULTRA / 最大2×解像度</option><option value="high" selected>HIGH / 最大1.5×解像度</option><option value="balanced">BALANCED / 軽量・影とにじみOFF</option></select></label>
+          <label>画質<select id="quality"><option value="ultra">ULTRA / 最高画質・高負荷</option><option value="high" selected>HIGH / 高画質</option><option value="balanced">BALANCED / 軽量</option></select></label>
           <label>視野角 <output id="fov-value">95°</output><input id="fov" type="range" min="65" max="120" value="95" /></label>
           <label>カメラ仰角 <output id="tilt-value">12°</output><input id="tilt" type="range" min="0" max="45" value="12" /></label>
           <label>ACROレート <output id="rate-value">520°/s</output><input id="rate" type="range" min="180" max="900" value="520" step="10" /></label>
