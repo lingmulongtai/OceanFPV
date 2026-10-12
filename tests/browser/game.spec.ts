@@ -91,7 +91,7 @@ test('settings persist, help is keyboard accessible and mobile panels fit', asyn
 test('WebGL-unavailable browser gets a clear recovery screen', async ({page})=> {
   await page.addInitScript(()=> {
     const original=HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext=function(type:string,...args:any[]) {
+    HTMLCanvasElement.prototype.getContext=function(this:HTMLCanvasElement,type:string,...args:any[]) {
       if(type==='webgl2'||type==='webgl'||type==='experimental-webgl') return null;
       return (original as any).call(this,type,...args);
     } as any;
