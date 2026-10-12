@@ -6,6 +6,8 @@ import { Ocean } from './ocean';
 import { type SeaState } from './sea';
 import { GATES } from './race';
 import { closedHullGeometry } from './hull';
+import { buildCruiseShip } from './cruise';
+import { vesselPose } from './navigation';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
 type Collider = { min: T.Vector3; max: T.Vector3 };
@@ -44,15 +46,16 @@ export class World {
   hemisphere = new T.HemisphereLight(0xbdddea, 0x243b41, 1.75);
   ocean: Ocean;
   radar = new T.Group();
+  cruise=buildCruiseShip();
+  yacht=new T.Group();
   gateMeshes: T.Group[] = [];
   colliders: Collider[] = [];
   islands: { x: number; z: number; size: number; height: number }[] = [];
   light: LightPreset = 'golden';
   private propellers: T.Mesh[] = [];
-  private hullY = 0;
 
   constructor() {
-    this.scene.add(this.ship,this.drone,this.sky,this.sunlight,this.hemisphere);
+    this.scene.add(this.ship,this.cruise.root,this.yacht,this.drone,this.sky,this.sunlight,this.hemisphere);
     this.sky.scale.setScalar(10000);
     this.sky.material.uniforms.turbidity.value = 4;
     this.sky.material.uniforms.rayleigh.value = 2.4;
@@ -267,7 +270,7 @@ export class World {
     this.scene.add(root);
   }
   private buildYacht() {
-    const root=new T.Group();root.position.set(78,0,75);root.rotation.y=-0.6;
+    const root=this.yacht;root.position.set(78,0,75);root.rotation.y=0;
     const hull=new T.Mesh(new T.SphereGeometry(1,40,16),new T.MeshPhysicalMaterial({color:0xeee9dc,roughness:0.22,metalness:0.1,clearcoat:1}));hull.scale.set(4.5,2,14);hull.position.y=0.6;root.add(hull);
     const deck=new T.Mesh(new RoundedBoxGeometry(6.5,2.1,15,3,0.4),new T.MeshStandardMaterial({color:0xe6e2d5,roughness:0.4}));deck.position.set(0,2.5,1);root.add(deck);
     const windows=new T.Mesh(new RoundedBoxGeometry(5.4,1.2,7,2,0.18),new T.MeshPhysicalMaterial({color:0x173941,metalness:0.5,roughness:0.11,clearcoat:1}));windows.position.set(0,4,0);root.add(windows);
@@ -277,14 +280,24 @@ export class World {
   update(time: number,camera: T.Vector3,state: SeaState,dronePosition:T.Vector3,orientation:T.Quaternion,motor:number) {
     this.ocean.update(time,camera,state);
     this.sky.material.uniforms.time.value=time;
-    this.hullY=this.ocean.heightAt(0,0)*0.4;
-    this.ship.position.y=this.hullY;
-    this.ship.rotation.x=(this.ocean.heightAt(0,25)-this.ocean.heightAt(0,-25))/50*0.32;
-    this.ship.rotation.z=(this.ocean.heightAt(-4,0)-this.ocean.heightAt(4,0))/8*0.18;
+    this.advanceVessels(time);
     this.radar.rotation.y=time*0.7;
     this.drone.position.copy(dronePosition);this.drone.quaternion.copy(orientation);
     this.propellers.forEach((p,i)=>p.rotation.y=time*(i%2?-1:1)*motor*170);
-    this.ocean.material.uniforms.vessels.value[0].set(this.ship.position.x,0,this.ship.position.z,92);
+  }
+  advanceVessels(time:number) {
+    for(const [i,kind,root,length,width]of [[0,'explorer',this.ship,92,4.4],[1,'cruise',this.cruise.root,260,17],[2,'yacht',this.yacht,28,4.5]] as const) {
+      const p=vesselPose(kind,time),forward=new T.Vector3(-Math.sin(p.heading),0,-Math.cos(p.heading));
+      const h=this.ocean.heightAt(p.x,p.z)*(kind==='cruise'?0.2:0.45),half=length*0.3;
+      const front=this.ocean.heightAt(p.x+forward.x*half,p.z+forward.z*half),back=this.ocean.heightAt(p.x-forward.x*half,p.z-forward.z*half);
+      root.position.set(p.x,h,p.z);root.rotation.set((front-back)/(half*2)*0.55,p.heading,0,'YXZ');root.updateMatrixWorld(true);
+      this.ocean.material.uniforms.vessels.value[i].set(p.x,0,p.z,length);this.ocean.material.uniforms.headings.value[i]=p.heading;
+      this.ocean.material.uniforms.vesselWidths.value[i]=width;this.ocean.material.uniforms.vesselSpeeds.value[i]=p.speed;
+    }
+  }
+  launchPose(time:number) {
+    this.advanceVessels(time);const pose=vesselPose('explorer',time);
+    return {position:this.ship.localToWorld(new T.Vector3(0,5.4,38)),velocity:new T.Vector3(pose.vx,0,pose.vz),heading:pose.heading};
   }
   collision(p:T.Vector3,_time:number,_state:SeaState):string|null {
     if(p.y < this.ocean.heightAt(p.x,p.z)+0.18) return '海面に接触しました';
@@ -295,6 +308,12 @@ export class World {
       if(Math.abs(local.x)<width+0.2&&local.y<1.84+0.75*Math.pow(1-u,4)) return '船体・甲板に接触しました';
     }
     for(const c of this.colliders) if(local.x>c.min.x-0.2&&local.x<c.max.x+0.2&&local.y>c.min.y-0.2&&local.y<c.max.y+0.2&&local.z>c.min.z-0.2&&local.z<c.max.z+0.2) return '船の構造物に接触しました';
+    const passenger=this.cruise.root.worldToLocal(p.clone());
+    if(passenger.z>-130&&passenger.z<130) {
+      const u=(passenger.z+130)/260,w=17*(u>0.78?T.MathUtils.lerp(Math.pow(Math.max(Math.sin(Math.PI*u),0.001),0.42),0.72,T.MathUtils.smoothstep(u,0.78,1)):Math.pow(Math.max(Math.sin(Math.PI*u),0.001),0.42));
+      if(Math.abs(passenger.x)<w+0.2&&passenger.y<9.2+2.12*Math.pow(1-u,4))return '客船の船体・甲板に接触しました';
+    }
+    for(const c of this.cruise.boxes)if(passenger.x>c.min.x-0.2&&passenger.x<c.max.x+0.2&&passenger.y>c.min.y-0.2&&passenger.y<c.max.y+0.2&&passenger.z>c.min.z-0.2&&passenger.z<c.max.z+0.2)return '客船の構造物に接触しました';
     for(const island of this.islands) {
       const h=this.terrain(p.x-island.x,p.z-island.z,island.size,island.height);
       if(p.y<h+0.25) return '島に接触しました';
@@ -302,7 +321,7 @@ export class World {
     if(Math.hypot(p.x-145,p.z+135)<3.5&&p.y<39) return '灯台に接触しました';
     if(Math.pow((p.x-145)/36,2)+Math.pow((p.z+135)/27,2)<1&&p.y<11) return '岩礁に接触しました';
     // Yacht local-space volume, conservative for close fly-bys.
-    const yacht=p.clone().sub(new T.Vector3(78,0,75)).applyAxisAngle(new T.Vector3(0,1,0),0.6);
+    const yacht=this.yacht.worldToLocal(p.clone());
     if(Math.abs(yacht.x)<4.6&&Math.abs(yacht.z)<14&&yacht.y<5.1) return 'ヨットに接触しました';
     return null;
   }

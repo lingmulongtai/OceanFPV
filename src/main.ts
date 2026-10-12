@@ -120,6 +120,7 @@ async function boot() {
   function startFlight() {
     input.poll();if(!canArm()) {openDialog('settings-dialog');return;}
     flight.reset();race.reset(selectedRace);flightTime=0;playing=true;paused=false;accumulator=0;input.clear();
+    const launch=world.launchPose(time);flight.position.copy(launch.position);flight.previous.copy(launch.position);flight.velocity.copy(launch.velocity);flight.orientation.setFromAxisAngle(new T.Vector3(0,1,0),launch.heading);
     show('intro',false);show('intro-footer',false);show('scene-label',false);show('hud',hudVisible);document.body.classList.add('flying');
     flight.armed=true;world.updateGates(race.active,race.next);void sound.start();
     toast(selectedRace?'緑のゲートを番号順に通過。6ゲート × 3周。':'Spaceで上昇、WASDで傾き、Q/Eで旋回。Escで一時停止。',5500);
@@ -298,6 +299,7 @@ async function boot() {
     if(!supported||document.hidden) return;
     if(!paused) time+=dt;
     world.ocean.advance(time,sea);
+    world.advanceVessels(time);
     if(playing&&!paused&&!flight.crashed&&!race.finished) {
       accumulator+=dt;
       const sticks=input.sticks();
@@ -319,7 +321,7 @@ async function boot() {
     if(!playing) {
       const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
       const drift=reduced?0:Math.sin(time*0.045)*4;
-      camera.fov=58;camera.position.set(52+drift,18,76+drift);camera.lookAt(-24,4,-8);
+      camera.fov=58;camera.position.set(112+drift,42,137+drift);camera.lookAt(-25,10,-125);
       world.drone.visible=false;
     } else {
       camera.fov=fov;

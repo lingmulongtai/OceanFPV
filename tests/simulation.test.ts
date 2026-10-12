@@ -7,6 +7,17 @@ import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
 import { closedHullGeometry } from '../src/hull';
+import { vesselPose } from '../src/navigation';
+
+test('vessel routes move continuously and the bow follows the travel direction',()=> {
+  for(const kind of ['explorer','cruise','yacht'] as const)for(let t=0;t<800;t+=13) {
+    const pose=vesselPose(kind,t),next=vesselPose(kind,t+0.001);
+    assert.ok(pose.speed>1);assert.ok(Math.hypot(next.x-pose.x,next.z-pose.z)>0);
+    assert.ok(Math.abs((next.x-pose.x)/0.001-pose.vx)<0.002);assert.ok(Math.abs((next.z-pose.z)/0.001-pose.vz)<0.002);
+    assert.ok(Math.abs(-Math.sin(pose.heading)*pose.speed-pose.vx)<1e-10);
+    assert.ok(Math.abs(-Math.cos(pose.heading)*pose.speed-pose.vz)<1e-10);
+  }
+});
 
 test('bow and stern are closed with every hull edge shared by two faces',()=> {
   for(const geo of [closedHullGeometry(),closedHullGeometry(260,34,9,7,true)]) {

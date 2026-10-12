@@ -79,8 +79,9 @@ export class Ocean {
         for(int i=0;i<3;i++) {
           vec2 rel=p-vessels[i].xz;float c=cos(headings[i]),s=sin(headings[i]);vec2 local=vec2(c*rel.x-s*rel.y,s*rel.x+c*rel.y);
           float length=vessels[i].w,width=vesselWidths[i],speed=vesselSpeeds[i],aft=local.y-length*0.5,bow=local.y+length*0.5;
-          float trail=step(0.0,aft)*exp(-aft/300.0)*smoothstep(0.5,3.0,speed),kelvin=abs(local.x)-width-aft*0.354,crest=exp(-kelvin*kelvin/(3.0+aft*0.1));
-          wakeFoam+=trail*(exp(-local.x*local.x/(width*width+aft*1.1))*0.63+crest*0.72)*smoothstep(0.18,0.75,n);
+          float safeAft=max(aft,0.0);
+          float trail=step(0.0,aft)*exp(-safeAft/300.0)*smoothstep(0.5,3.0,speed),kelvin=abs(local.x)-width-safeAft*0.354,crest=exp(-kelvin*kelvin/(3.0+safeAft*0.1));
+          wakeFoam+=trail*(exp(-local.x*local.x/max(width*width+safeAft*1.1,0.1))*0.63+crest*0.72)*smoothstep(0.18,0.75,n);
           wakeWave+=trail*crest*sin(kelvin*1.7-aft*0.14-time*1.8)*0.35;
           float edge=exp(-pow((abs(local.x)-width)/1.8,2.0))*(1.0-smoothstep(length*0.44,length*0.53,abs(local.y))),bowFoam=exp(-bow*bow/40.0-local.x*local.x/(width*width));
           wakeFoam+=(edge*0.22+bowFoam*0.75)*smoothstep(0.2,0.65,n)*smoothstep(0.2,3.0,speed);

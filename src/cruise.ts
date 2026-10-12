@@ -1,0 +1,93 @@
+import * as T from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { closedHullGeometry } from './hull';
+
+export type VesselBox={min:T.Vector3;max:T.Vector3};
+export function buildCruiseShip() {
+  const root=new T.Group();root.name='Ocean Meridian · 260 m';
+  const white=new T.MeshStandardMaterial({color:0xf2f0e5,roughness:0.38,metalness:0.12});
+  const navy=new T.MeshStandardMaterial({color:0x172f48,roughness:0.4,metalness:0.25});
+  const glass=new T.MeshPhysicalMaterial({color:0x326279,metalness:0.48,roughness:0.11,clearcoat:1,clearcoatRoughness:0.08});
+  const teak=new T.MeshStandardMaterial({color:0xbb9874,roughness:0.75});
+  const orange=new T.MeshStandardMaterial({color:0xde6b22,roughness:0.38});
+  const chrome=new T.MeshStandardMaterial({color:0xc1cdd0,metalness:0.82,roughness:0.28});
+  const black=new T.MeshStandardMaterial({color:0x182329,roughness:0.75});
+  const pool=new T.MeshPhysicalMaterial({color:0x36b9c7,roughness:0.08,metalness:0.12,clearcoat:1});
+  const boxes:VesselBox[]=[],buckets=new Map<T.Material,T.BufferGeometry[]>();
+  const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1))=> {
+    g.applyMatrix4(new T.Matrix4().compose(new T.Vector3(...p),new T.Quaternion().setFromEuler(rotation),scale));
+    if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(g.index?g.toNonIndexed():g);
+  };
+  const box=(s:number[],p:number[],m=white,solid=false,round=0)=> {
+    add(round?new RoundedBoxGeometry(s[0],s[1],s[2],2,round):new T.BoxGeometry(s[0],s[1],s[2]),p,m);
+    if(solid)boxes.push({min:new T.Vector3(p[0]-s[0]/2,p[1]-s[1]/2,p[2]-s[2]/2),max:new T.Vector3(p[0]+s[0]/2,p[1]+s[1]/2,p[2]+s[2]/2)});
+  };
+  const rod=(a:number[],b:number[],r=0.04,m=chrome)=> {
+    const start=new T.Vector3(...a),end=new T.Vector3(...b),g=new T.CylinderGeometry(r,r,start.distanceTo(end),8);
+    const q=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),end.clone().sub(start).normalize());
+    g.applyMatrix4(new T.Matrix4().compose(start.add(end).multiplyScalar(0.5),q,new T.Vector3(1,1,1)));if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(g.toNonIndexed());
+  };
+  const hullMat=white.clone();hullMat.side=T.DoubleSide;
+  hullMat.onBeforeCompile=shader=> {
+    shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 shipPosition;').replace('#include <begin_vertex>','#include <begin_vertex>\nshipPosition=position;');
+    shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 shipPosition;').replace('#include <color_fragment>','#include <color_fragment>\nfloat stripe=1.0-smoothstep(2.9,3.15,abs(shipPosition.y-3.6));\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.022,0.054,0.091),stripe*0.95);\ndiffuseColor.rgb*=mix(0.28,1.0,smoothstep(-0.8,0.15,shipPosition.y));');
+  };
+  const hull=new T.Mesh(closedHullGeometry(260,34,9,7,true),hullMat);hull.castShadow=hull.receiveShadow=true;root.add(hull);
+  // Tall sheer hull, recessed balcony walls and overhanging deck slabs.
+  for(let deck=0;deck<8;deck++) {
+    const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3;
+    box([27.5,2.56,length],[0,y,z],white,true,0.1);
+    box([32.6,0.28,length+3],[0,y+1.44,z],white);
+    const start=z-length/2+2,end=z+length/2-2;
+    for(const side of [-1,1]) {
+      box([0.09,1.62,length-4],[side*13.8,y+0.02,z],glass);
+      for(let cabin=start;cabin<end;cabin+=3.5) {
+        box([2.1,1.84,0.075],[side*14.85,y,cabin],white);
+        box([0.055,0.96,3.32],[side*16.05,y-0.16,cabin+1.72],glass);
+        rod([side*16.18,y+0.44,cabin],[side*16.18,y+0.44,cabin+3.5],0.035);
+        // Balcony chairs and table are actual geometry at FPV distance.
+        if(deck<5) {box([0.5,0.06,0.5],[side*14.9,y-0.58,cabin+0.95],teak);rod([side*14.9,y-1,cabin+0.95],[side*14.9,y-0.58,cabin+0.95],0.04);}
+      }
+    }
+  }
+  // Continuous bow bridge with individual mullions and a cantilevered roof.
+  box([31,2.5,9],[0,32.3,-70],white,true,0.35);box([31.2,1.65,0.09],[0,32.6,-74.56],glass);
+  for(let x=-14;x<=14;x+=2)box([0.075,1.8,0.14],[x,32.6,-74.7],white);
+  box([34.2,0.42,12],[0,33.82,-70],white);
+  for(const side of [-1,1]) {box([0.08,1.6,8],[side*15.58,32.6,-70],glass);box([2.8,0.2,10],[side*16.2,31,-70],white);}
+  // Teak promenade, bow foredeck, stern terraces and pool deck.
+  box([25,0.16,21],[0,9.2,-109],teak);
+  box([26,0.16,24],[0,9.2,112],teak);
+  box([28,0.18,74],[0,34.1,18],teak,true);
+  for(const z of [7,37]) {
+    box([9,0.5,17],[0,34.45,z],white);box([7.7,0.1,15.7],[0,34.75,z],pool);
+    for(const side of [-1,1])for(let offset=-5;offset<=5;offset+=2.5) {box([0.65,0.17,1.7],[side*6.4,34.35,z+offset],teak);box([0.65,0.7,0.15],[side*6.4,34.7,z+offset+0.78],white);}
+  }
+  for(let tier=0;tier<3;tier++) {box([30-tier*3,0.2,9],[0,12+tier*5.7,106-tier*7],teak);for(const side of [-1,1])rod([side*(14-tier*1.5),13+tier*5.7,102-tier*7],[side*(14-tier*1.5),13+tier*5.7,110-tier*7]);}
+  // Eighteen enclosed orange lifeboats, davits and survival equipment.
+  for(const side of [-1,1]) for(let z=-68;z<=60;z+=16) {
+    add(new T.SphereGeometry(1,24,12),[side*18,11.65,z],orange,new T.Euler(),new T.Vector3(2,1.25,5.3));
+    box([3.3,1,7.2],[side*18,12.8,z],white,false,0.28);box([3.4,0.5,0.08],[side*18,12.9,z-3.65],glass);
+    for(const dz of [-3.8,3.8]) {rod([side*14,14,z+dz],[side*19,14.7,z+dz],0.12,white);rod([side*19,14.7,z+dz],[side*19,13,z+dz],0.055,chrome);}
+  }
+  // Funnel, exhaust stacks, radar domes, communications mast and railings.
+  box([9,7.5,14],[0,39,69],navy,true,0.9);box([10,0.45,15],[0,42.9,69],chrome);
+  for(const x of [-2.7,0,2.7])add(new T.CylinderGeometry(0.72,0.72,2.3,20),[x,43.6,69],black);
+  for(const z of [-47,-20]) {add(new T.SphereGeometry(2.6,32,20),[0,38.2,z],white);add(new T.CylinderGeometry(1.8,2.1,2,24),[0,35.6,z],white);}
+  rod([0,34,-59],[0,47,-59],0.22,white);rod([-7,42,-59],[7,42,-59],0.09,chrome);
+  for(let x=-4;x<=4;x+=2)rod([x,42,-59],[x,44,-59],0.035);
+  for(const side of [-1,1])for(const [y,start,end,width]of [[35,-53,80,14],[10,-125,-98,12],[10,101,123,13]]) {
+    rod([side*width,y,start],[side*width,y,end]);rod([side*width,y-0.5,start],[side*width,y-0.5,end],0.025);
+    for(let z=start;z<=end;z+=2.2)rod([side*width,y-1,z],[side*width,y,z]);
+  }
+  // Hull portholes, seam bands, anchor recesses and bow mooring machinery.
+  for(const side of [-1,1])for(let z=-85;z<99;z+=3.4) {add(new T.CylinderGeometry(0.25,0.25,0.06,16),[side*16.85,7.6,z],black,new T.Euler(0,0,Math.PI/2));}
+  for(const side of [-1,1]) {box([0.07,2.4,3.3],[side*11.7,7,-113],navy);rod([side*11.9,7.2,-113],[side*11.9,4.8,-113],0.1,chrome);}
+  for(const x of [-5,5])for(const z of [-113,116]) {add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,9.75,z],chrome);box([1.9,0.12,1.2],[x,9.32,z],navy);}
+  for(const [m,geometries]of buckets) {const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}
+  const labelCanvas=document.createElement('canvas');labelCanvas.width=1024;labelCanvas.height=128;const ctx=labelCanvas.getContext('2d')!;ctx.fillStyle='#d8dfe0';ctx.font='600 68px Arial';ctx.textAlign='center';ctx.fillText('OCEAN  MERIDIAN',512,87);
+  const label=new T.CanvasTexture(labelCanvas);label.colorSpace=T.SRGBColorSpace;
+  for(const side of [-1,1]) {const mesh=new T.Mesh(new T.PlaneGeometry(23,2.8),new T.MeshStandardMaterial({map:label,transparent:true,depthWrite:false,roughness:0.5}));mesh.position.set(side*16.2,5.2,-96);mesh.rotation.y=side*Math.PI/2;root.add(mesh);}
+  return {root,boxes,paint:[white,hullMat],teak};
+}
