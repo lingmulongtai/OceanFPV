@@ -10,6 +10,7 @@ import { buildCruiseShip } from './cruise';
 import { vesselPose } from './navigation';
 import { loadSurfaces, type SurfaceGroup } from './surfaces';
 import { terrainHeight } from './terrain';
+import { CoastalForest, type TreeSite } from './vegetation';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
 type Collider = { min: T.Vector3; max: T.Vector3 };
@@ -60,6 +61,9 @@ export class World {
   private surfaceGroups:SurfaceGroup[]=[];
   private naturalObstacles:{x:number;z:number;y:number;radius:number;height:number}[]=[];
   private rockMaterial=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});
+  private treeSites:TreeSite[]=[];
+  forest:CoastalForest|null=null;
+  quality='high';
 
   constructor() {
     this.scene.add(this.ship,this.cruise.root,this.yacht,this.drone,this.sky,this.sunlight,this.hemisphere);
@@ -88,7 +92,14 @@ export class World {
     this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:this.cruise.paint,colour:false},{asset:'wood_floor_deck',resolution:'1k',materials:[this.cruise.teak],colour:true},{asset:'rocky_terrain',resolution:'2k',materials:[this.rockMaterial],colour:true});
     this.scene.fog = new T.FogExp2(0x9facac,0.00019);
   }
-  loadSurfaceTextures(anisotropy:number) {return loadSurfaces(this.surfaceGroups,anisotropy);}
+  async loadSurfaceTextures(renderer:T.WebGLRenderer) {
+    const [missing,forest]=await Promise.all([loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy()),CoastalForest.load(renderer,this.treeSites)]);
+    if(forest) {
+      this.forest=forest;this.scene.add(forest.group);
+      for(const site of this.treeSites)for(const mesh of site.fallback){this.scene.remove(mesh);mesh.geometry.dispose();(mesh.material as T.Material).dispose();}
+    }else missing.push('coastal tree');
+    return missing;
+  }
   setLight(preset: LightPreset) {
     this.light = preset;
     const elevation = preset === 'day' ? 46 : preset === 'golden' ? 9 : 3;
@@ -261,13 +272,16 @@ export class World {
     for(let i=0;i<7;i++) {const g=new T.IcosahedronGeometry(1,2),p=g.attributes.position;for(let v=0;v<p.count;v++){const k=0.9+0.1*Math.sin(p.getX(v)*17+p.getY(v)*19+p.getZ(v)*11);p.setXYZ(v,p.getX(v)*k,p.getY(v)*k,p.getZ(v)*k);}g.scale(i?2.6:3.1,i?3:4,i?2.6:3.1);g.translate(i?Math.cos(i*2.4)*2.3:0,6+i*0.55,i?Math.sin(i*2.4)*2.3:0);g.computeVertexNormals();crownParts.push(g);}
     const crowns=new T.InstancedMesh(mergeGeometries(crownParts)!,new T.MeshStandardMaterial({color:0xffffff,roughness:0.9}),170);crownParts.forEach(g=>g.dispose());
     const trunks=new T.InstancedMesh(new T.CylinderGeometry(0.22,0.48,8,8),new T.MeshStandardMaterial({color:0x504437,roughness:1}),170);
+    const matrices:T.Matrix4[]=[];
     for(let i=0;i<170;i++) {
       const angle=i*2.399,r=Math.sqrt((i+1)/171)*size*0.69,tx=Math.cos(angle)*r,tz=Math.sin(angle)*r,y=this.terrain(tx,tz,size,height),scale=0.7+(i%11)*0.055;
       const matrix=new T.Matrix4().compose(new T.Vector3(x+tx,y,z+tz),new T.Quaternion().setFromAxisAngle(new T.Vector3(0,1,0),angle),new T.Vector3(scale,scale,scale));
+      matrices.push(matrix);
       crowns.setMatrixAt(i,matrix);trunks.setMatrixAt(i,new T.Matrix4().compose(new T.Vector3(x+tx,y+4*scale,z+tz),new T.Quaternion(),new T.Vector3(scale,scale,scale)));crowns.setColorAt(i,new T.Color().setHSL(0.26+(i%5)*0.007,0.23,0.15+(i%9)*0.009));
-      this.naturalObstacles.push({x:x+tx,z:z+tz,y,radius:3.2*scale,height:12*scale});
+      this.naturalObstacles.push({x:x+tx,z:z+tz,y,radius:5*scale,height:10*scale});
     }
     crowns.castShadow=trunks.castShadow=true;this.scene.add(crowns,trunks);
+    this.treeSites.push({matrices,fallback:[crowns,trunks]});
     const rocks=new T.InstancedMesh(new T.IcosahedronGeometry(1,2),this.rockMaterial,90);
     for(let i=0;i<90;i++) {const angle=i*2.399,r=size*(0.68+(i%9)*0.027),tx=Math.cos(angle)*r,tz=Math.sin(angle)*r,y=this.terrain(tx,tz,size,height),s=2+(i%7)*0.6;
       rocks.setMatrixAt(i,new T.Matrix4().compose(new T.Vector3(x+tx,y+s*0.25,z+tz),new T.Quaternion().setFromEuler(new T.Euler(angle,angle*0.7,angle*0.3)),new T.Vector3(s*1.6,s*0.8,s)));
@@ -300,6 +314,7 @@ export class World {
     this.ocean.update(time,camera,state);
     this.sky.material.uniforms.time.value=time;
     this.advanceVessels(time);
+    this.forest?.update(camera,time,this.quality,this.light);
     this.radar.rotation.y=time*0.7;
     this.drone.position.copy(dronePosition);this.drone.quaternion.copy(orientation);
     this.propellers.forEach((p,i)=>p.rotation.y=time*(i%2?-1:1)*motor*170);

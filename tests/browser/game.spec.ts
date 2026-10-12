@@ -13,6 +13,8 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await expect(page.locator('#unsupported')).toBeHidden();
   const render=await page.evaluate(()=> (window as any).__OCEANFPV__.getState());
   expect(render.triangles).toBeGreaterThan(30000);
+  const forest=await page.evaluate(()=> (window as any).__OCEANFPV__.world.forest?.sourceTriangles??0);
+  expect(forest).toBeGreaterThan(1000000);
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
 });

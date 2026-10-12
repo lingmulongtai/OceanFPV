@@ -71,6 +71,7 @@ async function boot() {
   function resize() {
     const ratio=value('quality')==='ultra'?2:Math.min(devicePixelRatio||1,value('quality')==='high'?1.5:1);
     world.ocean.setQuality(value('quality'));
+    world.quality=value('quality');
     renderer.shadowMap.enabled=value('quality')!=='balanced';
     const samples=value('quality')==='balanced'?0:Math.min(4,renderer.capabilities.maxSamples);
     for(const target of [composer.renderTarget1,composer.renderTarget2]) {
@@ -357,7 +358,7 @@ async function boot() {
     if(now-fpsTime>1000) {$('fps').textContent=`${Math.round(frameCount*1000/(now-fpsTime))} FPS`;frameCount=0;fpsTime=now;}
   }
   world.updateGates(false,0);
-  const [missingSurfaces,loadedSky]=await Promise.all([world.loadSurfaceTextures(renderer.capabilities.getMaxAnisotropy()),loadPhotographicSky()]);
+  const [missingSurfaces,loadedSky]=await Promise.all([world.loadSurfaceTextures(renderer),loadPhotographicSky()]);
   photoSky=loadedSky;
   if(photoSky){const generator=new T.PMREMGenerator(renderer);photoEnvironment=generator.fromEquirectangular(photoSky.texture);generator.dispose();applySettings();}
   camera.position.set(112,42,137);camera.lookAt(-25,10,-125);

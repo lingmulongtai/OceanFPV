@@ -13,7 +13,8 @@
 | [Rocky Terrain](https://polyhaven.com/a/rocky_terrain) | Amal Kumar | Coastal rock/terrain colour, normal and roughness |
 | [Wood Floor Deck](https://polyhaven.com/a/wood_floor_deck) | Dimitrios Savva | Passenger-vessel teak deck |
 | [Kloofendal 48d Partly Cloudy (Pure Sky)](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky) | Greg Zaal, Jarod Guest | 4K HDR daylight sky and matching environment illumination |
+| [Island Tree 02](https://polyhaven.com/a/island_tree_02) | Rob Tuytel, Rico Cilliers | Captured coastal tree, near geometry and model-derived distant forest impostors |
 
-Downloaded from the official asset service on 2026-10-12. Source URLs, original MD5 and SHA-256 hashes are retained in `public/textures/manifest.json`. [Asset license](https://polyhaven.com/license), [CC0 legal code](https://creativecommons.org/publicdomain/zero/1.0/legalcode). OceanFPV is independent of and not endorsed by Poly Haven. The asset API was used only during development with an identifying user-agent; the game makes no live API calls.
+Downloaded from the official asset service on 2026-10-12/13. Source URLs, original MD5 and SHA-256 hashes are retained in `public/textures/manifest.json` and `public/models/island_tree_02/manifest.json`. [Asset license](https://polyhaven.com/license), [CC0 legal code](https://creativecommons.org/publicdomain/zero/1.0/legalcode). OceanFPV is independent of and not endorsed by Poly Haven. The asset API was used only during development with an identifying user-agent; the game makes no live API calls.
 
-Ship geometry, terrain, ocean simulation and UI are generated locally in code. No API keys, external texture CDN or runtime model downloads are required.
+Ship geometry, terrain, ocean simulation and UI are generated locally in code. The photographic surfaces, HDR sky and captured tree are self-hosted. No API keys or external runtime asset services are required.
