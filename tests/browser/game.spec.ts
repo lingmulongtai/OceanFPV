@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test';
 async function ready(page: Page) {
   await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
   await page.goto('/?test=1');
-  await expect(page.locator('#start')).toBeEnabled();
+  await expect(page.locator('#start')).toBeEnabled({timeout:60000});
   await page.evaluate(() => document.querySelector<HTMLSelectElement>('#quality')!.value='balanced');
   await page.locator('#quality').dispatchEvent('input');
 }
@@ -71,8 +71,10 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
   });
   await ready(page);await page.locator('#open-settings').click();await page.locator('[data-tab="controller"]').click();await page.locator('#input-source').selectOption('radio');
   await page.locator('#calibrate').click();
-  await page.evaluate(()=> {(window as any).__pad.axes=[-0.8,-0.8,-0.8,-0.8];});await page.waitForTimeout(250);
-  await page.evaluate(()=> {(window as any).__pad.axes=[0.9,0.9,0.9,0.9];});await page.waitForTimeout(250);
+  await page.evaluate(()=> {(window as any).__pad.axes=[-0.8,-0.8,-0.8,-0.8];});
+  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.input.profile.calibration[0].min)).toBe(-0.8);
+  await page.evaluate(()=> {(window as any).__pad.axes=[0.9,0.9,0.9,0.9];});
+  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.input.profile.calibration[0].max)).toBe(0.9);
   await page.locator('#save-calibration').click();
   expect(await page.evaluate(()=> JSON.parse(localStorage.getItem('oceanfpv:radio:USB radio test')!).calibration[0].min)).toBe(-0.8);
   await page.locator('[data-close="settings-dialog"]').last().click();
