@@ -12,3 +12,11 @@ export function terrainHeight(x:number,z:number,size:number,height:number) {
   const cliffs= Math.pow(Math.max(0,noise(x*0.021-8,z*0.018+4)-0.25),1.3)*height*0.25;
   return Math.max(-9,mask*(height*(0.3+ridges*0.85)+cliffs)-9);
 }
+/** The same diagonal interpolation as the 192×192 rendered terrain grid. */
+export function terrainSurfaceHeight(x:number,z:number,size:number,height:number) {
+  const extent=size*1.2,step=extent*2/192;if(Math.abs(x)>extent||Math.abs(z)>extent)return -9;
+  const gx=(x+extent)/step,gz=(z+extent)/step,ix=Math.min(191,Math.floor(gx)),iz=Math.min(191,Math.floor(gz)),u=gx-ix,v=gz-iz;
+  const px=-extent+ix*step,pz=-extent+iz*step,a=terrainHeight(px,pz,size,height),b=terrainHeight(px,pz+step,size,height),d=terrainHeight(px+step,pz,size,height);
+  if(u+v<=1)return a+(b-a)*v+(d-a)*u;
+  const c=terrainHeight(px+step,pz+step,size,height);return c+(b-c)*(1-u)+(d-c)*(1-v);
+}

@@ -34,13 +34,19 @@ export class CoastalForest {
   }
   private constructor(renderer:T.WebGLRenderer,source:T.Group,matrices:T.Matrix4[]) {
     this.points=matrices.map(matrix=>{const position=new T.Vector3(),q=new T.Quaternion(),scale=new T.Vector3();matrix.decompose(position,q,scale);return {matrix,position,scale,yaw:new T.Euler().setFromQuaternion(q,'YXZ').y};});
-    const bounds=new T.Box3().setFromObject(source),size=bounds.getSize(new T.Vector3()),center=bounds.getCenter(new T.Vector3()),factor=10/size.y;
-    this.span=Math.max(Math.hypot(size.x,size.z),size.y)*factor*1.12;
+    const bounds=new T.Box3().setFromObject(source),size=bounds.getSize(new T.Vector3()),foot=new T.Vector3(),factor=10/size.y;let footSamples=0;
+    source.traverse(object=> {
+      if(!(object instanceof T.Mesh)||(object.material as T.Material).name!=='island_tree_02')return;
+      const position=object.geometry.attributes.position,point=new T.Vector3();
+      for(let i=0;i<position.count;i++){point.fromBufferAttribute(position,i).applyMatrix4(object.matrixWorld);if(point.y<bounds.min.y+size.y*0.03){foot.add(point);footSamples++;}}
+    });
+    if(footSamples)foot.divideScalar(footSamples);else bounds.getCenter(foot);
+    this.span=2*Math.hypot(Math.max(Math.abs(bounds.min.x-foot.x),Math.abs(bounds.max.x-foot.x)),Math.max(Math.abs(bounds.min.z-foot.z),Math.abs(bounds.max.z-foot.z)))*factor*1.12;
     const bakeScene=new T.Scene(),templates:{geometry:T.BufferGeometry;material:T.MeshStandardMaterial}[]=[];
     let triangleCount=0;
     source.traverse(object=> {
       if(!(object instanceof T.Mesh))return;
-      const geometry=object.geometry.clone();geometry.applyMatrix4(object.matrixWorld);geometry.translate(-center.x,-bounds.min.y,-center.z);geometry.scale(factor,factor,factor);
+      const geometry=object.geometry.clone();geometry.applyMatrix4(object.matrixWorld);geometry.translate(-foot.x,-bounds.min.y,-foot.z);geometry.scale(factor,factor,factor);
       const material=(object.material as T.MeshStandardMaterial).clone();if(!material.map)throw new Error('Incomplete tree textures');material.alphaTest=0.35;material.transparent=false;material.depthWrite=true;
       for(const property of Object.values(material))if(property instanceof T.Texture)property.anisotropy=Math.min(16,renderer.capabilities.getMaxAnisotropy());
       triangleCount+=(geometry.index?.count??geometry.attributes.position.count)/3;templates.push({geometry,material});
@@ -69,7 +75,7 @@ export class CoastalForest {
     this.spriteMaterial.customProgramCacheKey=()=> 'coastal-tree-atlas';
     const plane=new T.PlaneGeometry(1,1);this.frame=new T.InstancedBufferAttribute(new Float32Array(this.points.length),1);plane.setAttribute('treeFrame',this.frame);
     this.sprites=new T.InstancedMesh(plane,this.spriteMaterial,this.points.length);this.sprites.frustumCulled=false;this.group.add(this.sprites);
-    for(const template of templates) {const mesh=new T.InstancedMesh(template.geometry,template.material,8);mesh.count=0;mesh.castShadow=mesh.receiveShadow=true;mesh.frustumCulled=false;this.near.push(mesh);this.group.add(mesh);}
+    for(const template of templates) {const mesh=new T.InstancedMesh(template.geometry,template.material,8);mesh.count=0;mesh.visible=false;mesh.castShadow=mesh.receiveShadow=true;mesh.frustumCulled=false;this.near.push(mesh);this.group.add(mesh);}
   }
   update(camera:T.Vector3,time:number,quality:string,light:string) {
     if(time-this.lastUpdate<0.1&&time>=this.lastUpdate&&quality===this.quality&&light===this.light&&camera.distanceToSquared(this.lastCamera)<0.25)return;
@@ -78,7 +84,7 @@ export class CoastalForest {
     const limit=quality==='ultra'?8:quality==='high'?4:1;
     const closest=this.points.map((p,i)=>({i,d:p.position.distanceToSquared(camera)})).filter(p=>p.d<110*110).sort((a,b)=>a.d-b.d).slice(0,limit);
     const detailed=new Set(closest.map(p=>p.i));
-    this.near.forEach(mesh=>{mesh.count=closest.length;closest.forEach((p,i)=>mesh.setMatrixAt(i,this.points[p.i].matrix));mesh.instanceMatrix.needsUpdate=true;});
+    this.near.forEach(mesh=>{mesh.count=closest.length;mesh.visible=closest.length>0;closest.forEach((p,i)=>mesh.setMatrixAt(i,this.points[p.i].matrix));mesh.instanceMatrix.needsUpdate=true;});
     let spriteCount=0;
     for(let i=0;i<this.points.length;i++) {
       if(detailed.has(i))continue;const point=this.points[i],dx=camera.x-point.position.x,dz=camera.z-point.position.z,angle=Math.atan2(dx,dz);

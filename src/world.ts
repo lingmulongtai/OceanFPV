@@ -9,7 +9,7 @@ import { closedHullGeometry } from './hull';
 import { buildCruiseShip } from './cruise';
 import { vesselPose } from './navigation';
 import { loadSurfaces, type SurfaceGroup } from './surfaces';
-import { terrainHeight } from './terrain';
+import { terrainSurfaceHeight } from './terrain';
 import { CoastalForest, type TreeSite } from './vegetation';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
@@ -289,7 +289,7 @@ export class World {
     rocks.castShadow=rocks.receiveShadow=true;this.scene.add(rocks);
   }
   private terrain(x:number,z:number,size:number,height:number) {
-    return terrainHeight(x,z,size,height);
+    return terrainSurfaceHeight(x,z,size,height);
   }
   private buildLighthouse() {
     const root=new T.Group();root.position.set(145,0,-135);

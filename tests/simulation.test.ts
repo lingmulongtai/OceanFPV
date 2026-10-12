@@ -8,7 +8,18 @@ import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
 import { closedHullGeometry } from '../src/hull';
 import { vesselPose } from '../src/navigation';
-import { terrainHeight } from '../src/terrain';
+import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
+
+test('terrain contact height follows the rendered triangle grid continuously',()=> {
+  const size=260,height=130,step=size*2.4/192;
+  for(let i=0;i<190;i+=17) {
+    const x=-size*1.2+i*step,z=-size*1.2+(i+1)*step;
+    assert.ok(Math.abs(terrainSurfaceHeight(x,z,size,height)-terrainHeight(x,z,size,height))<1e-8);
+    const expected=(terrainHeight(x,z,size,height)+terrainHeight(x+step,z,size,height))/2;
+    assert.ok(Math.abs(terrainSurfaceHeight(x+step/2,z,size,height)-expected)<1e-8);
+    assert.ok(Math.abs(terrainSurfaceHeight(x-0.0001,z,size,height)-terrainSurfaceHeight(x+0.0001,z,size,height))<0.01);
+  }
+});
 
 test('terrain sampling stays finite and continuous through the coastline',()=> {
   for(let x=-400;x<400;x+=31)for(let z=-400;z<400;z+=43) {
