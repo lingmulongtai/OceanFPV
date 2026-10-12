@@ -15,7 +15,9 @@ Browser tests use the development-only `?test=1` inspection hook for determinist
 
 ## Rendering and hardware limits
 
-Screenshots are actual WebGL draws, not generated mockups. Automated Chromium runs headless on this Windows host; measured FPS there is not a hardware-GPU benchmark. Performance depends on the GPU, browser, resolution and quality. BALANCED reduces reflection resolution and disables shadows/bloom; HIGH and ULTRA retain more detail.
+Screenshots are actual WebGL draws, not generated mockups. The production-build verification identified the headless Windows renderer as **ANGLE / Vulkan SwiftShader Device (Subzero)**. Its FPS is not a hardware-GPU benchmark. Performance depends on the GPU, browser, resolution and quality. HIGH/ULTRA support up to 4×MSAA for fine rigging/edges; BALANCED reduces reflection resolution and disables shadows/bloom/MSAA.
+
+The initial PR CI run also passed **15 unit tests and all 7 browser tests on Ubuntu**: [run 38253679438](https://github.com/lingmulongtai/OceanFPV/actions/runs/38253679438). Final changes and main deployments are independently checked by the same workflow.
 
 **Xbox hardware, USB FPV transmitter hardware, Bluetooth latency, unusual HID descriptors and browser-specific real-device mappings are not physically tested.** The input code and browser API paths are tested with virtual Gamepad objects. Device detection still depends on the OS and browser exposing the controller. Follow the in-game controller setup and verify each channel before flight.
 

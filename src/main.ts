@@ -36,7 +36,8 @@ async function boot() {
   world.scene.background=skyTarget.texture;
   const pmrem=new T.PMREMGenerator(renderer);let environment=pmrem.fromCubemap(skyTarget.texture);world.scene.environment=environment.texture;pmrem.dispose();
   const camera=new T.PerspectiveCamera(65,innerWidth/innerHeight,0.06,18000);
-  const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(world.scene,camera));
+  const renderTarget=new T.WebGLRenderTarget(innerWidth,innerHeight,{type:T.HalfFloatType,samples:Math.min(4,renderer.capabilities.maxSamples)});
+  const composer=new EffectComposer(renderer,renderTarget);composer.addPass(new RenderPass(world.scene,camera));
   const bloom=new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),0.17,0.6,1.2);composer.addPass(bloom);composer.addPass(new OutputPass());
   const flight=new Flight(),input=new Inputs(),race=new Race(),sound=new FlightAudio();
   let sea:SeaState='breeze', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0;
@@ -68,6 +69,10 @@ async function boot() {
     const cap=value('quality')==='ultra'?2:value('quality')==='high'?1.5:1;
     world.ocean.setQuality(value('quality'));
     renderer.shadowMap.enabled=value('quality')!=='balanced';
+    const samples=value('quality')==='balanced'?0:Math.min(4,renderer.capabilities.maxSamples);
+    for(const target of [composer.renderTarget1,composer.renderTarget2]) {
+      if(target.samples!==samples) {target.samples=samples;target.dispose();}
+    }
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,cap));renderer.setSize(innerWidth,innerHeight);
     composer.setPixelRatio(Math.min(devicePixelRatio||1,cap));composer.setSize(innerWidth,innerHeight);
     camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
