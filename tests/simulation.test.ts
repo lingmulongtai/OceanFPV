@@ -97,3 +97,8 @@ test('Losing the selected pad pauses even if another pad is still connected', ()
   input.poll();assert.equal(input.sticks().throttle,0);
   pads=[second];input.poll();assert.equal(disconnects,1);
 });
+test('Mouse mode falls back to keyboard when pointer lock is unavailable', () => {
+  Object.assign(globalThis,{window:{addEventListener(){}},document:{addEventListener(){},pointerLockElement:null}});
+  const input=new Inputs();input.useMouse=true;input.keys.add('KeyW');input.keys.add('KeyD');
+  assert.equal(input.sticks().pitch,-1);assert.equal(input.sticks().roll,1);
+});

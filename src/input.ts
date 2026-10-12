@@ -112,9 +112,10 @@ export class Inputs {
   sticks(): StickInput {
     if (this.source !== 'keyboard') return this.pad ? mapGamepad(this.pad, this.source === 'radio', this.profile, this.deadzone) : { ...NEUTRAL };
     const key = (code: string) => Number(this.keys.has(code));
+    const mouseActive = this.useMouse && !!document.pointerLockElement;
     return {
-      roll: this.useMouse ? this.mouse.x : key('KeyD') - key('KeyA'),
-      pitch: this.useMouse ? this.mouse.y : key('KeyS') - key('KeyW'),
+      roll: mouseActive ? this.mouse.x : key('KeyD') - key('KeyA'),
+      pitch: mouseActive ? this.mouse.y : key('KeyS') - key('KeyW'),
       yaw: key('KeyE') - key('KeyQ'), throttle: key('Space') - key('ShiftLeft') - key('ShiftRight'), absoluteThrottle: false,
     };
   }

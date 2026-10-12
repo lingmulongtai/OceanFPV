@@ -75,7 +75,7 @@ async function boot() {
   function applySettings() {
     const oldMode=flight.mode;
     flight.mode=value('mode') as FlightMode;flight.rate=Number(value('rate'));flight.expo=Number(value('expo'));
-    if(oldMode!==flight.mode) {flight.angularVelocity.set(0,0,0);flight.orientation.identity();flight.velocity.set(0,0,0);flight.armed=false;}
+    if(oldMode!==flight.mode) flight.angularVelocity.set(0,0,0);
     cameraMode=value('camera');cameraTilt=Number(value('tilt'));fov=Number(value('fov'));
     const lightChanged=world.light!==value('light');
     world.setLight(value('light') as LightPreset);sea=value('sea') as SeaState;

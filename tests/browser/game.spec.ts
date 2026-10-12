@@ -31,6 +31,9 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   await expect(page.locator('#pause-title')).toHaveText('フライト終了');
   await page.keyboard.press('KeyR');await expect(page.locator('#pause-dialog')).toBeHidden();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.crashed)).toBe(false);
+  await page.locator('#open-settings').click();await page.locator('#mode').selectOption('acro');
+  await page.locator('[data-close="settings-dialog"]').last().click();
+  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(true);
 });
 test('race registers actual ordered gate crossing and saves a completed run', async ({page})=> {
   await ready(page);await page.locator('#race-mode').click();await page.locator('#start').click();
