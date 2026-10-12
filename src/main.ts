@@ -29,12 +29,14 @@ async function boot() {
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;
   renderer.info.autoReset=false;
   const world=new World();
+  world.ocean.configureFiltering(renderer.extensions.has('OES_texture_float_linear'));
   // Bake the expensive procedural atmosphere once; the visible background and
   // water reflection sample the same HDR sky. Slow rotation gives cloud drift.
   const skyScene=new T.Scene();skyScene.add(world.sky);const skyTarget=new T.WebGLCubeRenderTarget(512,{type:T.HalfFloatType});
   const skyCamera=new T.CubeCamera(1,20000,skyTarget);skyCamera.update(renderer,skyScene);
   world.scene.background=skyTarget.texture;
   const pmrem=new T.PMREMGenerator(renderer);let environment=pmrem.fromCubemap(skyTarget.texture);world.scene.environment=environment.texture;pmrem.dispose();
+  let photoSky:Awaited<ReturnType<typeof loadPhotographicSky>>=null,photoEnvironment:T.WebGLRenderTarget|null=null;
   const camera=new T.PerspectiveCamera(65,innerWidth/innerHeight,0.06,18000);
   const renderTarget=new T.WebGLRenderTarget(innerWidth,innerHeight,{type:T.HalfFloatType,samples:Math.min(4,renderer.capabilities.maxSamples)});
   const composer=new EffectComposer(renderer,renderTarget);composer.addPass(new RenderPass(world.scene,camera));

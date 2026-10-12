@@ -18,13 +18,19 @@ const spectralCode=`
 uniform sampler2D displacement0, displacement1, displacement2;
 uniform sampler2D normals0, normals1, normals2;
 uniform float seaScale;
+uniform bool manualInterpolation;
 vec2 cascadeUV(vec2 p,float length) {return fract(p/length)+vec2(0.5/128.0);}
+vec4 fieldSample(sampler2D field,vec2 uv) {
+  if(!manualInterpolation)return texture2D(field,uv);
+  vec2 pixel=uv*128.0-0.5,base=floor(pixel),f=fract(pixel),a=(base+0.5)/128.0;
+  return mix(mix(texture2D(field,a),texture2D(field,a+vec2(1.0/128.0,0)),f.x),mix(texture2D(field,a+vec2(0,1.0/128.0)),texture2D(field,a+vec2(1.0/128.0)),f.x),f.y);
+}
 vec4 displacementAt(vec2 p) {
-  vec4 a=texture2D(displacement0,cascadeUV(p,433.0)),b=texture2D(displacement1,cascadeUV(p,97.0)),c=texture2D(displacement2,cascadeUV(p,23.3));
+  vec4 a=fieldSample(displacement0,cascadeUV(p,433.0)),b=fieldSample(displacement1,cascadeUV(p,97.0)),c=fieldSample(displacement2,cascadeUV(p,23.3));
   return vec4((a.xyz+b.xyz+c.xyz)*seaScale,max(max(a.w,b.w),c.w));
 }
 vec3 normalAt(vec2 p,float distanceToEye) {
-  vec3 a=texture2D(normals0,cascadeUV(p,433.0)).xyz,b=texture2D(normals1,cascadeUV(p,97.0)).xyz,c=texture2D(normals2,cascadeUV(p,23.3)).xyz;
+  vec3 a=fieldSample(normals0,cascadeUV(p,433.0)).xyz,b=fieldSample(normals1,cascadeUV(p,97.0)).xyz,c=fieldSample(normals2,cascadeUV(p,23.3)).xyz;
   vec2 slope=a.xz/max(a.y,0.15)+b.xz/max(b.y,0.15)+c.xz/max(c.y,0.15)*(1.0-smoothstep(250.0,4000.0,distanceToEye));
   return normalize(vec3(slope.x*seaScale,1.0,slope.y*seaScale));
 }
@@ -79,6 +85,12 @@ export class Ocean {
         for(int i=0;i<3;i++) {
           vec2 rel=p-vessels[i].xz;float c=cos(headings[i]),s=sin(headings[i]);vec2 local=vec2(c*rel.x-s*rel.y,s*rel.x+c*rel.y);
           float length=vessels[i].w,width=vesselWidths[i],speed=vesselSpeeds[i],aft=local.y-length*0.5,bow=local.y+length*0.5;
+          float u=(local.y+length*0.5)/length;
+          if(u>0.0&&u<1.0) {
+            float shape=pow(max(sin(u*3.14159),0.001),0.42);
+            if(i==1&&u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
+            if(abs(local.x)<width*shape*0.98)discard;
+          }
           float safeAft=max(aft,0.0);
           float trail=step(0.0,aft)*exp(-safeAft/300.0)*smoothstep(0.5,3.0,speed),kelvin=abs(local.x)-width-safeAft*0.354,crest=exp(-kelvin*kelvin/(3.0+safeAft*0.1));
           wakeFoam+=trail*(exp(-local.x*local.x/max(width*width+safeAft*1.1,0.1))*0.63+crest*0.72)*smoothstep(0.18,0.75,n);
@@ -94,10 +106,11 @@ export class Ocean {
         vec3 absorption=mix(vec3(0.006,0.045,0.082),vec3(0.016,0.17,0.145),shallow);
         float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);absorption+=vec3(0.018,0.11,0.078)*crestLight;
         vec3 halfV=normalize(view+sunDirection);float rough=0.12+smoothstep(80.0,1800.0,distanceToEye)*0.16;
+        vec3 normalFootprint=fwidth(normal);rough=max(rough,min(0.48,sqrt(length(normalFootprint))*0.6));
         float a2=pow(rough,4.0),nh=max(dot(normal,halfV),0.0),nl=max(dot(normal,sunDirection),0.001),den=nh*nh*(a2-1.0)+1.0;
         float distribution=a2/(3.14159*den*den+0.000001),masking=2.0*nv/(nv+sqrt(a2+(1.0-a2)*nv*nv));masking*=2.0*nl/(nl+sqrt(a2+(1.0-a2)*nl*nl));
         vec3 glint=sunColor*distribution*masking*fresnel*0.19/max(4.0*nv,0.1);
-        float breaking=displacementAt(waveCoordinate).w*smoothstep(0.22,0.68,n),foam=foamEnabled?clamp(breaking*0.78+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
+        float breaking=smoothstep(0.12,0.8,displacementAt(waveCoordinate).w)*smoothstep(0.42,0.76,n),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
         vec3 foamColor=mix(vec3(0.78,0.86,0.84),vec3(0.82,0.78,0.66),dusk)*(0.76+noise(p*7.3)*0.3);
         vec3 color=mix(absorption*(1.0-fresnel)+reflected*fresnel+min(glint,vec3(9.0)),foamColor,foam);
         float haze=1.0-exp(-distanceToEye*0.0001);color=mix(color,mix(vec3(0.45,0.62,0.72),vec3(0.62,0.45,0.32),dusk),haze);
@@ -107,6 +120,10 @@ export class Ocean {
       }`;
   }
   heightAt(x:number,z:number) {return this.simulation.heightAt(x,z,SEA_SCALE[this.state]);}
+  configureFiltering(floatLinear:boolean) {
+    this.material.uniforms.manualInterpolation={value:!floatLinear};
+    if(!floatLinear)this.textures.forEach(texture=>{texture.magFilter=texture.minFilter=T.NearestFilter;texture.needsUpdate=true;});
+  }
   advance(time:number,state:SeaState) {
     this.state=state;const before=this.simulation.time;this.simulation.update(time);
     if(before!==this.simulation.time)this.textures.forEach(t=>t.needsUpdate=true);

@@ -81,7 +81,7 @@ export class WaveCascade {
       const hx=(h[r]-h[l])*derivative,hz=(h[t]-h[b])*derivative;
       const dxx=(dx[r]-dx[l])*derivative,dxz=(dx[t]-dx[b])*derivative,dzx=(dz[r]-dz[l])*derivative,dzz=(dz[t]-dz[b])*derivative;
       const jacobian=(1+dxx)*(1+dzz)-dxz*dzx;
-      const foam=Math.max(this.displacement[i*4+3]*Math.exp(-dt*0.55),Math.max(0,Math.min(1,(0.78-jacobian)*2.7)));
+      const foam=Math.max(this.displacement[i*4+3]*Math.exp(-dt*0.85),Math.max(0,Math.min(1,(0.55-jacobian)*3.6)));
       this.displacement[i*4]=dx[i];this.displacement[i*4+1]=h[i];this.displacement[i*4+2]=dz[i];this.displacement[i*4+3]=foam;
       const nx=hz*dzx-(1+dzz)*hx,ny=jacobian,nz=dxz*hx-hz*(1+dxx),norm=Math.hypot(nx,ny,nz)||1;
       this.normal[i*4]=nx/norm;this.normal[i*4+1]=Math.max(ny/norm,0.15);this.normal[i*4+2]=nz/norm;this.normal[i*4+3]=foam;
