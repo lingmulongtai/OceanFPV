@@ -55,6 +55,17 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   await page.locator('[data-close="settings-dialog"]').last().click();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(true);
 });
+test('lost WebGL context closes modal layers and leaves recovery reachable',async({page})=> {
+  await ready(page);await page.locator('#start').click();await page.keyboard.press('Escape');
+  await expect(page.locator('#pause-dialog')).toBeVisible();
+  await page.evaluate(()=> {
+    const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,extension=gl.getExtension('WEBGL_lose_context');
+    if(!extension)throw new Error('Context-loss extension unavailable');extension.loseContext();
+  });
+  await expect(page.locator('#unsupported')).toBeVisible();await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await expect(page.locator('#unsupported button')).toBeVisible();await expect(page.locator('#start')).toBeDisabled();
+  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(false);
+});
 test('race registers actual ordered gate crossing and saves a completed run', async ({page})=> {
   await ready(page);await page.locator('#race-mode').click();await page.locator('#start').click();
   for(let i=0;i<18;i++) {

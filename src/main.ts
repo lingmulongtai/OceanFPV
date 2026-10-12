@@ -122,10 +122,12 @@ async function boot() {
     return true;
   }
   function arm() {
+    if(!supported||$<HTMLButtonElement>('start').disabled)return;
     if(!canArm()) return;
     flight.armed=true;flight.crashed=false;void sound.start();toast('ARMED · フライト開始');
   }
   function startFlight() {
+    if(!supported||$<HTMLButtonElement>('start').disabled)return;
     input.poll();if(!canArm()) {openDialog('settings-dialog');return;}
     flight.reset();race.reset(selectedRace);flightTime=0;playing=true;paused=false;accumulator=0;input.clear();
     const launch=world.launchPose(time);flight.position.copy(launch.position);flight.previous.copy(launch.position);flight.velocity.copy(launch.velocity);flight.orientation.setFromAxisAngle(new T.Vector3(0,1,0),launch.heading);
@@ -146,7 +148,7 @@ async function boot() {
     $<HTMLDialogElement>('pause-dialog').showModal();
   }
   function resume() {
-    if(flight.crashed||race.finished) return;
+    if(!supported||flight.crashed||race.finished) return;
     input.poll();if(!canArm()) return;
     closeAll();paused=false;last=performance.now();accumulator=0;input.clear();void sound.start();
   }
@@ -263,7 +265,7 @@ async function boot() {
   });
   document.addEventListener('visibilitychange',()=> {if(document.hidden) {pause('フライトを一時停止','別のタブに移動したため一時停止しました。');sound.suspend();input.clear();}});
   window.addEventListener('blur',()=>pause('フライトを一時停止','画面から離れたため一時停止しました。'));
-  canvas.addEventListener('webglcontextlost',e=> {e.preventDefault();supported=false;pause('描画が停止しました','GPUの描画状態を失いました。再読み込みしてください。');show('unsupported',true);$('unsupported-reason').textContent='GPUの描画状態を失いました。再読み込みしてください。';sound.suspend();});
+  canvas.addEventListener('webglcontextlost',e=> {e.preventDefault();supported=false;paused=true;flight.armed=false;flight.motor=0;input.clear();closeAll();document.exitPointerLock?.();$<HTMLButtonElement>('start').disabled=true;show('unsupported',true);$('unsupported-reason').textContent='GPUの描画状態を失いました。再読み込みしてください。';sound.suspend();});
 
   const minimap=$<HTMLCanvasElement>('minimap').getContext('2d')!;
   function drawMinimap() {
@@ -359,6 +361,7 @@ async function boot() {
   }
   world.updateGates(false,0);
   const [missingSurfaces,loadedSky]=await Promise.all([world.loadSurfaceTextures(renderer),loadPhotographicSky()]);
+  if(!supported)return;
   photoSky=loadedSky;
   if(photoSky){const generator=new T.PMREMGenerator(renderer);photoEnvironment=generator.fromEquirectangular(photoSky.texture);generator.dispose();applySettings();}
   camera.position.set(112,42,137);camera.lookAt(-25,10,-125);
