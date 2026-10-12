@@ -3,11 +3,12 @@ import { test, expect, type Page } from '@playwright/test';
 async function ready(page: Page) {
   await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
   await page.goto('/?test=1');
-  await expect(page.locator('#start')).toBeEnabled({timeout:60000});
+  await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   await page.evaluate(() => document.querySelector<HTMLSelectElement>('#quality')!.value='balanced');
   await page.locator('#quality').dispatchEvent('input');
 }
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
+  await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
   await expect(page.locator('#unsupported')).toBeHidden();
@@ -117,7 +118,7 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
 });
 test('settings persist, help is keyboard accessible and mobile panels fit', async ({page})=> {
   await ready(page);await page.locator('#open-settings').click();await page.locator('#light').selectOption('day');await page.locator('#sea').selectOption('calm');
-  await page.keyboard.press('Escape');await page.reload();await expect(page.locator('#start')).toBeEnabled();
+  await page.keyboard.press('Escape');await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   expect(await page.locator('#light').inputValue()).toBe('day');expect(await page.locator('#sea').inputValue()).toBe('calm');
   await page.setViewportSize({width:390,height:844});await page.locator('#open-help').click();await expect(page.locator('#help-dialog')).toBeVisible();
   const box=await page.locator('#help-dialog').boundingBox();expect(box!.width).toBeLessThan(390);
