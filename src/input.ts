@@ -37,6 +37,7 @@ export function mapGamepad(pad: Pick<Gamepad, 'axes' | 'buttons'>, radio: boolea
 }
 
 export class Inputs {
+  enabled = true;
   keys = new Set<string>();
   mouse = { x: 0, y: 0 };
   useMouse = false;
@@ -53,6 +54,7 @@ export class Inputs {
 
   constructor() {
     window.addEventListener('keydown', e => {
+      if (!this.enabled) return;
       if (e.code === 'Tab' && document.querySelector('dialog[open]')) return;
       if (e.code === 'Escape' && document.querySelector('dialog[open]:not(#pause-dialog)')) return;
       if (e.target instanceof HTMLElement && (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || (e.target.tagName === 'BUTTON' && ['Space', 'Enter'].includes(e.code)))) return;
@@ -80,6 +82,7 @@ export class Inputs {
     catch { return []; }
   }
   poll() {
+    if (!this.enabled) return;
     const pads = this.pads();
     const previous = this.pad;
     this.pad = pads.find(p => p.index === this.selectedIndex) ?? (this.selectedIndex < 0 ? pads[0] : null) ?? null;

@@ -65,6 +65,8 @@ test('lost WebGL context closes modal layers and leaves recovery reachable',asyn
   });
   await expect(page.locator('#unsupported')).toBeVisible();await expect(page.locator('dialog[open]')).toHaveCount(0);
   await expect(page.locator('#unsupported button')).toBeVisible();await expect(page.locator('#start')).toBeDisabled();
+  await expect(page.locator('#unsupported button')).toBeFocused();
+  await page.keyboard.press('Tab');await expect(page.locator('dialog[open]')).toHaveCount(0);
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(false);
 });
 test('race registers actual ordered gate crossing and saves a completed run', async ({page})=> {

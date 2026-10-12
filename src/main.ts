@@ -158,7 +158,7 @@ async function boot() {
     show('intro',true);show('intro-footer',true);show('scene-label',true);show('hud',false);document.body.classList.remove('flying');world.updateGates(false,0);
   }
   function openDialog(id:string) {
-    if($<HTMLDialogElement>(id).open) return;
+    if(!supported||$<HTMLDialogElement>(id).open) return;
     returnToPause=$<HTMLDialogElement>('pause-dialog').open;
     if(returnToPause) $<HTMLDialogElement>('pause-dialog').close();
     if(playing) paused=true;
@@ -266,7 +266,7 @@ async function boot() {
   });
   document.addEventListener('visibilitychange',()=> {if(document.hidden) {pause('フライトを一時停止','別のタブに移動したため一時停止しました。');sound.suspend();input.clear();}});
   window.addEventListener('blur',()=>pause('フライトを一時停止','画面から離れたため一時停止しました。'));
-  canvas.addEventListener('webglcontextlost',e=> {e.preventDefault();supported=false;paused=true;flight.armed=false;flight.motor=0;input.clear();closeAll();document.exitPointerLock?.();$<HTMLButtonElement>('start').disabled=true;show('unsupported',true);$('unsupported-reason').textContent='GPUの描画状態を失いました。再読み込みしてください。';sound.suspend();});
+  canvas.addEventListener('webglcontextlost',e=> {e.preventDefault();supported=false;paused=true;flight.armed=false;flight.motor=0;input.clear();input.enabled=false;closeAll();document.exitPointerLock?.();$<HTMLButtonElement>('start').disabled=true;show('unsupported',true);$('unsupported-reason').textContent='GPUの描画状態を失いました。再読み込みしてください。';$('unsupported').querySelector<HTMLButtonElement>('button')!.focus();sound.suspend();});
 
   const minimap=$<HTMLCanvasElement>('minimap').getContext('2d')!;
   function drawMinimap() {
