@@ -1,0 +1,19 @@
+#[compute]
+#version 450
+layout(local_size_x=8,local_size_y=8) in;
+layout(rgba16f,set=0,binding=0) readonly uniform image2D source_normals;
+layout(rgba16f,set=0,binding=1) writeonly uniform image2D target_normals;
+layout(rgba16f,set=0,binding=2) readonly uniform image2D source_moments;
+layout(rgba16f,set=0,binding=3) writeonly uniform image2D target_moments;
+layout(push_constant) uniform Params { uint width; uint layers; uint pad0; uint pad1; };
+void main() {
+ ivec2 p=ivec2(gl_GlobalInvocationID.xy);
+ if(p.x>=int(width)||p.y>=int(width)) return;
+ vec4 n=vec4(0), m=vec4(0);
+ for(int y=0;y<2;y++) for(int x=0;x<2;x++) {
+  ivec2 q=p*2+ivec2(x,y);
+  n+=imageLoad(source_normals,q)*0.25;
+  m+=imageLoad(source_moments,q)*0.25;
+ }
+ imageStore(target_normals,p,n); imageStore(target_moments,p,m);
+}

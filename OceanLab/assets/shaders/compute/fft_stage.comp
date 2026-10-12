@@ -1,0 +1,18 @@
+#[compute]
+#version 450
+// Stockham butterfly from GodotOceanWaves, split into one list per stage.
+layout(local_size_x=64) in;
+layout(std430,set=0,binding=0) readonly buffer Factors { vec4 factors[]; };
+layout(std430,set=0,binding=1) buffer FFT { vec2 data[]; };
+layout(push_constant) uniform Params { uint cascade; uint size; uint stage; uint copy_only; };
+vec2 cmul(vec2 a,vec2 b) { return vec2(a.x*b.x-a.y*b.y,a.x*b.y+a.y*b.x); }
+void main() {
+ uint x=gl_GlobalInvocationID.x, y=gl_GlobalInvocationID.y, layer=gl_GlobalInvocationID.z;
+ if(x>=size||y>=size) return;
+ uint area=size*size, base=cascade*area*8+layer*area+y*size;
+ if(copy_only!=0) { data[base+area*4+x]=data[base+x]; return; }
+ uint ping=stage%2, pong=1-ping;
+ vec4 b=factors[stage*size+x];
+ uvec2 r=floatBitsToUint(b.xy);
+ data[base+pong*area*4+x]=data[base+ping*area*4+r.x]+cmul(data[base+ping*area*4+r.y],b.zw);
+}

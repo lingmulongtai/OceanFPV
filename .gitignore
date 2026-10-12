@@ -1,0 +1,10 @@
+node_modules/
+dist/
+playwright-report/
+test-results/
+artifacts/
+.codex/
+.codex-remote-attachments/
+OceanLab.zip
+.env
+.env.*

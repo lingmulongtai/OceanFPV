@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#10282e" />
+  <meta name="description" content="海と船の上を自由に飛ぶ。ブラウザで遊べるFPVドローンシミュレーター。Xboxコントローラー、USB送信機、キーボードに対応。" />
+  <title>OceanFPV — Fly the open water</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+</head>
+<body>
+  <main id="app">
+    <canvas id="scene" aria-label="海、船、島の3D飛行マップ"></canvas>
+    <div class="grain" aria-hidden="true"></div>
+    <header class="topbar">
+      <a class="brand" href="#" id="home" aria-label="OceanFPV メニュー"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 19c6-16 10-16 15 0s10 16 15 0M3 26c6-16 10-16 15 0s10 16 15 0"/></svg><span>OCEAN<span class="brand-thin">FPV</span></span><span class="brand-tag">FLIGHT SIMULATOR</span></a>
+      <div class="top-actions"><span id="connection" class="connection"><i></i> KEYBOARD</span><span id="fps">— FPS</span><button id="open-settings" class="icon-button" aria-label="設定を開く">⚙</button><button id="open-help" class="icon-button" aria-label="操作ガイドを開く">?</button></div>
+    </header>
+    <section id="intro" class="intro" aria-labelledby="title">
+      <div class="eyebrow"><span class="dash"></span> OPEN WATER · FREE FLIGHT</div>
+      <h1 id="title">FLY THE<br /><em>OPEN WATER.</em></h1>
+      <p class="intro-copy">波のすぐ上を。船のすき間を。空の果てまで。<br />海を舞台に、自由なフライトを。</p>
+      <div class="mode-picker" role="group" aria-label="ゲームモード"><button class="active" id="free-mode" aria-pressed="true"><span>01</span> 自由飛行</button><button id="race-mode" aria-pressed="false"><span>02</span> タイムトライアル</button></div>
+      <button class="primary launch" id="start" disabled>海へ飛び立つ <span>↗</span></button>
+      <div class="start-note" id="start-note">海と空を準備しています…</div>
+      <div class="intro-meta"><span><b>92 m</b> EXPLORATION VESSEL</span><span><b>3 laps</b> FLIGHT COURSE</span></div>
+    </section>
+    <div id="scene-label" class="scene-label"><span>01 / THE OPEN SEA</span><b>OCEAN EXPLORER 07</b><small>35° 04′ N &nbsp; 135° 46′ E · FICTIONAL WATERS</small></div>
+    <div id="intro-footer" class="intro-footer"><span>WEBGL 2.0 <i>•</i> BROWSER FLIGHT</span><span>XBOX / USB RADIO / KEYBOARD</span><button id="footer-help">操作を確認 <span>→</span></button></div>
+    <section id="hud" class="hud hidden" aria-label="飛行情報">
+      <div class="compass"><div id="heading-ticks">W &nbsp; · &nbsp; NW &nbsp; · &nbsp; N &nbsp; · &nbsp; NE &nbsp; · &nbsp; E</div><b id="heading">000° N</b></div>
+      <div class="crosshair" aria-hidden="true"><i></i><i></i></div>
+      <div id="gate-target" class="gate-target hidden"></div>
+      <div class="telemetry"><div class="speed"><b id="speed">0</b><span>KM/H</span></div><div class="telemetry-row"><span>ALT <b id="altitude">5.4</b> m</span><span>V/S <b id="vertical">0.0</b> m/s</span></div><div class="telemetry-row"><span id="flight-mode">ANGLE</span><span id="arm-state">ARMED</span><span id="input-label">KEYBOARD</span></div></div>
+      <div class="race-hud"><span id="race-label">FREE FLIGHT</span><b id="timer">00:00.00</b><small id="race-detail">海と空を自由に探索</small></div>
+      <div class="radar"><canvas id="minimap" width="240" height="240" aria-label="船とゲートとドローンの俯瞰マップ"></canvas><span>LOCAL AIRSPACE</span></div>
+      <div class="flight-shortcuts"><span><kbd>WASD</kbd> 傾き <kbd>Q E</kbd> 旋回 <kbd>Space</kbd> 上昇 <kbd>Shift</kbd> 下降</span><span><kbd>R</kbd> リセット <kbd>Esc</kbd> 一時停止</span></div>
+      <div class="stick-display" aria-hidden="true"><div><i id="left-stick"></i></div><div><i id="right-stick"></i></div></div>
+    </section>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    <dialog id="pause-dialog" class="panel pause-panel" aria-labelledby="pause-title">
+      <div class="eyebrow">OCEANFPV / FLIGHT</div><h2 id="pause-title">フライトを一時停止</h2><p id="pause-copy">ひと息ついて、また海へ。</p>
+      <div id="results" class="results hidden"></div>
+      <button id="resume" class="primary">フライトを再開 <span>→</span></button><button id="restart" class="secondary">離陸地点からやり直す</button><button id="back-menu" class="text-button">メニューへ戻る</button>
+    </dialog>
+    <dialog id="settings-dialog" class="panel settings-panel" aria-labelledby="settings-title">
+      <div class="panel-heading"><div><div class="eyebrow">FLIGHT SETUP</div><h2 id="settings-title">フライト設定</h2></div><button class="close icon-button" data-close="settings-dialog" aria-label="設定を閉じる">×</button></div>
+      <div class="settings-tabs" role="group" aria-label="設定カテゴリ"><button class="active" data-tab="flight" aria-pressed="true">飛行・画質</button><button data-tab="controller" aria-pressed="false">コントローラー</button></div>
+      <div id="tab-flight" class="tab-content">
+        <div class="setting-grid">
+          <label>飛行モード<select id="mode"><option value="angle">ANGLE — 傾き・高度を補助</option><option value="acro">ACRO — 回転速度を操作</option></select></label>
+          <label>カメラ<select id="camera"><option value="fpv">FPV / 一人称</option><option value="chase">CHASE / 追従カメラ</option></select></label>
+          <label>光と空<select id="light"><option value="golden">GOLDEN HOUR / 夕景</option><option value="day">CLEAR DAY / 晴天</option><option value="blue">AFTERGLOW / 残照</option></select></label>
+          <label>海況<select id="sea"><option value="calm">CALM / 穏やか</option><option value="breeze" selected>BREEZE / そよ風</option><option value="swell">SWELL / うねり</option></select></label>
+          <label>画質<select id="quality"><option value="ultra">ULTRA / 最大2×解像度</option><option value="high" selected>HIGH / 最大1.5×解像度</option><option value="balanced">BALANCED / 軽量・影とにじみOFF</option></select></label>
+          <label>視野角 <output id="fov-value">95°</output><input id="fov" type="range" min="65" max="120" value="95" /></label>
+          <label>カメラ仰角 <output id="tilt-value">12°</output><input id="tilt" type="range" min="0" max="45" value="12" /></label>
+          <label>ACROレート <output id="rate-value">520°/s</output><input id="rate" type="range" min="180" max="900" value="520" step="10" /></label>
+          <label>Expo <output id="expo-value">0.30</output><input id="expo" type="range" min="0" max="0.8" value="0.3" step="0.05" /></label>
+          <label>音量 <output id="volume-value">35%</output><input id="volume" type="range" min="0" max="100" value="35" /></label>
+        </div>
+        <div class="toggle-row"><label><input id="bloom" type="checkbox" checked /> 光のにじみ</label><label><input id="foam" type="checkbox" checked /> 白波</label><label><input id="mouse" type="checkbox" /> マウスで傾きを操作</label></div>
+        <p class="muted">マウス操作は飛行中に画面をクリックすると有効。Escで解除。ANGLEは練習向け、ACROはスティックから手を離しても姿勢を保ちます。</p>
+      </div>
+      <div id="tab-controller" class="tab-content hidden">
+        <p class="muted">USBまたはBluetoothで接続してボタンを押すと検出します。送信機はUSB Joystick / HIDモードにしてください。</p>
+        <div class="setting-grid"><label>操作デバイス<select id="input-source"><option value="keyboard">キーボード / マウス</option><option value="xbox">Xbox / 標準ゲームパッド</option><option value="radio">FPV送信機 / カスタム割り当て</option></select></label><label>接続デバイス<select id="gamepad-device"><option value="-1">自動選択</option></select></label><label>デッドゾーン <output id="deadzone-value">8%</output><input id="deadzone" type="range" min="0" max="25" value="8" /></label></div>
+        <div id="device-status" class="device-status">コントローラー未検出</div><div id="axis-monitor" class="axis-monitor" aria-label="接続デバイスの軸入力"></div>
+        <div id="radio-controls" class="hidden"><div class="mapping-heading"><span>CHANNEL</span><span>USB AXIS</span><span>REVERSE</span></div><div id="axis-mapping"></div><div class="calibration"><button id="calibrate" class="secondary">中心を記録して校正開始</button><button id="save-calibration" class="secondary" disabled>全軸を動かして保存</button></div><p class="muted" id="calibration-help">スティックを中央（スロットルも中央）にして開始。全軸を端まで動かし、保存してください。軸の反転と割り当てをモニターで確認後、スロットルを下げてアームします。</p></div>
+        <div id="xbox-help" class="xbox-help">左スティック：上昇・下降 / ヨー<br />右スティック：ピッチ / ロール<br /><b>A</b> アーム・解除 &nbsp; <b>X</b> リセット &nbsp; <b>Y</b> カメラ &nbsp; <b>Menu</b> 一時停止</div>
+        <p class="muted">このページはブラウザのGamepad APIを使用します。OSがジョイスティックとして認識しない機器は検出できません。</p>
+      </div>
+      <button class="primary" data-close="settings-dialog">設定を保存して戻る <span>→</span></button>
+    </dialog>
+    <dialog id="help-dialog" class="panel help-panel" aria-labelledby="help-title">
+      <div class="panel-heading"><div><div class="eyebrow">PILOT BRIEFING</div><h2 id="help-title">フライトガイド</h2></div><button class="close icon-button" data-close="help-dialog" aria-label="ガイドを閉じる">×</button></div>
+      <p>初めてなら<strong>ANGLE・キーボード</strong>で自由飛行へ。ヘリパッド上空から、Spaceで少し上昇して船を離れましょう。スティックを戻すと傾きが戻り、高度を補助します。慣性があるので、止まるには逆方向へ傾けます。</p>
+      <div class="help-controls"><div><kbd>W / S</kbd><span>前 / 後へ傾く</span></div><div><kbd>A / D</kbd><span>左 / 右へ傾く</span></div><div><kbd>Q / E</kbd><span>左 / 右へ旋回</span></div><div><kbd>Space / Shift</kbd><span>上昇 / 下降</span></div><div><kbd>F</kbd><span>アーム / 解除</span></div><div><kbd>R</kbd><span>離陸地点へリセット</span></div><div><kbd>C</kbd><span>一人称 / 追従カメラ</span></div><div><kbd>Esc / Tab</kbd><span>一時停止 / 設定</span></div><div><kbd>M / H</kbd><span>ミュート / HUD表示</span></div></div>
+      <p><strong>タイムトライアル：</strong>明るい緑のゲートを番号順に、数字がある側へ抜けます。6ゲート×3周でゴール。最速記録をこのブラウザに保存します。途中で衝突したら全周をやり直します。</p>
+      <p><strong>ACRO：</strong>スティックは姿勢ではなく回転速度を操作します。高度補助はありません。キーボード・Xboxの中立スロットルは水平ホバー付近、送信機は0〜100%の直接操作です。</p>
+      <p><strong>Xbox：</strong>接続後にボタンを押し、設定のコントローラータブで「Xbox」を選択。送信機は「FPV送信機」を選び、軸を割り当てて校正します。</p>
+      <button class="primary" data-close="help-dialog">準備完了 <span>→</span></button>
+    </dialog>
+    <div id="unsupported" class="unsupported hidden" role="alert"><h2>3D描画を開始できませんでした</h2><p id="unsupported-reason">WebGL2に対応したブラウザとGPUで開いてください。</p><button onclick="location.reload()" class="primary">再読み込み</button></div>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

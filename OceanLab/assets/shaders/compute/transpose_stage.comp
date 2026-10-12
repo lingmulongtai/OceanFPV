@@ -1,0 +1,16 @@
+#[compute]
+#version 450
+layout(local_size_x=32,local_size_y=8) in;
+layout(std430,set=0,binding=0) buffer FFT { vec2 data[]; };
+layout(push_constant) uniform Params { uint cascade;uint size;uint pad0;uint pad1; };
+shared vec2 tile[32][33];
+void main() {
+ uint x=gl_WorkGroupID.x*32+gl_LocalInvocationID.x;
+ uint y=gl_WorkGroupID.y*32+gl_LocalInvocationID.y;
+ uint area=size*size,base=cascade*area*8+gl_WorkGroupID.z*area;
+ for(uint j=0u;j<32u;j+=8u) tile[gl_LocalInvocationID.y+j][gl_LocalInvocationID.x]=data[base+area*4+(y+j)*size+x];
+ barrier();
+ x=gl_WorkGroupID.y*32+gl_LocalInvocationID.x;
+ y=gl_WorkGroupID.x*32+gl_LocalInvocationID.y;
+ for(uint j=0u;j<32u;j+=8u) data[base+(y+j)*size+x]=tile[gl_LocalInvocationID.x][gl_LocalInvocationID.y+j];
+}
