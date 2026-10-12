@@ -5,6 +5,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Ocean } from './ocean';
 import { type SeaState } from './sea';
 import { GATES } from './race';
+import { closedHullGeometry } from './hull';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
 type Collider = { min: T.Vector3; max: T.Vector3 };
@@ -31,22 +32,6 @@ function steelTexture() {
     for (let x = 5; x < 512; x += 32) for (let y = 5; y < 512; y += 128) { ctx.beginPath(); ctx.arc(x,y,1.4,0,Math.PI*2); ctx.fill(); }
   });
   texture.wrapS = texture.wrapT = T.RepeatWrapping; texture.repeat.set(2, 3); return texture;
-}
-
-/** Hull stations ported from OceanShip._hull_mesh(); original license retained. */
-function hullGeometry() {
-  const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
-  for (let i = 0; i <= 64; i++) {
-    const u = i / 64, z = -46 + u * 92, width = 4.4 * Math.pow(Math.max(Math.sin(Math.PI*u),0.012),0.42), sheer = 0.75*Math.pow(1-u,4);
-    const section = [[-width,1.6+sheer],[width,1.6+sheer],[width*0.83,-1.7],[width*0.48,-2.7],[-width*0.48,-2.7],[-width*0.83,-1.7]];
-    section.forEach(([x,y], j) => { positions.push(x,y,z); uvs.push(u*12,j/6); });
-  }
-  for (let i = 0; i < 64; i++) for (let j = 0; j < 6; j++) {
-    const a = i*6+j,b=(i+1)*6+j,c=i*6+(j+1)%6,d=(i+1)*6+(j+1)%6;
-    indices.push(a,b,c,c,b,d);
-  }
-  const geo = new T.BufferGeometry(); geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));
-  geo.setAttribute('uv',new T.Float32BufferAttribute(uvs,2)); geo.setIndex(indices); geo.computeVertexNormals(); return geo;
 }
 
 export class World {
@@ -140,7 +125,7 @@ export class World {
       shader.vertexShader = shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 hullPosition;').replace('#include <begin_vertex>','#include <begin_vertex>\nhullPosition = position;');
       shader.fragmentShader = shader.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 hullPosition;').replace('#include <color_fragment>','#include <color_fragment>\nfloat waterline = smoothstep(-0.28,0.15,hullPosition.y);\ndiffuseColor.rgb *= mix(vec3(0.18,0.23,0.24),vec3(1.0),waterline);\nfloat rust = pow(sin(hullPosition.z*2.7)*0.5+0.5,8.0)*exp(-abs(hullPosition.y-0.2)*3.0);\ndiffuseColor.rgb = mix(diffuseColor.rgb,vec3(0.22,0.09,0.04),rust*0.22);');
     };
-    const hull = new T.Mesh(hullGeometry(),hullMat); hull.castShadow = hull.receiveShadow = true; this.ship.add(hull);
+    const hull = new T.Mesh(closedHullGeometry(),hullMat); hull.castShadow = hull.receiveShadow = true; this.ship.add(hull);
     box([5.5,0.16,29],[0,1.73,-23],deck); box([6.3,0.16,31],[0,1.7,23],deck);
     box([5.8,3.4,9],[0,3.4,-16],paint,true,0.15);
     box([5,2.5,5.5],[0,6.2,-17],paint,true,0.15);

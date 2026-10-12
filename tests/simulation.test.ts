@@ -6,6 +6,15 @@ import { DEFAULT_RADIO, Inputs, mapGamepad, normalizeAxis } from '../src/input';
 import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
+import { closedHullGeometry } from '../src/hull';
+
+test('bow and stern are closed with every hull edge shared by two faces',()=> {
+  for(const geo of [closedHullGeometry(),closedHullGeometry(260,34,9,7,true)]) {
+    const edges=new Map<string,number>(),index=geo.index!;
+    for(let i=0;i<index.count;i+=3)for(let j=0;j<3;j++) {const a=index.getX(i+j),b=index.getX(i+(j+1)%3),key=a<b?`${a}:${b}`:`${b}:${a}`;edges.set(key,(edges.get(key)??0)+1);}
+    assert.ok(Array.from(edges.values()).every(count=>count===2));assert.ok(Array.from(geo.attributes.position.array).every(Number.isFinite));geo.dispose();
+  }
+});
 
 test('two dimensional inverse FFT reconstructs an impulse and a cosine',()=> {
   const size=8,real=new Float64Array(size*size),imaginary=new Float64Array(size*size);
