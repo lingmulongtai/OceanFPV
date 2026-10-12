@@ -81,6 +81,7 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
   await page.evaluate(()=> {(window as any).__pad.axes=[0,0,0,-0.8];});await page.waitForTimeout(150);await page.locator('#start').click();
   await expect(page.locator('#toast')).toContainText('スロットルを下げ');await expect(page.locator('#settings-dialog')).toBeVisible();
   await page.evaluate(()=> {(window as any).__pad.axes=[0,0,0,0.9];});await page.waitForTimeout(150);
+  await expect(page.locator('#device-status')).toContainText('THROTTLE 0%');
   await page.locator('[data-close="settings-dialog"]').last().click();await page.locator('#start').click();await expect(page.locator('#intro')).toBeHidden();
 });
 test('settings persist, help is keyboard accessible and mobile panels fit', async ({page})=> {

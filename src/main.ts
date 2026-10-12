@@ -214,6 +214,10 @@ async function boot() {
     const p=input.pad;
     $('connection').lastChild!.textContent=input.source==='keyboard'?' KEYBOARD':p?(input.source==='radio'?' USB RADIO':' GAMEPAD'):' DISCONNECTED';
     $('device-status').textContent=p?`${p.id} · ${p.axes.length}軸 / ${p.buttons.length}ボタン · ${p.mapping||'custom'}`:'コントローラー未検出 — 接続してボタンまたはスティックを操作';
+    if(p&&input.source==='radio') {
+      const mapped=input.sticks();
+      $('device-status').textContent+=`\nTHROTTLE ${Math.round(mapped.throttle*100)}% · ROLL ${mapped.roll.toFixed(2)} · PITCH ${mapped.pitch.toFixed(2)} · YAW ${mapped.yaw.toFixed(2)}`;
+    }
     const monitor=$('axis-monitor');
     if(monitor.childElementCount!==(p?.axes.length??0)) {
       monitor.replaceChildren();p?.axes.forEach((_,i)=> {
