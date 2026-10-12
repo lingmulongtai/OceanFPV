@@ -68,7 +68,10 @@ test('lost WebGL context closes modal layers and leaves recovery reachable',asyn
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(false);
 });
 test('race registers actual ordered gate crossing and saves a completed run', async ({page})=> {
-  await ready(page);await page.locator('#race-mode').click();await page.locator('#start').click();
+  await ready(page);
+  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.getState().time),{timeout:60000}).toBeGreaterThan(2);
+  await page.locator('#race-mode').click();await page.locator('#start').click();
+  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().time)).toBeLessThan(1);
   for(let i=0;i<18;i++) {
     await page.evaluate((index)=> {
       const app=(window as any).__OCEANFPV__,g=app.world.gateMeshes[index%6];

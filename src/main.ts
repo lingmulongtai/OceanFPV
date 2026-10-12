@@ -129,6 +129,7 @@ async function boot() {
   function startFlight() {
     if(!supported||$<HTMLButtonElement>('start').disabled)return;
     input.poll();if(!canArm()) {openDialog('settings-dialog');return;}
+    if(selectedRace){time=0;world.ocean.advance(time,sea);}
     flight.reset();race.reset(selectedRace);flightTime=0;playing=true;paused=false;accumulator=0;input.clear();
     const launch=world.launchPose(time);flight.position.copy(launch.position);flight.previous.copy(launch.position);flight.velocity.copy(launch.velocity);flight.orientation.setFromAxisAngle(new T.Vector3(0,1,0),launch.heading);
     show('intro',false);show('intro-footer',false);show('scene-label',false);show('hud',hudVisible);document.body.classList.add('flying');
