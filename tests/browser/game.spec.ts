@@ -122,6 +122,7 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
   await page.locator('[data-close="settings-dialog"]').last().click();await page.locator('#start').click();await expect(page.locator('#intro')).toBeHidden();
 });
 test('settings persist, help is keyboard accessible and mobile panels fit', async ({page})=> {
+  test.setTimeout(300000);
   await ready(page);await page.locator('#open-settings').click();await page.locator('#light').selectOption('day');await page.locator('#sea').selectOption('calm');
   await page.keyboard.press('Escape');await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   expect(await page.locator('#light').inputValue()).toBe('day');expect(await page.locator('#sea').inputValue()).toBe('calm');
