@@ -6,11 +6,24 @@ import { DEFAULT_RADIO, Inputs, mapGamepad, normalizeAxis } from '../src/input';
 import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
-import { closedHullGeometry, foredeckGeometry, upperHullSidePose } from '../src/hull';
+import { closedHullGeometry, foredeckGeometry, hullNameGeometry, upperHullSidePose } from '../src/hull';
 import { deckGeometry, vesselBoxContains } from '../src/cruise';
 import { vesselPose } from '../src/navigation';
 import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
 import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
+
+test('ship names follow the curved hull at a small offset on both sides',()=> {
+  const hull=closedHullGeometry(260,34,9,7,true),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(hull,material);mesh.updateMatrixWorld();
+  for(const side of [-1,1]) {
+    const name=hullNameGeometry(side),p=name.attributes.position,n=name.attributes.normal;
+    for(let i=0;i<p.count;i++) {
+      const vertex=new Vector3().fromBufferAttribute(p,i),normal=new Vector3().fromBufferAttribute(n,i),hits=new Raycaster(vertex,normal.negate()).intersectObject(mesh);
+      assert.ok(hits.length>0);assert.ok(hits[0].distance>0.03&&hits[0].distance<0.05);
+    }
+    name.dispose();
+  }
+  hull.dispose();material.dispose();
+});
 
 test('hull fixtures touch actual rendered side triangles and face outwards',()=> {
   const geometry=closedHullGeometry(260,34,9,7,true),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(geometry,material);mesh.updateMatrixWorld();

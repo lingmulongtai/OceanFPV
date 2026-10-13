@@ -26,6 +26,18 @@ export function upperHullSidePose(y:number,z:number,side:number,length=260,beam=
   }
   point.x*=side;normal.x*=side;return {point,normal};
 }
+export function hullNameGeometry(side:number) {
+  const columns=32,positions:number[]=[],uvs:number[]=[],indices:number[]=[];
+  for(let row=0;row<2;row++)for(let column=0;column<=columns;column++) {
+    const u=column/columns,pose=upperHullSidePose(5.2+(row-0.5)*2.8,-96+(u-0.5)*23,side);
+    const p=pose.point.addScaledVector(pose.normal,0.04);positions.push(p.x,p.y,p.z);uvs.push(side>0?1-u:u,row);
+  }
+  for(let column=0;column<columns;column++) {
+    const a=column,b=column+columns+1,c=column+1,d=b+1;
+    indices.push(...(side>0?[a,b,c,c,b,d]:[a,c,b,c,d,b]));
+  }
+  const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
+}
 /** Bow planking follows the same stations and sheer as the closed hull below it. */
 export function foredeckGeometry(length=260,beam=34,deck=9) {
   const positions:number[]=[],uvs:number[]=[],indices:number[]=[],columns=8,first=2,last=15;
