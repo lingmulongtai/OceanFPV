@@ -8,8 +8,8 @@ import { GATES } from './race';
 import { closedHullGeometry } from './hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { vesselPose } from './navigation';
-import { loadSurfaces, type SurfaceGroup } from './surfaces';
-import { coastalTreeSites, terrainSurfaceHeight, TERRAIN_SEGMENTS } from './terrain';
+import { blendGroundCover, loadSurfaces, type SurfaceGroup } from './surfaces';
+import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS } from './terrain';
 import { COASTS } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
 
@@ -60,6 +60,8 @@ export class World {
   private vesselTime=-1;
   private launchVelocity:T.Vector3|null=null;
   private surfaceGroups:SurfaceGroup[]=[];
+  private groundCover=new T.MeshStandardMaterial();
+  private groundMaterials:T.MeshStandardMaterial[]=[];
   private naturalObstacles:{x:number;z:number;y:number;radius:number;height:number}[]=[];
   private rockMaterial=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});
   private treeSites:TreeSite[]=[];
@@ -91,10 +93,12 @@ export class World {
     for(const coast of COASTS)this.buildIsland(coast.x,coast.z,coast.size,coast.height);
     this.buildLighthouse(); this.buildYacht();
     this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:this.cruise.paint,colour:false},{asset:'wood_floor_deck',resolution:'1k',materials:[this.cruise.teak],colour:true},{asset:'rocky_terrain',resolution:'2k',materials:[this.rockMaterial],colour:true});
+    this.surfaceGroups.push({asset:'aerial_grass_rock',resolution:'2k',materials:[this.groundCover],colour:true});
     this.scene.fog = new T.FogExp2(0x9facac,0.00019);
   }
   async loadSurfaceTextures(renderer:T.WebGLRenderer) {
     const [missing,forest]=await Promise.all([loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy()),CoastalForest.load(renderer,this.treeSites)]);
+    this.groundMaterials.forEach(material=>material.needsUpdate=true);
     if(forest) {
       this.forest=forest;this.scene.add(forest.group);
       for(const site of this.treeSites)for(const mesh of site.fallback){this.scene.remove(mesh);mesh.geometry.dispose();(mesh.material as T.Material).dispose();}
@@ -259,15 +263,17 @@ export class World {
   private buildIsland(x: number,z: number,size: number,height: number) {
     this.islands.push({x,z,size,height});
     const geo=new T.PlaneGeometry(size*2.4,size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geo.rotateX(-Math.PI/2);
-    const pos=geo.attributes.position;const colors:number[]=[];
+    const pos=geo.attributes.position;const colors:number[]=[],cover:number[]=[];
     for(let i=0;i<pos.count;i++) {
       const px=pos.getX(i),pz=pos.getZ(i);const y=this.terrain(px,pz,size,height);pos.setY(i,y);
       const color=new T.Color(y<5?0xd0c6a9:y<28?0xa9b99b:y<height*0.65?0x92a28d:0xb7b9a2);
       const variance=0.86+(Math.sin(px*0.37+pz*0.27)*0.5+0.5)*0.25;color.multiplyScalar(variance);colors.push(color.r,color.g,color.b);
       geo.attributes.uv.setXY(i,px/90,pz/90);
+      cover.push(terrainCover(px,pz,size,height));
     }
-    geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.computeVertexNormals();
+    geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.setAttribute('groundCover',new T.Float32BufferAttribute(cover,1));geo.computeVertexNormals();
     const material=new T.MeshStandardMaterial({vertexColors:true,roughness:0.96});this.surfaceGroups.push({asset:'rocky_terrain',resolution:'2k',materials:[material],colour:true});
+    blendGroundCover(material,this.groundCover);this.groundMaterials.push(material);
     const mesh=new T.Mesh(geo,material);mesh.position.set(x,0,z);mesh.receiveShadow=mesh.castShadow=true;this.scene.add(mesh);
     const crownParts:T.BufferGeometry[]=[];
     for(let i=0;i<7;i++) {const g=new T.IcosahedronGeometry(1,2),p=g.attributes.position;for(let v=0;v<p.count;v++){const k=0.9+0.1*Math.sin(p.getX(v)*17+p.getY(v)*19+p.getZ(v)*11);p.setXYZ(v,p.getX(v)*k,p.getY(v)*k,p.getZ(v)*k);}g.scale(i?2.6:3.1,i?3:4,i?2.6:3.1);g.translate(i?Math.cos(i*2.4)*2.3:0,6+i*0.55,i?Math.sin(i*2.4)*2.3:0);g.computeVertexNormals();crownParts.push(g);}

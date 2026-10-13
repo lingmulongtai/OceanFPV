@@ -1,6 +1,27 @@
 import * as T from 'three';
 
 export type SurfaceGroup={asset:string;resolution:'1k'|'2k';materials:T.MeshStandardMaterial[];colour:boolean};
+/** Use the same slope/height cover weight for colour, roughness and normals. */
+export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshStandardMaterial) {
+  const available=()=>!!(material.map&&material.normalMap&&cover.map&&cover.normalMap&&cover.roughnessMap);
+  material.customProgramCacheKey=()=>`coastal-cover-${available()}`;
+  material.onBeforeCompile=shader=> {
+    if(!available())return;
+    Object.assign(shader.uniforms,{coverMap:{value:cover.map},coverNormalMap:{value:cover.normalMap},coverRoughnessMap:{value:cover.roughnessMap}});
+    shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nattribute float groundCover;varying float vGroundCover;').replace('#include <begin_vertex>','#include <begin_vertex>\nvGroundCover=groundCover;');
+    shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\nuniform sampler2D coverMap,coverNormalMap,coverRoughnessMap;varying float vGroundCover;');
+    shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`vec3 groundBase=diffuseColor.rgb;
+      #include <map_fragment>
+      diffuseColor.rgb=mix(diffuseColor.rgb,groundBase*texture2D(coverMap,vMapUv*6.0).rgb,vGroundCover);`);
+    shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>',`#include <roughnessmap_fragment>
+      roughnessFactor=mix(roughnessFactor,roughness*texture2D(coverRoughnessMap,vMapUv*6.0).g,vGroundCover);`);
+    shader.fragmentShader=shader.fragmentShader.replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+      #ifdef USE_NORMALMAP_TANGENTSPACE
+        vec3 coverN=texture2D(coverNormalMap,vMapUv*6.0).xyz*2.0-1.0;coverN.xy*=normalScale;
+        normal=normalize(mix(normal,normalize(tbn*coverN),vGroundCover));
+      #endif`);
+  };
+}
 /** Optional local assets fail as one coherent material group, retaining fallback. */
 export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number) {
   const unique=new Map<string,SurfaceGroup>();
