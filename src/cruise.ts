@@ -85,6 +85,11 @@ export function buildCruiseShip() {
       for(let cabin=start;cabin+3.5<=end;cabin+=3.5) {
         box([0.1,2.57,0.09],[side*13.85,floor+1.285,cabin],white);
         box([2.1,2.57,0.075],[side*14.85,floor+1.285,cabin],white);
+        // Raised jambs, sill and sliding-panel mullion give each cabin depth.
+        for(const edge of [0.22,3.28])box([0.24,1.88,0.075],[side*13.94,y+0.02,cabin+edge],white);
+        for(const edge of [-0.875,0.915])box([0.24,0.09,3.135],[side*13.94,y+edge,cabin+1.75],white);
+        box([0.15,1.72,0.045],[side*13.94,y+0.02,cabin+1.65],chrome);
+        rod([side*14.055,y-0.24,cabin+1.52],[side*14.055,y-0.02,cabin+1.52],0.018,chrome);
         box([0.055,1.02,3.32],[side*16.05,floor+0.51,cabin+1.72],balconyGlass);
         rod([side*16.18,floor+1.05,cabin],[side*16.18,floor+1.05,cabin+3.5],0.035);
         // Balcony chairs and table are actual geometry at FPV distance.
