@@ -127,7 +127,7 @@ export class Ocean {
         vec3 normalFootprint=fwidth(normal);
         float unresolvedVariance=0.5*dot(slopeVariance,vec3(1.0)-resolved*resolved)+ripple.z;
         vec2 mirrorUV=mirrorCoord.xy/max(mirrorCoord.w,0.001);
-        float mirrorFootprint=max(length(dFdx(mirrorUV)),length(dFdy(mirrorUV)))*reflectionSize;
+        bool hullCutout=false;
         float wakeFoam=0.0,wakeWave=0.0,n=foamNoise(p*0.53+vec2(time*0.12,-time*0.09));
         for(int i=0;i<3;i++) {
           vec2 rel=p-vessels[i].xz;float c=cos(headings[i]),s=sin(headings[i]);vec2 local=vec2(c*rel.x-s*rel.y,s*rel.x+c*rel.y);
@@ -136,7 +136,7 @@ export class Ocean {
           if(u>0.0&&u<1.0) {
             float shape=pow(max(sin(u*3.14159),0.001),0.42);
             if(i>0&&u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
-            if(abs(local.x)<width*shape*0.98)discard;
+            if(abs(local.x)<width*shape*0.98)hullCutout=true;
           }
           float safeAft=max(aft,0.0);
           float launched=1.0-smoothstep(max(time*speed-2.0,0.0),max(time*speed,0.01),safeAft);
@@ -162,7 +162,9 @@ export class Ocean {
         float nv=max(dot(normal,view),0.015),fresnel=0.0204+0.9796*pow(1.0-nv,5.0);
         float distortion=0.012+0.16/max(distanceToEye,2.0);
         vec2 reflectionUV=mirrorUV+normal.xz*distortion;
+        float mirrorFootprint=max(length(dFdx(reflectionUV)),length(dFdy(reflectionUV)))*reflectionSize;
         float reflectionLOD=log2(max(1.0,max(mirrorFootprint,sqrt(unresolvedVariance)*distortion*reflectionSize)));
+        if(hullCutout)discard;
         vec3 reflected=textureLod(mirrorSampler,clamp(reflectionUV,0.001,0.999),reflectionLOD).rgb;float shallow=0.0,shoreFoam=0.0;
         for(int i=0;i<4;i++) {
           vec2 uv=(p-islands[i].xy)/(islands[i].z*2.4)+0.5;float bottomHeight=-60.0;
