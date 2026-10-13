@@ -1,6 +1,6 @@
 # OceanFPV validation
 
-Date: 2026-10-13 (Asia/Tokyo). This records the new browser game. The original `OceanLab/VALIDATION.md` describes a separate Godot application and is not evidence that this game passed.
+Date: 2026-10-14 (Asia/Tokyo). This records the new browser game. The original `OceanLab/VALIDATION.md` describes a separate Godot application and is not evidence that this game passed.
 
 ## Marine follow-up
 
@@ -75,6 +75,16 @@ A separate same-camera60-frame probe measured two actual reflector updates per f
 The preceding paint/highlight release passed CI38402021527 and main38409098953; public bytes matched at2026-10-13T14:21:26.824Z. The metric-paint release passed CI38409143529 and main38413102510; public bytes matched at2026-10-13T14:38:53.617Z. Both separately passed native public keyboard climb, light switching, pause/resume/reset and real pointer lock/mouse-stick verification, with25 photo/model HTTP200 responses and no errors.
 
 Balcony CI38412062798 passed eight cases but hit the keyboard case's180s overall deadline. Its trace reached collision/reset, ACRO selection, modal dismissal and the final armed-state query; the snapshot shows ACRO/ARMED at1FPS. That case now has300s and the workflow35min, preserving assertions, viewport and product quality. The native keyboard/build check passed after the harness change; a full CI retry is distinct and required.
+
+That final balcony retry [38415865291](https://github.com/lingmulongtai/OceanFPV/actions/runs/38415865291) and main [38419762345](https://github.com/lingmulongtai/OceanFPV/actions/runs/38419762345) succeeded. Public bytes matched the verified build at2026-10-13T15:40:30.236Z. Public native RTX4050 checks passed rendering, light switching, keyboard climb, pause/resume/reset and real pointer lock/mouse stick, with25 photo/model HTTP200 responses and no errors. The subsequent cabin CI [38419039946](https://github.com/lingmulongtai/OceanFPV/actions/runs/38419039946) passed units/build but timed out eight browser cases. Its retained race trace shows simulation time increasing only0.06s per roughly12s page evaluation, before race start; no shader/page errors were recorded. Software rendering and trace readbacks require further investigation before cabin publication.
+
+## Cabin contact shading follow-up
+
+Three added regressions check open-floor visibility, short-range occlusion by actual opaque triangles, and preservation of photographed UV0/positions/normals on both vessel sides. The source passed **38/38 unit tests** and strict TypeScript/Vite build. Separate UV1 charts receive a256×256 visibility map on floors, ceilings, rear walls, partitions, facade reveals and balcony soffits. The opaque blockers include the first two furnished cabins and common slabs; glass is excluded. An independent review identified cross-chart contamination from whole-atlas mipmaps. The final map uses linear filtering without generated mipmaps, retaining chart boundaries at the cost of approximate distant minification.
+
+Actual RTX4050 Direct3D11 ULTRA draws compare AO intensities0 and0.75 at the same paused camera, geometry, loaded materials and fixed wave/vessel time120s. DAY/GOLDEN/BLUE on both sides produced12 captures without page/console errors. The final atlas minimum is0, mean195.711/255 and UV channel1. The one-time CPU bake took3.95s in this run; total scene readiness was15.57s. These are loading samples on this host, not sustained performance benchmarks. The map reuses one synthetic furnished-room template; differing curtains, boundary rooms and furniture without receiver charts remain limits. Full functional browser verification, CI and public deployment are separate checks.
+
+The final source subsequently passed **all9 browser cases** on native RTX4050 Direct3D11 in2.1m, including keyboard flight, virtual Xbox/radio, race, settings/mobile layout and context loss. An earlier concurrent development run passed eight cases but lost a page execution context during a source-triggered reload; it is excluded from full-suite acceptance. The accepted rerun kept source fixed throughout. `npm audit` reported zero vulnerabilities. CI and public deployment remain pending for this shading change.
 
 ## Earlier visual-release verification
 
