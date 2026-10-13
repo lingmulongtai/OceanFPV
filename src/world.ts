@@ -7,6 +7,7 @@ import { type SeaState } from './sea';
 import { GATES } from './race';
 import { closedHullGeometry } from './hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
+import { buildMotorYacht,YACHT_BEAM } from './yacht';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
 import { blendGroundCover, loadSurfaces, type SurfaceGroup } from './surfaces';
 import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS } from './terrain';
@@ -52,6 +53,7 @@ export class World {
   radar = new T.Group();
   cruise=buildCruiseShip();
   yacht=new T.Group();
+  private yachtContact:((p:T.Vector3)=>boolean)=()=>false;
   gateMeshes: T.Group[] = [];
   colliders: Collider[] = [];
   islands: { x: number; z: number; size: number; height: number }[] = [];
@@ -310,12 +312,8 @@ export class World {
     this.scene.add(root);
   }
   private buildYacht() {
-    const root=this.yacht;root.position.set(78,0,75);root.rotation.y=0;
-    const hull=new T.Mesh(new T.SphereGeometry(1,40,16),new T.MeshPhysicalMaterial({color:0xeee9dc,roughness:0.22,metalness:0.1,clearcoat:1}));hull.scale.set(4.5,2,14);hull.position.y=0.6;root.add(hull);
-    const deck=new T.Mesh(new RoundedBoxGeometry(6.5,2.1,15,3,0.4),new T.MeshStandardMaterial({color:0xe6e2d5,roughness:0.4}));deck.position.set(0,2.5,1);root.add(deck);
-    const windows=new T.Mesh(new RoundedBoxGeometry(5.4,1.2,7,2,0.18),new T.MeshPhysicalMaterial({color:0x173941,metalness:0.5,roughness:0.11,clearcoat:1}));windows.position.set(0,4,0);root.add(windows);
-    const roof=new T.Mesh(new RoundedBoxGeometry(6.1,0.25,8,2,0.08),new T.MeshStandardMaterial({color:0xe6e2d5,roughness:0.4}));roof.position.set(0,4.8,0);root.add(roof);
-    this.scene.add(root);
+    const model=buildMotorYacht();this.yacht.add(model.root);this.yachtContact=model.contains;
+    this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:model.paint,colour:false,roughness:1},{asset:'wood_floor_deck',resolution:'1k',materials:[model.teak],colour:true});
   }
   update(time: number,camera: T.Vector3,state: SeaState,dronePosition:T.Vector3,orientation:T.Quaternion,motor:number) {
     this.ocean.update(time,camera,state);
@@ -329,7 +327,7 @@ export class World {
   advanceVessels(time:number) {
     if(time===this.vesselTime)return;
     const oldLaunch=this.ship.localToWorld(new T.Vector3(0,5.4,38)),dt=time-this.vesselTime;
-    for(const [i,kind,root,length,width]of [[0,'explorer',this.ship,92,4.4],[1,'cruise',this.cruise.root,260,17],[2,'yacht',this.yacht,28,4.5]] as const) {
+    for(const [i,kind,root,length,width]of [[0,'explorer',this.ship,92,4.4],[1,'cruise',this.cruise.root,260,17],[2,'yacht',this.yacht,28,YACHT_BEAM/2]] as const) {
       const p=vesselPose(kind,time),forward=new T.Vector3(-Math.sin(p.heading),0,-Math.cos(p.heading));
       const h=this.ocean.heightAt(p.x,p.z)*(kind==='cruise'?0.2:0.45),half=length*0.3;
       const front=this.ocean.heightAt(p.x+forward.x*half,p.z+forward.z*half),back=this.ocean.heightAt(p.x-forward.x*half,p.z-forward.z*half);
@@ -370,9 +368,8 @@ export class World {
     for(const obstacle of this.naturalObstacles)if(p.y>obstacle.y&&p.y<obstacle.y+obstacle.height&&Math.hypot(p.x-obstacle.x,p.z-obstacle.z)<obstacle.radius)return '木・岩に接触しました';
     if(Math.hypot(p.x-145,p.z+135)<3.5&&p.y<39) return '灯台に接触しました';
     if(Math.pow((p.x-145)/36,2)+Math.pow((p.z+135)/27,2)<1&&p.y<11) return '岩礁に接触しました';
-    // Yacht local-space volume, conservative for close fly-bys.
     const yacht=this.yacht.worldToLocal(p.clone());
-    if(Math.abs(yacht.x)<4.6&&Math.abs(yacht.z)<14&&yacht.y<5.1) return 'ヨットに接触しました';
+    if(this.yachtContact(yacht))return 'ヨットに接触しました';
     return null;
   }
 }
