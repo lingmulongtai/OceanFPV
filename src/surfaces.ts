@@ -22,6 +22,29 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
       #endif`);
   };
 }
+/** Residual wave wash on porous rock, using fragment world height on meshes and instances. */
+export function wetCoastalSurface(material:T.MeshStandardMaterial,wash:{value:number}) {
+  const compile=material.onBeforeCompile,key=material.customProgramCacheKey.bind(material);
+  material.customProgramCacheKey=()=>`coastal-wet-${key()}`;
+  material.onBeforeCompile=(shader,renderer)=> {
+    compile.call(material,shader,renderer);shader.uniforms.shoreWash=wash;
+    shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vCoastPosition;');
+    shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>',`#include <project_vertex>
+      vec4 coastPosition=vec4(transformed,1.0);
+      #ifdef USE_INSTANCING
+        coastPosition=instanceMatrix*coastPosition;
+      #endif
+      vCoastPosition=(modelMatrix*coastPosition).xyz;`);
+    shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\nuniform float shoreWash;varying vec3 vCoastPosition;');
+    shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+      float washReach=shoreWash*1.5*(0.9+0.1*sin(vCoastPosition.x*0.19+sin(vCoastPosition.z*0.23)*2.0)*sin(vCoastPosition.z*0.13));
+      float coastWetness=shoreWash>0.0?1.0-smoothstep(0.15,washReach,vCoastPosition.y):0.0;
+      diffuseColor.rgb*=mix(1.0,0.62,coastWetness);`);
+    // Run after the photographed rock/cover roughness has been blended.
+    shader.fragmentShader=shader.fragmentShader.replace('#include <metalnessmap_fragment>',`roughnessFactor*=mix(1.0,0.45,coastWetness);
+      #include <metalnessmap_fragment>`);
+  };
+}
 /** Optional local assets fail as one coherent material group, retaining fallback. */
 export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number) {
   const unique=new Map<string,SurfaceGroup>();
