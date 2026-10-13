@@ -27,6 +27,7 @@ export function buildMotorYacht() {
   const paint=new T.MeshStandardMaterial({color:0xeeeae0,roughness:0.45}),hullPaint=paint.clone();hullPaint.side=T.DoubleSide;
   const teak=new T.MeshStandardMaterial({color:0xb79a78,roughness:0.8}),glass=new T.MeshPhysicalMaterial({color:0x18313d,roughness:0.08,metalness:0.25,clearcoat:1});
   const chrome=new T.MeshStandardMaterial({color:0xbec8cc,metalness:0.9,roughness:0.22});
+  const cushions=new T.MeshPhysicalMaterial({color:0xd9d3be,roughness:0.94,sheen:0.5,sheenColor:0xf2ead7});
   paint.name=hullPaint.name='Yacht paint';teak.name='Yacht teak';
   const buckets=new Map<T.Material,T.BufferGeometry[]>(),boxes:VesselBox[]=[];
   const add=(geometry:T.BufferGeometry,material:T.Material)=>{const g=material===paint||material===hullPaint?metricPaintGeometry(geometry):geometry.index?geometry.toNonIndexed():geometry.clone();geometry.dispose();if(material===teak){const p=g.attributes.position,uv=g.attributes.uv;for(let i=0;i<p.count;i++)uv.setXY(i,p.getX(i)/1.8,p.getZ(i)/1.8);}if(!buckets.has(material))buckets.set(material,[]);buckets.get(material)!.push(g);};
@@ -61,6 +62,22 @@ export function buildMotorYacht() {
     rod([side*2.13,6.095,-3.15],[side*2.13,6.8,-2.85],0.06,paint);
   }
   box([4.75,0.16,6.4],[0,6.88,-0.1]);
+  for(const side of [-1,1]) {
+    for(const stations of [[3,8,14,20,26,32,36],[98,106,114,122,126]]) {
+      let previous:number[]|null=null;
+      for(const station of stations) {
+        const u=station/128,z=(u-0.5)*YACHT_LENGTH,x=side*(hullHalfWidth(u,YACHT_BEAM,true)-0.2),floor=hullDeckHeight(u,YACHT_LENGTH,YACHT_DECK)+0.035,top=[x,floor+0.92,z];
+        rod([x,floor,z],top,0.027);if(previous)rod(previous,top,0.027);previous=top;
+      }
+    }
+    for(const z of [-3.2,-1,1.2,3.4,4.7])rod([side*2.4,4.695,z],[side*2.4,5.615,z],0.025);
+    rod([side*2.4,5.615,-3.2],[side*2.4,5.615,4.7],0.025);
+  }
+  rod([-2.4,5.615,4.7],[2.4,5.615,4.7],0.025);
+  box([2.5,0.18,2.9],[0,2.285,-10.5]);box([2.47,0.08,2.87],[0,2.415,-10.5],cushions,true,0.035);
+  box([4.2,0.55,0.85],[0,2.36,10.7]);box([4.17,0.16,0.83],[0,2.71,10.7],cushions,true,0.06);box([4.2,0.85,0.18],[0,2.95,11.08],cushions,true,0.06);
+  box([1.3,0.08,0.8],[0,2.8,8.5],teak);rod([0,2.085,8.5],[0,2.76,8.5],0.07);
+  for(const side of [-1,1]) {box([1.7,0.55,0.75],[side*1.48,4.97,3.5]);box([1.66,0.13,0.73],[side*1.48,5.31,3.5],cushions,true,0.05);}
   for(const [material,geometries]of buckets){const mesh=new T.Mesh(mergeGeometries(geometries)!,material);mesh.castShadow=true;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}
   return {root,boxes,paint:[paint,hullPaint],teak};
 }
