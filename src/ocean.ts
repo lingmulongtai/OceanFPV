@@ -2,6 +2,7 @@ import * as T from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { SEA_SCALE, type SeaState } from './sea';
 import { SpectralSea } from './spectrum';
+import { bathymetryData, BATHY_SIZE, COASTS } from './bathymetry';
 
 function radialGeometry(quality='high') {
   const segments=quality==='ultra'?512:quality==='high'?384:192,rings=quality==='ultra'?360:quality==='high'?280:170;
@@ -50,8 +51,10 @@ export class Ocean {
     Object.assign(this.material.uniforms,{
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
       dusk:{value:0.4},foamEnabled:{value:true},vessels:{value:Array.from({length:3},()=>new T.Vector4())},headings:{value:[0,0,0]},vesselWidths:{value:[4.4,17,4.5]},vesselSpeeds:{value:[0,0,0]},
-      islands:{value:[new T.Vector4(-580,-420,260,130),new T.Vector4(610,-800,320,190),new T.Vector4(-850,420,190,85),new T.Vector4(145,-135,30,12)]},
+      islands:{value:[...COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.height)),new T.Vector4(145,-135,36,27)]},
     });
+    const bottom=new T.DataTexture(bathymetryData(),BATHY_SIZE,BATHY_SIZE,T.RGBAFormat,T.FloatType);
+    bottom.magFilter=bottom.minFilter=T.NearestFilter;bottom.needsUpdate=true;this.material.uniforms.bathymetry={value:bottom};
     this.simulation.cascades.forEach((c,i)=> {
       for(const [name,data] of [['displacement',c.displacement],['normals',c.normal]] as const) {
         const texture=new T.DataTexture(data,c.size,c.size,T.RGBAFormat,T.FloatType);texture.wrapS=texture.wrapT=T.RepeatWrapping;texture.magFilter=texture.minFilter=T.LinearFilter;texture.needsUpdate=true;
@@ -69,12 +72,19 @@ export class Ocean {
       }`;
     this.material.fragmentShader=`${spectralCode}
       uniform sampler2D mirrorSampler;
+      uniform sampler2D bathymetry;
       uniform vec3 eye,sunDirection,sunColor;uniform float time,dusk;uniform bool foamEnabled;
       uniform vec4 vessels[3],islands[4];uniform float headings[3],vesselWidths[3],vesselSpeeds[3];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
       float hash(vec2 p) {return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
       float noise(vec2 p) {vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.0),f.x),f.y);}
       float foamNoise(vec2 p) {return noise(p)*0.55+noise(p*2.17+8.6)*0.3+noise(p*4.79)*0.15;}
+      vec4 bottomAt(vec2 uv) {
+        vec2 pixel=uv*${BATHY_SIZE-1}.0,base=min(floor(pixel),vec2(${BATHY_SIZE-2}.0)),f=pixel-base,a=(base+0.5)/${BATHY_SIZE}.0;
+        vec4 h=texture2D(bathymetry,a),b=texture2D(bathymetry,a+vec2(0,1.0/${BATHY_SIZE}.0)),d=texture2D(bathymetry,a+vec2(1.0/${BATHY_SIZE}.0,0));
+        if(f.x+f.y<=1.0)return h+(b-h)*f.y+(d-h)*f.x;
+        vec4 c=texture2D(bathymetry,a+vec2(1.0/${BATHY_SIZE}.0));return c+(b-c)*(1.0-f.x)+(d-c)*(1.0-f.y);
+      }
       void main() {
         vec3 view=normalize(eye-worldPosition);float distanceToEye=length(eye-worldPosition);vec2 p=worldPosition.xz;
         vec3 normal=normalAt(waveCoordinate,distanceToEye);
@@ -102,7 +112,15 @@ export class Ocean {
         float nv=max(dot(normal,view),0.015),fresnel=0.0204+0.9796*pow(1.0-nv,5.0);
         vec2 reflectionUV=mirrorCoord.xy/max(mirrorCoord.w,0.001)+normal.xz*(0.012+0.16/max(distanceToEye,2.0));
         vec3 reflected=texture2D(mirrorSampler,clamp(reflectionUV,0.001,0.999)).rgb;float shallow=0.0,shoreFoam=0.0;
-        for(int i=0;i<4;i++) {float coast=length(p-islands[i].xy)-islands[i].z*0.83;shallow=max(shallow,1.0-smoothstep(-8.0,38.0,coast));shoreFoam=max(shoreFoam,exp(-coast*coast/28.0)*smoothstep(0.23,0.65,n));}
+        for(int i=0;i<4;i++) {
+          vec2 uv=(p-islands[i].xy)/(islands[i].z*2.4)+0.5;float bottomHeight=-60.0;
+          if(i<3&&all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1))))bottomHeight=bottomAt(uv)[i];
+          if(i==3){vec2 reef=(p-islands[i].xy)/islands[i].zw;float r=dot(reef,reef);bottomHeight=r<1.0?-1.0+13.0*sqrt(1.0-r):-60.0;}
+          float depth=max(worldPosition.y-bottomHeight,0.0);
+          shallow=max(shallow,pow(1.0-smoothstep(0.0,8.0,depth),2.0));
+          float wash=0.65+0.35*sin(time*1.2+bottomHeight*1.8);
+          shoreFoam=max(shoreFoam,(1.0-smoothstep(0.4,3.2,depth))*wash*smoothstep(0.23,0.65,n));
+        }
         vec3 absorption=mix(vec3(0.006,0.045,0.082),vec3(0.016,0.17,0.145),shallow);
         float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);absorption+=vec3(0.018,0.11,0.078)*crestLight;
         vec3 halfV=normalize(view+sunDirection);float rough=0.12+smoothstep(80.0,1800.0,distanceToEye)*0.16;

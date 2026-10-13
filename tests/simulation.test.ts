@@ -10,6 +10,18 @@ import { closedHullGeometry } from '../src/hull';
 import { deckGeometry, vesselBoxContains } from '../src/cruise';
 import { vesselPose } from '../src/navigation';
 import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
+import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
+
+test('coastal water depths follow the same terrain triangles as visible shores',()=> {
+  const data=bathymetryData(),n=BATHY_SIZE;
+  for(const [channel,coast]of COASTS.entries())for(let i=0;i<80;i++) {
+    const gx=7.23+(i*31.7)%174,gz=4.71+(i*17.8)%181,ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz;
+    const h=(x:number,z:number)=>data[(z*n+x)*4+channel],a=h(ix,iz),b=h(ix,iz+1),d=h(ix+1,iz),c=h(ix+1,iz+1);
+    const sampled=u+v<=1?a+(b-a)*v+(d-a)*u:c+(b-c)*(1-u)+(d-c)*(1-v);
+    const expected=terrainSurfaceHeight((gx/(n-1)*2-1)*coast.size*1.2,(gz/(n-1)*2-1)*coast.size*1.2,coast.size,coast.height);
+    assert.ok(Math.abs(sampled-expected)<0.00002);
+  }
+});
 
 test('rounded passenger decks leave corner airspace flyable and keep deck contacts solid',()=> {
   const box={min:new Vector3(-16,-1,-100),max:new Vector3(16,1,100),radius:8};

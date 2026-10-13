@@ -9,7 +9,8 @@ import { closedHullGeometry } from './hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { vesselPose } from './navigation';
 import { loadSurfaces, type SurfaceGroup } from './surfaces';
-import { terrainSurfaceHeight } from './terrain';
+import { terrainSurfaceHeight, TERRAIN_SEGMENTS } from './terrain';
+import { COASTS } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
@@ -87,7 +88,7 @@ export class World {
     this.setLight('golden');
     this.ocean = new Ocean(this.sun); this.scene.add(this.ocean.mesh);
     this.buildShip(); this.buildDrone(); this.buildGates();
-    this.buildIsland(-580,-420,260,130); this.buildIsland(610,-800,320,190); this.buildIsland(-850,420,190,85);
+    for(const coast of COASTS)this.buildIsland(coast.x,coast.z,coast.size,coast.height);
     this.buildLighthouse(); this.buildYacht();
     this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:this.cruise.paint,colour:false},{asset:'wood_floor_deck',resolution:'1k',materials:[this.cruise.teak],colour:true},{asset:'rocky_terrain',resolution:'2k',materials:[this.rockMaterial],colour:true});
     this.scene.fog = new T.FogExp2(0x9facac,0.00019);
@@ -257,7 +258,7 @@ export class World {
   }
   private buildIsland(x: number,z: number,size: number,height: number) {
     this.islands.push({x,z,size,height});
-    const geo=new T.PlaneGeometry(size*2.4,size*2.4,192,192);geo.rotateX(-Math.PI/2);
+    const geo=new T.PlaneGeometry(size*2.4,size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geo.rotateX(-Math.PI/2);
     const pos=geo.attributes.position;const colors:number[]=[];
     for(let i=0;i<pos.count;i++) {
       const px=pos.getX(i),pz=pos.getZ(i);const y=this.terrain(px,pz,size,height);pos.setY(i,y);
