@@ -65,5 +65,5 @@ export function bakeCabinOcclusion(blockers:T.BufferGeometry[],floor:number,cabi
       const offset=((Math.floor(index/2)*TILE_Y+y)*WIDTH+index%2*TILE_X+x)*4;pixels[offset]=pixels[offset+1]=pixels[offset+2]=value;
     }
   });sampler.dispose();
-  const texture=new T.DataTexture(pixels,WIDTH,HEIGHT,T.RGBAFormat);texture.channel=1;texture.magFilter=T.LinearFilter;texture.minFilter=T.LinearMipmapLinearFilter;texture.generateMipmaps=true;texture.needsUpdate=true;return texture;
+  const texture=new T.DataTexture(pixels,WIDTH,HEIGHT,T.RGBAFormat);texture.channel=1;texture.magFilter=T.LinearFilter;texture.minFilter=T.LinearFilter;texture.generateMipmaps=false;texture.needsUpdate=true;return texture;
 }
