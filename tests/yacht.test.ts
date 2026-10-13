@@ -29,10 +29,17 @@ test('yacht side panes and raked windshield face outwards with solid contacts',(
   const model=buildMotorYacht(),ray=new T.Raycaster();model.root.updateMatrixWorld(true);
   for(const side of [-1,1]) {
     ray.set(new T.Vector3(side*8,3.7,0),new T.Vector3(-side,0,0));const hit=ray.intersectObject(model.root,true)[0];assert.ok(hit);
-    assert.ok(hit.face!.normal.x*side>0.9);assert.ok(model.boxes.some(box=>vesselBoxContains(box,hit.point)));
+    assert.ok(hit.face!.normal.x*side>0.9);assert.ok(model.contains(hit.point));
   }
   ray.set(new T.Vector3(0,3.7,-12),new T.Vector3(0,0,1));const front=ray.intersectObject(model.root,true)[0];assert.ok(front);
   assert.ok(front.face!.normal.z< -0.6);assert.ok(front.point.z> -6.2&&front.point.z< -4.9);
-  assert.ok(model.boxes.some(box=>vesselBoxContains(box,front.point)));
+  assert.ok(model.contains(front.point));
+  model.root.traverse(o=>{if(o instanceof T.Mesh)o.geometry.dispose();});
+});
+test('sloped windshield and canopy struts leave nearby airspace flyable',()=> {
+  const model=buildMotorYacht();
+  assert.equal(model.contains(new T.Vector3(0,4,-6.1)),false);
+  assert.equal(model.contains(new T.Vector3(2.13,5.9,3.5)),false);
+  assert.equal(model.contains(new T.Vector3(2.13,5.9,2.934)),true);
   model.root.traverse(o=>{if(o instanceof T.Mesh)o.geometry.dispose();});
 });

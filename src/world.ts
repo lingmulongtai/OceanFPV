@@ -6,8 +6,8 @@ import { Ocean } from './ocean';
 import { type SeaState } from './sea';
 import { GATES } from './race';
 import { closedHullGeometry } from './hull';
-import { buildCruiseShip, vesselBoxContains,type VesselBox } from './cruise';
-import { buildMotorYacht,yachtHullContains,YACHT_BEAM } from './yacht';
+import { buildCruiseShip, vesselBoxContains } from './cruise';
+import { buildMotorYacht,YACHT_BEAM } from './yacht';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
 import { blendGroundCover, loadSurfaces, type SurfaceGroup } from './surfaces';
 import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS } from './terrain';
@@ -53,7 +53,7 @@ export class World {
   radar = new T.Group();
   cruise=buildCruiseShip();
   yacht=new T.Group();
-  private yachtBoxes:VesselBox[]=[];
+  private yachtContact:((p:T.Vector3)=>boolean)=()=>false;
   gateMeshes: T.Group[] = [];
   colliders: Collider[] = [];
   islands: { x: number; z: number; size: number; height: number }[] = [];
@@ -312,7 +312,7 @@ export class World {
     this.scene.add(root);
   }
   private buildYacht() {
-    const model=buildMotorYacht();this.yacht.add(model.root);this.yachtBoxes=model.boxes;
+    const model=buildMotorYacht();this.yacht.add(model.root);this.yachtContact=model.contains;
     this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:model.paint,colour:false,roughness:1},{asset:'wood_floor_deck',resolution:'1k',materials:[model.teak],colour:true});
   }
   update(time: number,camera: T.Vector3,state: SeaState,dronePosition:T.Vector3,orientation:T.Quaternion,motor:number) {
@@ -369,7 +369,7 @@ export class World {
     if(Math.hypot(p.x-145,p.z+135)<3.5&&p.y<39) return '灯台に接触しました';
     if(Math.pow((p.x-145)/36,2)+Math.pow((p.z+135)/27,2)<1&&p.y<11) return '岩礁に接触しました';
     const yacht=this.yacht.worldToLocal(p.clone());
-    if(yachtHullContains(yacht)||this.yachtBoxes.some(box=>vesselBoxContains(box,yacht)))return 'ヨットに接触しました';
+    if(this.yachtContact(yacht))return 'ヨットに接触しました';
     return null;
   }
 }
