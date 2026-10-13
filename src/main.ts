@@ -47,6 +47,8 @@ async function boot() {
   let accumulator=0,last=performance.now(),lastHUD=0,lastControllerUI=0,frameCount=0,fpsTime=last,toastUntil=0;
   let cameraMode='fpv',cameraTilt=12,fov=95,returnToPause=false;
   const cameraTiltQuaternion=new T.Quaternion();const desiredCamera=new T.Vector3();
+  const renderedPosition=new T.Vector3(),renderedOrientation=new T.Quaternion();
+  let sceneDirty=true,renderedFov=NaN,wasFrozen=false,renderedOcean:T.Material|null=null,renderedOceanVersion=-1;
   let supported=true;
   const controls=['mode','camera','light','sea','quality','fov','tilt','rate','expo','volume','bloom','foam','mouse','input-source','deadzone'];
   const saved=readStored<Record<string,string|boolean>>('settings',{});
@@ -69,6 +71,7 @@ async function boot() {
     writeStored('settings',settings);
   }
   function resize() {
+    sceneDirty=true;
     const ratio=value('quality')==='ultra'?2:Math.min(devicePixelRatio||1,value('quality')==='high'?1.5:1);
     world.ocean.setQuality(value('quality'));
     world.cruise.setQuality(value('quality'));
@@ -271,7 +274,7 @@ async function boot() {
       try {const result=canvas.requestPointerLock();if(result) void result.catch(()=>toast('マウス操作を開始できませんでした。キーボード操作も使用できます。'));} catch {toast('マウスロックを利用できません。');}
     }
   });
-  document.addEventListener('visibilitychange',()=> {if(document.hidden) {pause('フライトを一時停止','別のタブに移動したため一時停止しました。');sound.suspend();input.clear();}});
+  document.addEventListener('visibilitychange',()=> {sceneDirty=true;if(document.hidden) {pause('フライトを一時停止','別のタブに移動したため一時停止しました。');sound.suspend();input.clear();}});
   window.addEventListener('blur',()=>pause('フライトを一時停止','画面から離れたため一時停止しました。'));
   canvas.addEventListener('webglcontextlost',e=> {e.preventDefault();supported=false;paused=true;flight.armed=false;flight.motor=0;input.clear();input.enabled=false;closeAll();document.exitPointerLock?.();$<HTMLButtonElement>('start').disabled=true;show('unsupported',true);$('unsupported-reason').textContent='GPUの描画状態を失いました。再読み込みしてください。';$('unsupported').querySelector<HTMLButtonElement>('button')!.focus();sound.suspend();});
 
@@ -318,7 +321,8 @@ async function boot() {
     input.poll();
     if(now-lastControllerUI>180) {updateControllerUI();lastControllerUI=now;}
     if(!supported||document.hidden) return;
-    if(!paused) time+=dt;
+    const frozen=paused||!!document.querySelector('dialog[open]');
+    if(!frozen) time+=dt;
     world.ocean.advance(time,sea);
     world.advanceVessels(time);
     if(playing&&!paused&&!flight.crashed&&!race.finished) {
@@ -355,17 +359,20 @@ async function boot() {
       }
     }
     camera.updateProjectionMatrix();
-    world.update(time,camera.position,sea,flight.position,flight.orientation,flight.motor);
-    world.scene.backgroundRotation.y=time*0.00015;
-    world.scene.environmentRotation.y=world.scene.backgroundRotation.y;
-    if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280);}
-    world.ship.updateMatrixWorld(true);
+    const needsFrame=!frozen||sceneDirty||wasFrozen!==frozen||renderedFov!==camera.fov||!renderedPosition.equals(camera.position)||!renderedOrientation.equals(camera.quaternion)||renderedOcean!==world.ocean.material||renderedOceanVersion!==world.ocean.material.version;
+    if(needsFrame) {
+      world.update(time,camera.position,sea,flight.position,flight.orientation,flight.motor);
+      world.scene.backgroundRotation.y=time*0.00015;
+      world.scene.environmentRotation.y=world.scene.backgroundRotation.y;
+      if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280);}
+      world.ship.updateMatrixWorld(true);
+      renderer.info.reset();composer.render();frameCount++;
+      sceneDirty=false;wasFrozen=frozen;renderedFov=camera.fov;renderedPosition.copy(camera.position);renderedOrientation.copy(camera.quaternion);renderedOcean=world.ocean.material;renderedOceanVersion=world.ocean.material.version;
+    }
     sound.update(flight.motor,playing&&!paused&&flight.armed);
-    renderer.info.reset();composer.render();
     if(now-lastHUD>100) {if(playing) hud();lastHUD=now;}
     if(toastUntil&&now>toastUntil) {show('toast',false);toastUntil=0;}
-    frameCount++;
-    if(now-fpsTime>1000) {$('fps').textContent=`${Math.round(frameCount*1000/(now-fpsTime))} FPS`;frameCount=0;fpsTime=now;}
+    if(now-fpsTime>1000) {$('fps').textContent=frozen?'PAUSED':`${Math.round(frameCount*1000/(now-fpsTime))} FPS`;frameCount=0;fpsTime=now;}
   }
   world.updateGates(false,0);
   const lightingReady=loadPhotographicSky().then(loadedSky=> {
@@ -381,7 +388,7 @@ async function boot() {
   $<HTMLButtonElement>('start').disabled=false;
   $('start-note').textContent=missingSurfaces.length?'一部の素材を読み込めませんでした。標準素材でプレイできます。':innerWidth<600?'PCのキーボードまたは接続コントローラーでプレイできます。':'インストール不要 · キーボード / Xbox / USB送信機';
   if(import.meta.env.DEV&&new URLSearchParams(location.search).has('test')) {
-    Object.assign(window,{__OCEANFPV__:{flight,race,input,world,camera,getState:()=>({playing,paused,time,flightTime,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})}});
+    Object.assign(window,{__OCEANFPV__:{flight,race,input,world,camera,invalidate:()=>{sceneDirty=true;},getState:()=>({playing,paused,time,flightTime,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})}});
   }
   requestAnimationFrame(frame);
 }

@@ -72,6 +72,38 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   await page.locator('[data-close="settings-dialog"]').last().click();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(true);
 });
+test('fixed dialog views stop GPU draws and redraw changed settings',async({page})=> {
+  test.setTimeout(300000);
+  await page.addInitScript(()=> {
+    (window as any).__glDraws=0;
+    const prototype=WebGL2RenderingContext.prototype as any;
+    for(const name of ['drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced']) {
+      const draw=prototype[name];prototype[name]=function(...args:any[]){(window as any).__glDraws++;return draw.apply(this,args);};
+    }
+  });
+  const snapshot=()=>page.evaluate(async()=> {
+    await new Promise<void>(finish=>{const step=(n:number)=>n?requestAnimationFrame(()=>step(n-1)):finish();step(3);});
+    const app=(window as any).__OCEANFPV__;
+    return {draws:(window as any).__glDraws,time:app.getState().time,fov:app.camera.fov,quality:app.world.quality,reflection:app.world.ocean.mesh.getRenderTarget().width};
+  });
+  await ready(page);await page.locator('#open-help').click();
+  const help=await snapshot();expect(await snapshot()).toEqual(help);
+  await page.locator('[data-close="help-dialog"]').last().click();
+  const moving=await snapshot();expect(moving.time).toBeGreaterThan(help.time);expect(moving.draws).toBeGreaterThan(help.draws);
+  await page.locator('#start').click();await page.locator('#open-settings').click();
+  const stopped=await snapshot();expect(await snapshot()).toEqual(stopped);
+  await page.locator('#fov').fill('65');await page.locator('#fov').dispatchEvent('input');
+  const changed=await snapshot();expect(changed.time).toBe(stopped.time);expect(changed.fov).toBe(65);expect(changed.draws).toBeGreaterThan(stopped.draws);expect(await snapshot()).toEqual(changed);
+  if(process.env.OCEANFPV_NATIVE_GPU==='1') {
+    await page.locator('#quality').selectOption('high');
+    const high=await snapshot();expect(high.time).toBe(stopped.time);expect(high.draws).toBeGreaterThan(changed.draws);expect(high.quality).toBe('high');expect(high.reflection).toBe(1536);expect(await snapshot()).toEqual(high);
+    await page.locator('#quality').selectOption('balanced');const balanced=await snapshot();expect(balanced.quality).toBe('balanced');expect(balanced.reflection).toBe(512);expect(balanced.time).toBe(stopped.time);
+  }
+  await page.locator('[data-close="settings-dialog"]').last().click();
+  const resumed=await snapshot();expect(resumed.time).toBeGreaterThan(stopped.time);expect(resumed.draws).toBeGreaterThan(changed.draws);
+  await page.keyboard.press('Escape');const paused=await snapshot();expect(await snapshot()).toEqual(paused);
+});
+
 test('lost WebGL context closes modal layers and leaves recovery reachable',async({page})=> {
   await ready(page);await page.locator('#start').click();await page.keyboard.press('Escape');
   await expect(page.locator('#pause-dialog')).toBeVisible();
