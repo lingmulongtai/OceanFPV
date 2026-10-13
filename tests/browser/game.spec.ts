@@ -124,14 +124,19 @@ test('race registers actual ordered gate crossing and saves a completed run', as
   await page.locator('#race-mode').click();await page.locator('#start').click();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().time)).toBeLessThan(1);
   for(let i=0;i<18;i++) {
-    await page.evaluate((index)=> {
+    const crossed=await page.evaluate(async(index)=> {
       const app=(window as any).__OCEANFPV__,g=app.world.gateMeshes[index%6];
       // Use the mesh orientation to put flight one step before the real plane.
       const normal=app.flight.position.clone().set(0,0,1).applyQuaternion(g.quaternion);
       app.flight.position.copy(g.position).addScaledVector(normal,-0.08);
       app.flight.velocity.copy(normal).multiplyScalar(24);app.flight.orientation.identity();
+      const start=performance.now(),progress=()=>app.race.laps.length*6+app.race.next;
+      // Let real animation/physics frames cross the plane without a protocol poll per frame.
+      do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+      while(progress()<index+1&&performance.now()-start<20000);
+      return {progress:progress(),waited:performance.now()-start};
     },i);
-    if(i<17) await expect.poll(async()=>page.evaluate(()=> (window as any).__OCEANFPV__.race.laps.length*6+(window as any).__OCEANFPV__.race.next)).toBe(i+1);
+    expect(crossed.progress).toBe(i+1);expect(crossed.waited).toBeLessThanOrEqual(20000);
   }
   await expect(page.locator('#pause-title')).toHaveText('コース完走！');
   await expect(page.locator('#results')).toContainText('TOTAL');
