@@ -21,8 +21,8 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(render.triangles).toBeGreaterThan(30000);
   const forest=await page.evaluate(()=> (window as any).__OCEANFPV__.world.forest?.sourceTriangles??0);
   expect(forest).toBeGreaterThan(1000000);
-  const rocks=await page.evaluate(()=> {const rocks=(window as any).__OCEANFPV__.world.rocks;return {triangles:rocks?.shape.geometry.index.count/3,instances:rocks?.group.children.map((mesh:any)=>mesh.count)};});
-  expect(rocks.triangles).toBe(14844);expect(rocks.instances).toEqual([90,90,90]);
+  const rocks=await page.evaluate(()=> {const rocks=(window as any).__OCEANFPV__.world.rocks;return {triangles:rocks?.shape.geometry.index.count/3,placements:rocks?.placements.length,instances:rocks?.group.children.reduce((sum:number,mesh:any)=>sum+mesh.count,0)};});
+  expect(rocks.triangles).toBe(14844);expect(rocks.placements).toBe(270);expect(rocks.instances).toBe(270);
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
 });

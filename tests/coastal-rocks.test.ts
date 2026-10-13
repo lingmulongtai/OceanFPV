@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import * as T from 'three';
-import { CoastalRockShape,coastalRockSites,normaliseRockGeometry } from '../src/rocks';
+import { CoastalRockShape,coastalRockSites,normaliseRockGeometry,buildRockBatches } from '../src/rocks';
 import { COASTS } from '../src/bathymetry';
 import { terrainSlope,terrainSurfaceHeight } from '../src/terrain';
 
@@ -51,4 +51,26 @@ test('all coastal placements preserve scale and settle into rendered terrain rat
     assert.ok(Math.abs(Math.min(...gaps)+embed)<1e-5);assert.ok(Number.isFinite(placement.bounds.min.y));assert.ok(placement.bounds.max.y-ground(site.x,site.z)>0.3);count++;
   }
   assert.equal(count,270);
+});
+
+test('spatial batches retain every captured rock and conservative bounds for each render camera',()=> {
+  const geometry=normaliseRockGeometry(capturedGeometry()),shape=new CoastalRockShape(geometry),material=new T.MeshStandardMaterial(),matrix=new T.Matrix4();
+  const placements=COASTS.flatMap(coast=>coastalRockSites(coast).map(site=>shape.place(site,(x,z)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height))));
+  const batches=buildRockBatches(geometry,material,placements),original=new Set(placements.map(p=>p.matrix.elements.map(Math.fround).join(','))),seen=new Set<string>();
+  geometry.computeBoundingSphere();const sphere=new T.Sphere(),camera=new T.PerspectiveCamera(65,1.5,0.1,5000),frustum=new T.Frustum();
+  assert.equal(batches.reduce((sum,mesh)=>sum+mesh.count,0),270);assert.ok(batches.length>3&&batches.length<270);
+  for(const mesh of batches) {
+    assert.equal(mesh.geometry,geometry);assert.equal(mesh.material,material);assert.equal(mesh.frustumCulled,true);assert.equal(mesh.castShadow&&mesh.receiveShadow,true);
+    for(let i=0;i<mesh.count;i++) {
+      mesh.getMatrixAt(i,matrix);const key=matrix.elements.join(',');assert.ok(original.has(key));assert.equal(seen.has(key),false);seen.add(key);
+      sphere.copy(geometry.boundingSphere!).applyMatrix4(matrix);
+      assert.ok(sphere.center.distanceTo(mesh.boundingSphere!.center)+sphere.radius<=mesh.boundingSphere!.radius+1e-5);
+      for(const y of [5,-5,200]) {
+        camera.position.copy(sphere.center).add(new T.Vector3(20,y,30));camera.lookAt(sphere.center);camera.updateMatrixWorld();
+        frustum.setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
+        assert.equal(frustum.intersectsSphere(mesh.boundingSphere!),true);
+      }
+    }
+  }
+  assert.equal(seen.size,270);
 });
