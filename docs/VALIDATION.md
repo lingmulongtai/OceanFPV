@@ -4,9 +4,15 @@ Date: 2026-10-13 (Asia/Tokyo). This records the new browser game. The original `
 
 ## Marine follow-up
 
-The 2026-10-13 follow-up passed **27/27 unit tests** and the strict production build. Added coverage checks curved-deck airspace versus solid contacts, bow planking against the closed hull's actual station vertices, packed coastal depths against rendered terrain triangles, displaced wave tangents at all sea strengths, and stronger whitecaps plus deterministic foam reset on preset changes/time rewind. An additional check samples combined horizontal Jacobians at 4,000 positions/times and verifies that SWELL height is preserved when excessive crest compression is limited. The final browser suite and publication are checked separately before this revision is deployed.
+The 2026-10-13 marine follow-up passed **27/27 unit tests**, the strict production build and **9/9 browser cases** in [CI run 38380778208](https://github.com/lingmulongtai/OceanFPV/actions/runs/38380778208). Added coverage checks curved-deck airspace versus solid contacts, bow planking against the closed hull's actual station vertices, packed coastal depths against rendered terrain triangles, displaced wave tangents at all sea strengths, and stronger whitecaps plus deterministic foam reset on preset changes/time rewind. An additional check samples combined horizontal Jacobians at 4,000 positions/times and verifies that SWELL height is preserved when excessive crest compression is limited. Main deployment and public-byte verification are separate checks.
 
 HIGH comparison images at 1100×740 verify curved passenger-deck ends, wraparound windows and translucent balcony glazing, shoreline wash, and the updated ocean normals. These use a paused diagnostic camera and are WebGL renders, not human flight or real-device performance acceptance. The rendering and hardware limits below still apply.
+
+## Vessel fixture follow-up
+
+The subsequent fixture revision passed **29/29 unit tests** and the strict production build. Independent ray casts against the closed hull check 32 fitting positions on both sides, including the differing triangle diagonals. Ray casts from all 132 ship-name vertices check that the curved labels remain just above the painted hull. Portholes, anchor recesses and chains now follow that surface instead of fixed lateral coordinates.
+
+Actual paused HIGH renders at 1100×740 checked both bow sides and the sun deck without page/console errors. The wooden sun deck, chair legs, roof railing posts, funnel, radar pedestal and forward mast now meet their supporting surfaces. The roof view reported 946,822 rendered triangles including reflection; this is scene evidence, not a real-GPU speed measurement. Browser CI and publication are checked independently before this revision is deployed.
 
 Marine PR verification [38377022441](https://github.com/lingmulongtai/OceanFPV/actions/runs/38377022441) passed eight browser cases. The race case reached its 180-second deadline after completing all three laps: the failure snapshot already showed the completion dialog, lap totals and saved best time. This case now has a 300-second budget for its 18 rendered gate crossings and final result/storage checks on the software GPU. Assertions, viewport and product rendering are unchanged.
 
