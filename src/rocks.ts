@@ -72,6 +72,20 @@ function disposeModel(source:T.Group,disposeTextures=true) {
   if(disposeTextures)for(const texture of textures){texture.dispose();(texture.image as {close?:()=>void})?.close?.();}
 }
 
+/** Small immutable batches let every camera cull distant shoreline sections. */
+export function buildRockBatches(geometry:T.BufferGeometry,material:T.MeshStandardMaterial,placements:RockPlacement[]) {
+  const cells=new Map<string,RockPlacement[]>();
+  for(const placement of placements) {
+    const position=placement.matrix.elements,key=`${Math.floor(position[12]/32)},${Math.floor(position[14]/32)}`;
+    if(!cells.has(key))cells.set(key,[]);cells.get(key)!.push(placement);
+  }
+  return [...cells.values()].map(cell=> {
+    const mesh=new T.InstancedMesh(geometry,material,cell.length);mesh.name='photographed-coastal-rock';mesh.castShadow=mesh.receiveShadow=true;
+    cell.forEach((placement,i)=>mesh.setMatrixAt(i,placement.matrix));
+    mesh.computeBoundingBox();mesh.computeBoundingSphere();return mesh;
+  });
+}
+
 export class CoastalRocks {
   readonly group=new T.Group();
   readonly shape:CoastalRockShape;
@@ -96,9 +110,8 @@ export class CoastalRocks {
     wetCoastalSurface(material,wash);
     for(const patch of patches) {
       const {coast}=patch,heightAt=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height);
-      const mesh=new T.InstancedMesh(geometry,material,patch.sites.length);mesh.name='photographed-coastal-rock';mesh.castShadow=mesh.receiveShadow=true;
-      patch.sites.forEach((site,i)=>{const placement=this.shape.place(site,heightAt);mesh.setMatrixAt(i,placement.matrix);this.placements.push(placement);});
-      mesh.computeBoundingBox();mesh.computeBoundingSphere();this.group.add(mesh);
+      const placements=patch.sites.map(site=>this.shape.place(site,heightAt));this.placements.push(...placements);
+      this.group.add(...buildRockBatches(geometry,material,placements));
     }
   }
   contains(position:T.Vector3){return this.placements.some(placement=>this.shape.contains(position,placement));}
