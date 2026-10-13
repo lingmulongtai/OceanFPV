@@ -46,8 +46,14 @@ export class Ocean {
   private textures:T.DataTexture[]=[];
   private quality='high';
   private state:SeaState='breeze';
+  private reflectedView:T.Camera|null=null;
   constructor(sun:T.Vector3) {
     this.mesh=new Reflector(radialGeometry(),{textureWidth:1536,textureHeight:1536,multisample:0,clipBias:0.012});
+    const reflect=this.mesh.onBeforeRender.bind(this.mesh);
+    this.mesh.onBeforeRender=(renderer,scene,camera,...args)=> {
+      if(this.reflectedView===camera&&!this.mesh.forceUpdate)return;
+      reflect(renderer,scene,camera,...args);this.reflectedView=camera;
+    };
     this.mesh.getRenderTarget().texture.generateMipmaps=true;this.mesh.getRenderTarget().texture.minFilter=T.LinearMipmapLinearFilter;
     this.mesh.rotation.x=-Math.PI/2;this.mesh.frustumCulled=false;
     this.material=this.mesh.material as T.ShaderMaterial;this.material.lights=false;this.material.side=T.DoubleSide;
@@ -180,6 +186,7 @@ export class Ocean {
     this.material.uniforms.slopeVariance.value.set(...this.simulation.cascades.map(c=>c.slopeVariance*SEA_SCALE[state]**2));
   }
   update(time:number,camera:T.Vector3,state:SeaState) {
+    this.reflectedView=null;
     this.advance(time,state);this.material.uniforms.eye.value.copy(camera);this.mesh.position.x=camera.x;this.mesh.position.z=camera.z;
   }
   setQuality(quality:string) {
