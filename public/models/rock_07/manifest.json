@@ -1,0 +1,42 @@
+[
+  {
+    "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/rock_07/rock_07_4k.gltf",
+    "file": "rock_07_4k.gltf",
+    "md5": "00c41fa453f9644021f5ec4ddf19742e",
+    "sha256": "03f0a155776cc01a7fa490e3c7c3193c04da72ddc6ca17e5ed254ab7edfe4d25",
+    "bytes": 2979,
+    "license": "CC0-1.0"
+  },
+  {
+    "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/rock_07/rock_07.bin",
+    "file": "rock_07.bin",
+    "md5": "817b2cfd1626cb06f18a825f87f58ec3",
+    "sha256": "e4a532a6d6cf4a08c288f501b790f32cba0528136a29959ce774c3cd39369e7e",
+    "bytes": 468936,
+    "license": "CC0-1.0"
+  },
+  {
+    "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/4k/rock_07/rock_07_arm_4k.jpg",
+    "file": "textures/rock_07_arm_4k.jpg",
+    "md5": "2674759c048370ae200e9573f2dbd426",
+    "sha256": "e58597f48eda2e5bbc7bf8deaec1a61d050c655caef375d17e7b8d51c8e9be91",
+    "bytes": 2308060,
+    "license": "CC0-1.0"
+  },
+  {
+    "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/4k/rock_07/rock_07_nor_gl_4k.jpg",
+    "file": "textures/rock_07_nor_gl_4k.jpg",
+    "md5": "70835832d757ed97293565f573bf68b3",
+    "sha256": "6a3fd625213ba878f362caab2aa97ceb99b7f7069d3628ccfce328c5e74e9252",
+    "bytes": 9934279,
+    "license": "CC0-1.0"
+  },
+  {
+    "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/4k/rock_07/rock_07_diff_4k.jpg",
+    "file": "textures/rock_07_diff_4k.jpg",
+    "md5": "f6ee75f0540e35919406483601b259aa",
+    "sha256": "cbd36cb09f28730c3e79fcc2fee35e35509be21cd89bf1220c2d4f0c90dabfcb",
+    "bytes": 7671132,
+    "license": "CC0-1.0"
+  }
+]
