@@ -17,9 +17,9 @@ export function deckGeometry(length:number,beam:number,height:number,radius=6) {
   const geometry=new T.ExtrudeGeometry(deckOutline(length,beam,radius),{depth:height,bevelEnabled:false,curveSegments:12});
   geometry.rotateX(Math.PI/2);geometry.translate(0,height/2,0);return geometry;
 }
-function windowRibbon(length:number,beam:number,height:number,radius=6) {
+export function windowRibbon(length:number,beam:number,height:number,radius=6) {
   const points=deckOutline(length,beam,radius).getPoints(12),positions:number[]=[],uvs:number[]=[],indices:number[]=[];
-  for(let i=0;i<points.length;i++) {const p=points[i];positions.push(p.x,-height/2,p.y,p.x,height/2,p.y);uvs.push(i/points.length,0,i/points.length,1);if(i){const a=(i-1)*2,b=i*2;indices.push(a,b,a+1,a+1,b,b+1);}}
+  for(let i=0;i<points.length;i++) {const p=points[i];positions.push(p.x,-height/2,p.y,p.x,height/2,p.y);uvs.push(i/points.length,0,i/points.length,1);if(i){const a=(i-1)*2,b=i*2;indices.push(a,a+1,b,a+1,b+1,b);}}
   const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
 }
 export function vesselBoxContains(box:VesselBox,p:T.Vector3,padding=0.2) {

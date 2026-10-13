@@ -7,11 +7,28 @@ import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
 import { closedHullGeometry, foredeckGeometry, hullNameGeometry, upperHullSidePose } from '../src/hull';
-import { deckGeometry, vesselBoxContains } from '../src/cruise';
+import { deckGeometry, vesselBoxContains, windowRibbon } from '../src/cruise';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES, WAKE_STEP } from '../src/navigation';
 import { coastalTreeSites, terrainHeight, terrainSurfaceHeight, TERRAIN_SEGMENTS } from '../src/terrain';
 import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
 import { metricPaintGeometry } from '../src/paint';
+
+test('passenger glazing faces outwards on every side without DoubleSide correction',()=> {
+  const geometry=windowRibbon(196.14,27.64,1.72,6.07),mesh=new Mesh(geometry,new MeshBasicMaterial());
+  mesh.updateMatrixWorld(true);
+  for(const [origin,direction] of [
+    [new Vector3(20,0,0),new Vector3(-1,0,0)],
+    [new Vector3(-20,0,0),new Vector3(1,0,0)],
+    [new Vector3(0,0,110),new Vector3(0,0,-1)],
+    [new Vector3(0,0,-110),new Vector3(0,0,1)]
+  ]) {
+    const hit=new Raycaster(origin,direction).intersectObject(mesh)[0];assert.ok(hit);
+    assert.ok(hit.face!.normal.dot(direction)<-0.99);
+  }
+  const p=geometry.attributes.position,n=geometry.attributes.normal;
+  for(let i=0;i<p.count;i++)assert.ok(n.getX(i)*p.getX(i)+n.getZ(i)*p.getZ(i)>0);
+  geometry.dispose();mesh.material.dispose();
+});
 
 test('hull paint charts cover both sides and end caps without changing triangles',()=> {
   const source=closedHullGeometry(260,34,9,7,true),original=source.toNonIndexed(),mapped=metricPaintGeometry(source);
