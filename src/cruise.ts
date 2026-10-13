@@ -46,6 +46,7 @@ export function buildCruiseShip() {
   const pool=new T.MeshPhysicalMaterial({color:0x36b9c7,roughness:0.08,metalness:0.12,clearcoat:1});
   const linen=new T.MeshPhysicalMaterial({color:0xe4e0d5,roughness:0.94,sheen:0.8,sheenColor:0xeee9de,sheenRoughness:0.8});
   const quilts=[0x557d83,0x8b8579,0x8e6551].map(color=>new T.MeshPhysicalMaterial({color,roughness:0.95,sheen:0.7,sheenColor:color,sheenRoughness:0.85}));
+  const curtain=new T.MeshPhysicalMaterial({color:0xb7ad96,roughness:0.94,sheen:0.7,sheenColor:0xd4c8af,sheenRoughness:0.9,side:T.DoubleSide});
   const boxes:VesselBox[]=[],buckets=new Map<T.Material,T.BufferGeometry[]>();
   const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1))=> {
     g.applyMatrix4(new T.Matrix4().compose(new T.Vector3(...p),new T.Quaternion().setFromEuler(rotation),scale));
@@ -103,6 +104,13 @@ export function buildCruiseShip() {
         const fabric=quilts[(deck+Math.round((cabin-start)/3.5))%quilts.length];
         box([1.15,0.035,1.38],[side*12.65,floor+0.555,cabin+0.97],fabric);
         box([0.55,0.6,0.48],[side*11.475,floor+0.36,cabin+1.98],teak);
+        const curtainWidth=0.32+0.12*((deck+Math.round((cabin-start)/3.5))%3);
+        for(const centre of [cabin+0.22+curtainWidth/2,cabin+3.28-curtainWidth/2]) {
+          const folds=new T.PlaneGeometry(curtainWidth,2.44,24,1),positions=folds.attributes.position;
+          for(let i=0;i<positions.count;i++)positions.setZ(i,0.025*Math.sin(positions.getX(i)/curtainWidth*Math.PI*12));folds.computeVertexNormals();
+          add(folds,[side*13.70,floor+1.28,centre],curtain,new T.Euler(0,side*Math.PI/2,0));
+        }
+        rod([side*13.705,floor+2.51,cabin+0.22],[side*13.705,floor+2.51,cabin+3.28],0.02,chrome);
         box([0.1,1.72,0.44],[side*13.77,y+0.02,cabin],white);
         add(new T.PlaneGeometry(3.06,1.72),[side*13.82,y+0.02,cabin+1.75],cabinGlass,new T.Euler(0,side*Math.PI/2,0));
         box([0.1,2.57,0.09],[side*13.85,floor+1.285,cabin],white);
