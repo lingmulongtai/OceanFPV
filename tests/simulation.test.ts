@@ -13,6 +13,25 @@ import { coastalTreeSites, terrainHeight, terrainSurfaceHeight, TERRAIN_SEGMENTS
 import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
 import { metricPaintGeometry } from '../src/paint';
 
+test('hull paint charts cover both sides and end caps without changing triangles',()=> {
+  const source=closedHullGeometry(260,34,9,7,true),original=source.toNonIndexed(),mapped=metricPaintGeometry(source);
+  const p=mapped.attributes.position,uv=mapped.attributes.uv;
+  assert.deepEqual([...p.array],[...original.attributes.position.array]);
+  assert.deepEqual([...mapped.attributes.normal.array],[...original.attributes.normal.array]);
+  const a=new Vector3(),b=new Vector3(),c=new Vector3();let capFaces=0;
+  for(let i=0;i<p.count;i+=3) {
+    a.fromBufferAttribute(p,i);b.fromBufferAttribute(p,i+1);c.fromBufferAttribute(p,i+2);
+    const normal=b.clone().sub(a).cross(c.clone().sub(a));
+    const area=Math.abs((uv.getX(i+1)-uv.getX(i))*(uv.getY(i+2)-uv.getY(i))-(uv.getX(i+2)-uv.getX(i))*(uv.getY(i+1)-uv.getY(i)));
+    if(normal.lengthSq()>1e-12)assert.ok(area>1e-10);
+    if(a.z===b.z&&b.z===c.z&&Math.abs(a.z)===130)capFaces++;
+    if(Math.abs(a.z)<5&&Math.abs(normal.x)>Math.abs(normal.y)&&Math.abs(normal.x)>Math.abs(normal.z))for(let j=i;j<i+3;j++) {
+      assert.ok(Math.abs(uv.getX(j)*2.5-p.getZ(j))<0.00002);assert.ok(Math.abs(uv.getY(j)*2.5-p.getY(j))<0.00002);
+    }
+  }
+  assert.equal(capFaces,12);[source,original,mapped].forEach(g=>g.dispose());
+});
+
 test('painted roof charts retain geometry and a 2.5 metre photographed period',()=> {
   const source=new BoxGeometry(34.2,0.42,12);source.translate(0,33.82,-70);
   const original=source.toNonIndexed(),mapped=metricPaintGeometry(source),position=mapped.attributes.position,uv=mapped.attributes.uv;

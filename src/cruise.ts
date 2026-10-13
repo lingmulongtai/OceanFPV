@@ -69,7 +69,7 @@ export function buildCruiseShip() {
     shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 shipPosition;').replace('#include <begin_vertex>','#include <begin_vertex>\nshipPosition=position;');
     shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 shipPosition;').replace('#include <color_fragment>','#include <color_fragment>\nfloat stripe=1.0-smoothstep(2.9,3.15,abs(shipPosition.y-3.6));\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.022,0.054,0.091),stripe*0.95);\ndiffuseColor.rgb*=mix(0.28,1.0,smoothstep(-0.8,0.15,shipPosition.y));');
   };
-  const hull=new T.Mesh(closedHullGeometry(260,34,9,7,true),hullMat);hull.castShadow=hull.receiveShadow=true;root.add(hull);
+  const hullSource=closedHullGeometry(260,34,9,7,true),hull=new T.Mesh(metricPaintGeometry(hullSource),hullMat);hullSource.dispose();hull.castShadow=hull.receiveShadow=true;root.add(hull);
   // Tall sheer hull, recessed balcony walls and overhanging deck slabs.
   for(let deck=0;deck<8;deck++) {
     const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3;
