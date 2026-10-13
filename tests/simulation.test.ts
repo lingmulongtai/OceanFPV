@@ -30,6 +30,13 @@ test('passenger glazing faces outwards on every side without DoubleSide correcti
   geometry.dispose();mesh.material.dispose();
 });
 
+test('end glazing leaves straight cabin sides open for individual panes',()=> {
+  const geometry=windowRibbon(196.14,27.64,1.72,6.07,true),mesh=new Mesh(geometry,new MeshBasicMaterial());mesh.updateMatrixWorld(true);
+  assert.equal(new Raycaster(new Vector3(20,0,0),new Vector3(-1,0,0)).intersectObject(mesh).length,0);
+  for(const side of [-1,1])assert.ok(new Raycaster(new Vector3(0,0,side*110),new Vector3(0,0,-side)).intersectObject(mesh).length>0);
+  geometry.dispose();mesh.material.dispose();
+});
+
 test('hull paint charts cover both sides and end caps without changing triangles',()=> {
   const source=closedHullGeometry(260,34,9,7,true),original=source.toNonIndexed(),mapped=metricPaintGeometry(source);
   const p=mapped.attributes.position,uv=mapped.attributes.uv;

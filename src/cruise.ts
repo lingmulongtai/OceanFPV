@@ -17,9 +17,9 @@ export function deckGeometry(length:number,beam:number,height:number,radius=6) {
   const geometry=new T.ExtrudeGeometry(deckOutline(length,beam,radius),{depth:height,bevelEnabled:false,curveSegments:12});
   geometry.rotateX(Math.PI/2);geometry.translate(0,height/2,0);return geometry;
 }
-export function windowRibbon(length:number,beam:number,height:number,radius=6) {
+export function windowRibbon(length:number,beam:number,height:number,radius=6,endsOnly=false) {
   const points=deckOutline(length,beam,radius).getPoints(12),positions:number[]=[],uvs:number[]=[],indices:number[]=[];
-  for(let i=0;i<points.length;i++) {const p=points[i];positions.push(p.x,-height/2,p.y,p.x,height/2,p.y);uvs.push(i/points.length,0,i/points.length,1);if(i){const a=(i-1)*2,b=i*2;indices.push(a,a+1,b,a+1,b+1,b);}}
+  for(let i=0;i<points.length;i++) {const p=points[i];positions.push(p.x,-height/2,p.y,p.x,height/2,p.y);uvs.push(i/points.length,0,i/points.length,1);if(i){const a=(i-1)*2,b=i*2,previous=points[i-1],longSide=Math.abs(p.x-previous.x)<1e-7&&Math.abs(Math.abs(p.x)-beam/2)<1e-7;if(!endsOnly||!longSide)indices.push(a,a+1,b,a+1,b+1,b);}}
   const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
 }
 export function vesselBoxContains(box:VesselBox,p:T.Vector3,padding=0.2) {
@@ -74,15 +74,26 @@ export function buildCruiseShip() {
   for(let deck=0;deck<8;deck++) {
     const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3,floor=y-1.27;
     if(deck===0)deckPlate(length+3,32.6,0.28,floor-0.14,z,8);
-    deckPlate(length,27.5,2.56,y,z);
+    deckPlate(length,22.4,2.56,y,z);
+    // Keep the closed external glazing envelope solid to drone contacts.
+    boxes.at(-1)!.min.x=-13.75;boxes.at(-1)!.max.x=13.75;
     deckPlate(length+3,32.6,0.28,y+1.44,z,8);
-    add(windowRibbon(length+0.14,27.64,1.72,6.07),[0,y+0.02,z],glass);
+    add(windowRibbon(length+0.14,27.64,1.72,6.07,true),[0,y+0.02,z],glass);
     for(const p of deckOutline(length+0.2,27.7,6.1).getPoints(4)) {
       if(Math.abs(p.y)>length/2-7)rod([p.x,y-0.85,z+p.y],[p.x,y+0.9,z+p.y],0.045,white);
     }
     const start=z-length/2+8,end=z+length/2-8;
     for(const side of [-1,1]) {
+      box([0.1,0.43,length-12],[side*13.77,floor+0.215,z],white);
+      box([0.1,0.4,length-12],[side*13.77,y+1.08,z],white);
+      const flatStart=z-length/2+6,flatEnd=z+length/2-6,lastEdge=start+Math.floor((end-start)/3.5)*3.5;
+      for(const [a,b]of [[flatStart,start-0.22],[lastEdge-0.22,flatEnd]])box([0.1,2.56,b-a],[side*13.77,y,(a+b)/2],white);
+      box([2.62,2.56,0.08],[side*12.51,y,lastEdge],white);
       for(let cabin=start;cabin+3.5<=end;cabin+=3.5) {
+        box([2.62,2.56,0.08],[side*12.51,y,cabin],white);
+        box([2.62,0.06,3.42],[side*12.51,floor+0.03,cabin+1.75],teak);
+        box([0.1,1.72,0.44],[side*13.77,y+0.02,cabin],white);
+        add(new T.PlaneGeometry(3.06,1.72),[side*13.82,y+0.02,cabin+1.75],glass,new T.Euler(0,side*Math.PI/2,0));
         box([0.1,2.57,0.09],[side*13.85,floor+1.285,cabin],white);
         box([2.1,2.57,0.075],[side*14.85,floor+1.285,cabin],white);
         // Raised jambs, sill and sliding-panel mullion give each cabin depth.
