@@ -96,8 +96,8 @@ export class World {
     this.surfaceGroups.push({asset:'aerial_grass_rock',resolution:'2k',materials:[this.groundCover],colour:true});
     this.scene.fog = new T.FogExp2(0x9facac,0.00019);
   }
-  async loadSurfaceTextures(renderer:T.WebGLRenderer) {
-    const [missing,forest]=await Promise.all([loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy()),CoastalForest.load(renderer,this.treeSites)]);
+  async loadSurfaceTextures(renderer:T.WebGLRenderer,lightingReady:Promise<unknown>) {
+    const [missing,forest]=await Promise.all([loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy()),CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady)]);
     this.groundMaterials.forEach(material=>material.needsUpdate=true);
     if(forest) {
       this.forest=forest;this.scene.add(forest.group);

@@ -97,6 +97,7 @@ async function boot() {
       world.scene.background=photoSky.texture;world.scene.environment=photoEnvironment.texture;world.scene.environmentIntensity=0.6;
       world.sun.copy(photoSky.sun);world.sunlight.position.copy(world.sun).multiplyScalar(280);
     }else {world.scene.background=skyTarget.texture;world.scene.environment=environment.texture;world.scene.environmentIntensity=1;}
+    if(lightChanged)world.forest?.relight(renderer,world.scene);
     world.ocean.material.uniforms.foamEnabled.value=checked('foam');bloom.enabled=checked('bloom')&&value('quality')!=='balanced';
     renderer.toneMappingExposure=value('light')==='day'?0.68:value('light')==='golden'?0.7:0.58;
     input.useMouse=checked('mouse');input.source=value('input-source') as Inputs['source'];input.deadzone=Number(value('deadzone'))/100;
@@ -361,10 +362,13 @@ async function boot() {
     if(now-fpsTime>1000) {$('fps').textContent=`${Math.round(frameCount*1000/(now-fpsTime))} FPS`;frameCount=0;fpsTime=now;}
   }
   world.updateGates(false,0);
-  const [missingSurfaces,loadedSky]=await Promise.all([world.loadSurfaceTextures(renderer),loadPhotographicSky()]);
+  const lightingReady=loadPhotographicSky().then(loadedSky=> {
+    if(!supported)return;
+    photoSky=loadedSky;
+    if(photoSky){const generator=new T.PMREMGenerator(renderer);photoEnvironment=generator.fromEquirectangular(photoSky.texture);generator.dispose();applySettings();}
+  });
+  const [missingSurfaces]=await Promise.all([world.loadSurfaceTextures(renderer,lightingReady),lightingReady]);
   if(!supported)return;
-  photoSky=loadedSky;
-  if(photoSky){const generator=new T.PMREMGenerator(renderer);photoEnvironment=generator.fromEquirectangular(photoSky.texture);generator.dispose();applySettings();}
   camera.position.set(112,42,137);camera.lookAt(-25,10,-125);
   world.update(0,camera.position,sea,flight.position,flight.orientation,0);
   composer.render();
