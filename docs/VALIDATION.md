@@ -102,6 +102,12 @@ Actual paused RTX4050 Direct3D11 ULTRA yacht views use fixed wave/vessel time120
 
 The yacht's flat transom now receives the same stern-shaped ocean cutout as the passenger ship. A controlled native-GPU mask comparison isolated the old pinched stern outline and the corrected flat outline at the same camera and fixed vessel time. After this correction, **43/43 unit tests**, strict build, **all9 native RTX4050 browser cases** (2.4m) and paused ULTRA bow/side/stern draws passed without page/console errors. The cutout uses the upper hull outline with its existing0.98 inset; exact displaced waterline, heave and pitch intersections remain approximate.
 
+## Wind ripple and reflection follow-up
+
+Controlled native RTX4050 Direct3D11 ULTRA captures isolated the former micro-normal, reflection footprint, foam and solar-glint contributions at fixed camera/wave/vessel time120s. The accepted source replaces the strong noise gradient with six directional waves below the existing FFT band and measures final distorted reflection UV derivatives before hull discard. Final old/current comparisons cover all3 sea presets at low/high cameras (**12 captures**) without page/console errors. Three isolated vessel-cutout captures were byte-identical before/after the derivative/discard change. Resolution, samplers, spectral geometry, routes and contacts retain their preceding settings.
+
+An independent1×1 float render target executed the production GLSL ripple functions for **108 combinations** of point, time, sea strength and screen footprint. GPU slopes agreed with central differences of independently evaluated virtual heights to maximum5.173e-6; unresolved variance error was at most1.953e-11. This verifies the actual shader's derivatives/filter energy, rather than a second implementation alone. Strict TypeScript/Vite build, **43/43 unit tests** and **all9 native browser cases** (2.7m) passed after the final shader correction. Normal-only micro-height, isotropic roughness, fixed physical coefficients and synthetic wave directions remain approximations; this is not a calibrated sea-state spectrum or volumetric water renderer. CI and public deployment remain separate gates.
+
 ## Earlier visual-release verification
 
 - ZIP extracted without editing its source. SHA-256 comparison against the ZIP's file streams passed for all extracted files. Source review: `SOURCE_REVIEW.md`.
