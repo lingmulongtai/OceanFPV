@@ -94,6 +94,12 @@ Actual RTX4050 Direct3D11 ULTRA draws compare AO intensities0 and0.75 at the sam
 
 The final source subsequently passed **all9 browser cases** on native RTX4050 Direct3D11 in2.1m, including keyboard flight, virtual Xbox/radio, race, settings/mobile layout and context loss. An earlier concurrent development run passed eight cases but lost a page execution context during a source-triggered reload; it is excluded from full-suite acceptance. The accepted rerun kept source fixed throughout. `npm audit` reported zero vulnerabilities. CI and public deployment remain pending for this shading change.
 
+## Motor yacht follow-up
+
+The preceding yacht used an ellipsoid and three boxes. Its28m replacement has a6.6m beam, closed transom hull, planking that follows the rendered sheer, individual raked panes, flybridge and supported canopy, deck guards, upholstered seating, fitted hull windows and navigation equipment. Existing traffic routes remain; wake width follows the new beam. Independent mesh rays check planking support, bow airspace, hull/roof contacts and outward pane normals. Reviewer-reported phantom contacts0.621m from the windshield and0.486m from a canopy strut are corrected by pane-triangle/centreline distance checks. Six front/rear rays check the closed window-header junction. The final source passed **43/43 unit tests** and strict TypeScript/Vite build.
+
+Actual paused RTX4050 Direct3D11 ULTRA yacht views use fixed wave/vessel time120s and safe bow/side/stern cameras. Recorded camera positions agree with the requested ship-local poses. The yacht paint has2048² normal maps with roughness factor1, and photographed wood has1024² colour/normal maps. Final post-contact/header-correction draws produced no page/console errors; the side view reported1,038,926 triangles including reflection/shadow passes. All9 native browser cases passed1.9m after those corrections, including keyboard, virtual controllers, race, settings and context loss. Yacht glass remains opaque, rooms are absent, and rounded/underwater contacts are conservative. Physical controllers, sustained performance, full CI and public deployment remain unaccepted for this revision.
+
 ## Earlier visual-release verification
 
 - ZIP extracted without editing its source. SHA-256 comparison against the ZIP's file streams passed for all extracted files. Source review: `SOURCE_REVIEW.md`.
