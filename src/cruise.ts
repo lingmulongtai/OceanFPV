@@ -36,6 +36,8 @@ export function buildCruiseShip() {
   const white=new T.MeshStandardMaterial({color:0xf2f0e5,roughness:0.45,metalness:0});
   const navy=new T.MeshStandardMaterial({color:0x172f48,roughness:0.4,metalness:0.25});
   const glass=new T.MeshPhysicalMaterial({color:0x193c49,metalness:0,roughness:0.14,clearcoat:1,clearcoatRoughness:0.08,envMapIntensity:1.3,side:T.DoubleSide});
+  const cabinGlass=new T.MeshPhysicalMaterial({color:0xecf4f1,roughness:0.055,transmission:0.94,thickness:0.012,ior:1.5,attenuationColor:0xd9ece5,attenuationDistance:2});
+  cabinGlass.name='Cabin glazing';
   const balconyGlass=glass.clone();balconyGlass.transparent=true;balconyGlass.opacity=0.42;balconyGlass.depthWrite=false;
   const teak=new T.MeshStandardMaterial({color:0xbb9874,roughness:0.75});
   const orange=new T.MeshStandardMaterial({color:0xde6b22,roughness:0.38});
@@ -93,7 +95,7 @@ export function buildCruiseShip() {
         box([2.62,2.56,0.08],[side*12.51,y,cabin],white);
         box([2.62,0.06,3.42],[side*12.51,floor+0.03,cabin+1.75],teak);
         box([0.1,1.72,0.44],[side*13.77,y+0.02,cabin],white);
-        add(new T.PlaneGeometry(3.06,1.72),[side*13.82,y+0.02,cabin+1.75],glass,new T.Euler(0,side*Math.PI/2,0));
+        add(new T.PlaneGeometry(3.06,1.72),[side*13.82,y+0.02,cabin+1.75],cabinGlass,new T.Euler(0,side*Math.PI/2,0));
         box([0.1,2.57,0.09],[side*13.85,floor+1.285,cabin],white);
         box([2.1,2.57,0.075],[side*14.85,floor+1.285,cabin],white);
         // Raised jambs, sill and sliding-panel mullion give each cabin depth.
@@ -165,7 +167,7 @@ export function buildCruiseShip() {
     rod(top.point.addScaledVector(top.normal,0.12).toArray(),bottom.point.addScaledVector(bottom.normal,0.12).toArray(),0.1,chrome);
   }
   for(const x of [-5,5])for(const z of [-113,116]) {const y=hullDeckHeight((z+130)/260,260,9)+0.15;add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,y+0.45,z],chrome);box([1.9,0.12,1.2],[x,y,z],navy);}
-  for(const [m,geometries]of buckets) {const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}
+  for(const [m,geometries]of buckets) {const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=m!==cabinGlass;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}
   const labelCanvas=document.createElement('canvas');labelCanvas.width=1024;labelCanvas.height=128;const ctx=labelCanvas.getContext('2d')!;ctx.fillStyle='#d8dfe0';ctx.font='600 68px Arial';ctx.textAlign='center';ctx.fillText('OCEAN  MERIDIAN',512,87);
   const label=new T.CanvasTexture(labelCanvas);label.colorSpace=T.SRGBColorSpace;
   for(const side of [-1,1])root.add(new T.Mesh(hullNameGeometry(side),new T.MeshStandardMaterial({map:label,transparent:true,depthWrite:false,roughness:0.5})));
