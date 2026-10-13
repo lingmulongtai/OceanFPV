@@ -118,10 +118,12 @@ export function buildCruiseShip() {
     for(const dz of [-3.8,3.8]) {rod([side*14,14,z+dz],[side*19,14.7,z+dz],0.12,white);rod([side*19,14.7,z+dz],[side*19,13,z+dz],0.055,chrome);}
   }
   // Funnel, exhaust stacks, radar domes, communications mast and railings.
-  box([9,7.5,14],[0,39,69],navy,true,0.9);box([10,0.45,15],[0,42.9,69],chrome);
-  for(const x of [-2.7,0,2.7])add(new T.CylinderGeometry(0.72,0.72,2.3,20),[x,43.6,69],black);
-  for(const z of [-47,-20]) {add(new T.SphereGeometry(2.6,32,20),[0,38.2,z],white);add(new T.CylinderGeometry(1.8,2.1,2,24),[0,35.6,z],white);}
-  rod([0,34,-59],[0,47,-59],0.22,white);rod([-7,42,-59],[7,42,-59],0.09,chrome);
+  const funnelBase=upperRoof,funnelCentre=funnelBase+3.75;
+  box([9,7.5,14],[0,funnelCentre,69],navy,true,0.9);box([10,0.45,15],[0,funnelCentre+3.9,69],chrome);
+  for(const x of [-2.7,0,2.7])add(new T.CylinderGeometry(0.72,0.72,2.3,20),[x,funnelCentre+4.6,69],black);
+  for(const z of [-47,-20]) {add(new T.SphereGeometry(2.6,32,20),[0,upperRoof+3.6,z],white);add(new T.CylinderGeometry(1.8,2.1,2,24),[0,upperRoof+1,z],white);}
+  const mastBase=10.6+6*2.85+1.58;
+  rod([0,mastBase,-59],[0,47,-59],0.22,white);rod([-7,42,-59],[7,42,-59],0.09,chrome);
   for(let x=-4;x<=4;x+=2)rod([x,42,-59],[x,44,-59],0.035);
   for(const side of [-1,1])for(const [base,y,start,end,width]of [[upperRoof,upperRoof+1.05,-53,80,14],[9,10,101,123,13]]) {
     rod([side*width,y,start],[side*width,y,end]);rod([side*width,y-0.5,start],[side*width,y-0.5,end],0.025);
