@@ -26,12 +26,18 @@ export function buildMotorYacht() {
   const root=new T.Group();root.name='Pelagic · 28 m';
   const paint=new T.MeshStandardMaterial({color:0xeeeae0,roughness:0.45}),hullPaint=paint.clone();hullPaint.side=T.DoubleSide;
   const teak=new T.MeshStandardMaterial({color:0xb79a78,roughness:0.8}),glass=new T.MeshPhysicalMaterial({color:0x18313d,roughness:0.08,metalness:0.25,clearcoat:1});
+  const chrome=new T.MeshStandardMaterial({color:0xbec8cc,metalness:0.9,roughness:0.22});
   paint.name=hullPaint.name='Yacht paint';teak.name='Yacht teak';
   const buckets=new Map<T.Material,T.BufferGeometry[]>(),boxes:VesselBox[]=[];
-  const add=(geometry:T.BufferGeometry,material:T.Material)=>{const g=material===paint||material===hullPaint?metricPaintGeometry(geometry):geometry.index?geometry.toNonIndexed():geometry.clone();geometry.dispose();if(!buckets.has(material))buckets.set(material,[]);buckets.get(material)!.push(g);};
+  const add=(geometry:T.BufferGeometry,material:T.Material)=>{const g=material===paint||material===hullPaint?metricPaintGeometry(geometry):geometry.index?geometry.toNonIndexed():geometry.clone();geometry.dispose();if(material===teak){const p=g.attributes.position,uv=g.attributes.uv;for(let i=0;i<p.count;i++)uv.setXY(i,p.getX(i)/1.8,p.getZ(i)/1.8);}if(!buckets.has(material))buckets.set(material,[]);buckets.get(material)!.push(g);};
   const box=(size:number[],position:number[],material:T.Material=paint,solid=true,radius=0.08)=> {
     const geometry=new RoundedBoxGeometry(size[0],size[1],size[2],3,radius);geometry.translate(...position as [number,number,number]);add(geometry,material);
     if(solid)boxes.push({min:new T.Vector3(...position).sub(new T.Vector3(...size).multiplyScalar(0.5)),max:new T.Vector3(...position).add(new T.Vector3(...size).multiplyScalar(0.5)),radius});
+  };
+  const rod=(a:number[],b:number[],radius=0.035,material:T.Material=chrome)=> {
+    const start=new T.Vector3(...a),end=new T.Vector3(...b),geometry=new T.CylinderGeometry(radius,radius,start.distanceTo(end),12),rotation=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),end.clone().sub(start).normalize());
+    geometry.applyMatrix4(new T.Matrix4().compose(start.clone().add(end).multiplyScalar(0.5),rotation,new T.Vector3(1,1,1)));add(geometry,material);
+    boxes.push({min:start.clone().min(end).addScalar(-radius),max:start.clone().max(end).addScalar(radius)});
   };
   const panel=(points:number[][])=> {
     const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(points.flat(),3));geometry.setAttribute('uv',new T.Float32BufferAttribute([0,0,1,0,1,1,0,1],2));geometry.setIndex([0,2,1,0,3,2]);geometry.computeVertexNormals();
@@ -48,6 +54,13 @@ export function buildMotorYacht() {
   panel([[-2.675,3.05,-6.2],[2.675,3.05,-6.2],[2.675,4.28,-4.9],[-2.675,4.28,-4.9]]);
   panel([[2.675,3.05,6.41],[-2.675,3.05,6.41],[-2.675,4.28,6.41],[2.675,4.28,6.41]]);
   box([5.75,0.18,12.9],[0,4.43,0.2]);
+  box([5.15,0.14,8.6],[0,4.59,0.8]);box([4.95,0.035,8.4],[0,4.6775,0.8],teak,false,0.01);
+  box([4,0.62,2.4],[0,5.005,-2.15]);box([4.05,0.66,2.4],[0,5.645,-2.15],glass);box([4.5,0.12,2.8],[0,6.035,-2.15]);
+  for(const side of [-1,1]) {
+    rod([side*2.13,4.695,3.65],[side*2.13,6.8,2.4],0.075,paint);
+    rod([side*2.13,6.095,-3.15],[side*2.13,6.8,-2.85],0.06,paint);
+  }
+  box([4.75,0.16,6.4],[0,6.88,-0.1]);
   for(const [material,geometries]of buckets){const mesh=new T.Mesh(mergeGeometries(geometries)!,material);mesh.castShadow=true;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}
   return {root,boxes,paint:[paint,hullPaint],teak};
 }
