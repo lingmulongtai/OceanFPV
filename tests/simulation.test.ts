@@ -24,14 +24,30 @@ test('bow planking stays on the hull instead of cutting through or extending bey
 
 test('wave tangents match displaced surface geometry for every sea strength',()=> {
   const sea=new SpectralSea();sea.update(6);
-  for(const c of sea.cascades)for(const scale of [0.55,1.15,2.15])for(let i=0;i<32;i++) {
+  for(const scale of [0.55,1.15,2.15]) {sea.update(6,scale);const strength=new Vector3(sea.horizontalScale,scale,sea.horizontalScale);
+  for(const c of sea.cascades)for(let i=0;i<32;i++) {
     const step=c.length/c.size,x=(i*17%c.size)*step,z=(i*31%c.size)*step;
-    const point=(x:number,z:number)=>new Vector3(x+scale*c.sample(x,z,0),scale*c.sample(x,z,1),z+scale*c.sample(x,z,2));
+    const point=(x:number,z:number)=>new Vector3(c.sample(x,z,0),c.sample(x,z,1),c.sample(x,z,2)).multiply(strength).add(new Vector3(x,0,z));
     const actualX=point(x+step,z).sub(point(x-step,z)).divideScalar(2*step),actualZ=point(x,z+step).sub(point(x,z-step)).divideScalar(2*step);
-    const tx=new Vector3(...[0,1,2].map(j=>c.sample(x,z,j,c.tangentX))).multiplyScalar(scale).add(new Vector3(1,0,0));
-    const tz=new Vector3(...[0,1,2].map(j=>c.sample(x,z,j,c.tangentZ))).multiplyScalar(scale).add(new Vector3(0,0,1));
+    const tx=new Vector3(...[0,1,2].map(j=>c.sample(x,z,j,c.tangentX))).multiply(strength).add(new Vector3(1,0,0));
+    const tz=new Vector3(...[0,1,2].map(j=>c.sample(x,z,j,c.tangentZ))).multiply(strength).add(new Vector3(0,0,1));
     assert.ok(tx.distanceTo(actualX)<0.00003);assert.ok(tz.distanceTo(actualZ)<0.00003);
     const normal=tz.clone().cross(tx).normalize();assert.ok(Math.abs(normal.dot(actualX))<0.00003);assert.ok(Math.abs(normal.dot(actualZ))<0.00003);
+  }
+  }
+});
+
+test('rough wave compression stays bounded without reducing swell height',()=> {
+  const sea=new SpectralSea();
+  for(const time of [0,3,6,12]) {
+    sea.update(time,2.15);const horizontal=sea.horizontalScale;
+    for(let i=0;i<1000;i++) {
+      const x=-1800+(i*31.731)%3600,z=-1800+(i*83.973)%3600;
+      const sum=(field:'tangentX'|'tangentZ',channel:number)=>sea.cascades.reduce((v,c)=>v+c.sample(x,z,channel,c[field]),0)*horizontal;
+      const jacobian=(1+sum('tangentX',0))*(1+sum('tangentZ',2))-sum('tangentX',2)*sum('tangentZ',0);
+      assert.ok(jacobian>0.03);
+      assert.ok(Math.abs(sea.heightAt(x,z,2.15)-sea.heightAt(x,z,1.15)*2.15/1.15)<1e-9);
+    }
   }
 });
 

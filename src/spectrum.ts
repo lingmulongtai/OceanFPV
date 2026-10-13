@@ -37,7 +37,9 @@ export class WaveCascade {
   private readonly waveZ: Float64Array;
   private readonly fields: {real: Float64Array; imaginary: Float64Array}[];
   private lastTime=NaN;
-  private lastScale=NaN;
+  private foamTime=NaN;
+  private foamScale=NaN;
+  compressionBound=0;
 
   constructor(readonly size: number, readonly length: number, seed: number, rms: number, minWave: number, maxWave: number, readonly chop=1.6) {
     const count=size*size;this.displacement=new Float32Array(count*4);this.tangentX=new Float32Array(count*4);this.tangentZ=new Float32Array(count*4);
@@ -59,11 +61,9 @@ export class WaveCascade {
     for(let i=0;i<this.h0.length;i++) this.h0[i]*=factor;
     this.update(0);
   }
-  update(time: number,scale=1) {
-    if(time===this.lastTime&&scale===this.lastScale) return;
-    const dt=Number.isFinite(this.lastTime)?Math.min(Math.abs(time-this.lastTime),0.1):0;
-    const resetFoam=scale!==this.lastScale||time<this.lastTime;
-    this.lastTime=time;this.lastScale=scale;
+  update(time: number) {
+    if(time===this.lastTime) return;
+    this.lastTime=time;this.compressionBound=0;
     const n=this.size,count=n*n;
     for(let z=0;z<n;z++) for(let x=0;x<n;x++) {
       const i=z*n+x,opposite=((n-z)%n)*n+(n-x)%n,c=Math.cos(this.omega[i]*time),s=Math.sin(this.omega[i]*time);
@@ -83,14 +83,25 @@ export class WaveCascade {
       const i=z*n+x,l=z*n+(x+n-1)%n,r=z*n+(x+1)%n,b=((z+n-1)%n)*n+x,t=((z+1)%n)*n+x;
       const hx=(h[r]-h[l])*derivative,hz=(h[t]-h[b])*derivative;
       const dxx=(dx[r]-dx[l])*derivative,dxz=(dx[t]-dx[b])*derivative,dzx=(dz[r]-dz[l])*derivative,dzz=(dz[t]-dz[b])*derivative;
-      const breakingJacobian=(1+scale*dxx)*(1+scale*dzz)-scale*scale*dxz*dzx;
-      const foam=Math.max(resetFoam?0:this.displacement[i*4+3]*Math.exp(-dt*0.85),Math.max(0,Math.min(1,(0.55-breakingJacobian)*3.6)));
-      this.displacement[i*4]=dx[i];this.displacement[i*4+1]=h[i];this.displacement[i*4+2]=dz[i];this.displacement[i*4+3]=foam;
+      this.displacement[i*4]=dx[i];this.displacement[i*4+1]=h[i];this.displacement[i*4+2]=dz[i];
       this.tangentX[i*4]=dxx;this.tangentX[i*4+1]=hx;this.tangentX[i*4+2]=dzx;
       this.tangentZ[i*4]=dxz;this.tangentZ[i*4+1]=hz;this.tangentZ[i*4+2]=dzz;
+      const cross=(dxz+dzx)*0.5;
+      this.compressionBound=Math.max(this.compressionBound,(Math.hypot(dxx-dzz,2*cross)-dxx-dzz)*0.5);
     }
     // Imaginary residues are only round-off: Hermitian symmetry is preserved.
     if(count!==this.fields[0].real.length) throw new Error('Invalid ocean field');
+  }
+  updateFoam(time:number,heightScale:number,horizontalScale:number) {
+    const reset=heightScale!==this.foamScale||time<this.foamTime,dt=Number.isFinite(this.foamTime)?Math.min(Math.abs(time-this.foamTime),0.1):0;
+    this.foamTime=time;this.foamScale=heightScale;
+    for(let i=0;i<this.displacement.length;i+=4) {
+      const xx=1+horizontalScale*this.tangentX[i],xz=horizontalScale*this.tangentZ[i],zx=horizontalScale*this.tangentX[i+2],zz=1+horizontalScale*this.tangentZ[i+2];
+      const hx=heightScale*this.tangentX[i+1],hz=heightScale*this.tangentZ[i+1],jacobian=xx*zz-xz*zx;
+      const slope=Math.hypot(hz*zx-zz*hx,xz*hx-hz*xx)/Math.max(jacobian,0.2);
+      const breaking=Math.max((0.55-jacobian)*3.6,(slope-0.6)*2.2);
+      this.displacement[i+3]=Math.max(reset?0:this.displacement[i+3]*Math.exp(-dt*0.85),Math.max(0,Math.min(1,breaking)));
+    }
   }
   sample(x:number,z:number,channel=1,data=this.displacement) {
     const n=this.size,fx=((x/this.length*n)%n+n)%n,fz=((z/this.length*n)%n+n)%n,ix=Math.floor(fx),iz=Math.floor(fz),u=fx-ix,v=fz-iz;
@@ -104,13 +115,20 @@ export class SpectralSea {
   readonly cascades=[new WaveCascade(128,433,173,0.85,36,433,1.8),new WaveCascade(128,97,519,0.34,4,36,1.3),new WaveCascade(128,23.3,831,0.085,0.45,4,0.85)];
   time=0;
   private scale=1;
+  private chopLimit=1;
+  horizontalScale=1;
+  constructor(){this.update(0);}
   update(time:number,scale=1) {
     if(Math.abs(time-this.time)<1/30&&time!==0&&scale===this.scale)return false;
-    this.time=time;this.scale=scale;this.cascades.forEach(c=>c.update(time,scale));return true;
+    this.time=time;this.scale=scale;this.cascades.forEach(c=>c.update(time));
+    // Bound the summed symmetric compression before it inverts the surface.
+    this.chopLimit=0.82/Math.max(this.cascades.reduce((sum,c)=>sum+c.compressionBound,0),0.001);
+    this.horizontalScale=Math.min(scale,this.chopLimit);
+    this.cascades.forEach(c=>c.updateFoam(time,scale,this.horizontalScale));return true;
   }
   heightAt(x:number,z:number,scale=1) {
-    let qx=x,qz=z;
-    for(let i=0;i<3;i++) {let dx=0,dz=0;for(const c of this.cascades){dx+=c.sample(qx,qz,0);dz+=c.sample(qx,qz,2);}qx=x-dx*scale;qz=z-dz*scale;}
+    let qx=x,qz=z;const horizontal=Math.min(scale,this.chopLimit);
+    for(let i=0;i<3;i++) {let dx=0,dz=0;for(const c of this.cascades){dx+=c.sample(qx,qz,0);dz+=c.sample(qx,qz,2);}qx=x-dx*horizontal;qz=z-dz*horizontal;}
     return this.cascades.reduce((h,c)=>h+c.sample(qx,qz),0)*scale;
   }
 }

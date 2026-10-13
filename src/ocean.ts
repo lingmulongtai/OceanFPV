@@ -18,7 +18,7 @@ function radialGeometry(quality='high') {
 const spectralCode=`
 uniform sampler2D displacement0, displacement1, displacement2;
 uniform sampler2D tangentX0, tangentX1, tangentX2, tangentZ0, tangentZ1, tangentZ2;
-uniform float seaScale;
+uniform float seaScale,chopScale;
 uniform bool manualInterpolation;
 vec2 cascadeUV(vec2 p,float length) {return fract(p/length)+vec2(0.5/128.0);}
 vec4 fieldSample(sampler2D field,vec2 uv) {
@@ -28,11 +28,12 @@ vec4 fieldSample(sampler2D field,vec2 uv) {
 }
 vec4 displacementAt(vec2 p) {
   vec4 a=fieldSample(displacement0,cascadeUV(p,433.0)),b=fieldSample(displacement1,cascadeUV(p,97.0)),c=fieldSample(displacement2,cascadeUV(p,23.3));
-  return vec4((a.xyz+b.xyz+c.xyz)*seaScale,max(max(a.w,b.w),c.w));
+  return vec4((a.xyz+b.xyz+c.xyz)*vec3(chopScale,seaScale,chopScale),max(max(a.w,b.w),c.w));
 }
 vec3 normalAt(vec2 p) {
-  vec3 tx=vec3(1,0,0)+(fieldSample(tangentX0,cascadeUV(p,433.0)).xyz+fieldSample(tangentX1,cascadeUV(p,97.0)).xyz+fieldSample(tangentX2,cascadeUV(p,23.3)).xyz)*seaScale;
-  vec3 tz=vec3(0,0,1)+(fieldSample(tangentZ0,cascadeUV(p,433.0)).xyz+fieldSample(tangentZ1,cascadeUV(p,97.0)).xyz+fieldSample(tangentZ2,cascadeUV(p,23.3)).xyz)*seaScale;
+  vec3 strength=vec3(chopScale,seaScale,chopScale);
+  vec3 tx=vec3(1,0,0)+(fieldSample(tangentX0,cascadeUV(p,433.0)).xyz+fieldSample(tangentX1,cascadeUV(p,97.0)).xyz+fieldSample(tangentX2,cascadeUV(p,23.3)).xyz)*strength;
+  vec3 tz=vec3(0,0,1)+(fieldSample(tangentZ0,cascadeUV(p,433.0)).xyz+fieldSample(tangentZ1,cascadeUV(p,97.0)).xyz+fieldSample(tangentZ2,cascadeUV(p,23.3)).xyz)*strength;
   vec3 n=cross(tz,tx);return normalize(vec3(n.x,max(n.y,0.025),n.z));
 }
 `;
@@ -51,6 +52,7 @@ export class Ocean {
     Object.assign(this.material.uniforms,{
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
       dusk:{value:0.4},foamEnabled:{value:true},vessels:{value:Array.from({length:3},()=>new T.Vector4())},headings:{value:[0,0,0]},vesselWidths:{value:[4.4,17,4.5]},vesselSpeeds:{value:[0,0,0]},
+      chopScale:{value:this.simulation.horizontalScale},
       islands:{value:[...COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.height)),new T.Vector4(145,-135,36,27)]},
     });
     const bottom=new T.DataTexture(bathymetryData(),BATHY_SIZE,BATHY_SIZE,T.RGBAFormat,T.FloatType);
@@ -146,6 +148,7 @@ export class Ocean {
     this.state=state;
     if(this.simulation.update(time,SEA_SCALE[state]))this.textures.forEach(t=>t.needsUpdate=true);
     this.material.uniforms.time.value=time;this.material.uniforms.seaScale.value=SEA_SCALE[state];
+    this.material.uniforms.chopScale.value=this.simulation.horizontalScale;
   }
   update(time:number,camera:T.Vector3,state:SeaState) {
     this.advance(time,state);this.material.uniforms.eye.value.copy(camera);this.mesh.position.x=camera.x;this.mesh.position.z=camera.z;
