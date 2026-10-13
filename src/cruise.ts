@@ -104,6 +104,17 @@ export function buildCruiseShip() {
         const fabric=quilts[(deck+Math.round((cabin-start)/3.5))%quilts.length];
         box([1.15,0.035,1.38],[side*9.05,floor+0.555,cabin+0.97],fabric);
         box([0.55,0.6,0.48],[side*7.875,floor+0.36,cabin+1.98],teak);
+        for(const seat of [cabin+0.8,cabin+2.62]) {
+          box([0.72,0.13,0.74],[side*11.8,floor+0.425,seat],fabric,false,0.06);
+          box([0.13,0.78,0.74],[side*11.46,floor+0.79,seat],fabric,false,0.06);
+          for(const lift of [-0.38,0.38]) {
+            box([0.65,0.11,0.09],[side*11.8,floor+0.72,seat+lift],fabric,false,0.04);
+            rod([side*12.05,floor+0.49,seat+lift],[side*12.05,floor+0.665,seat+lift],0.015,chrome);
+          }
+          for(const x of [11.55,12.05])for(const dz of [-0.26,0.26])rod([side*x,floor+0.06,seat+dz],[side*x,floor+0.36,seat+dz],0.02,chrome);
+        }
+        box([0.55,0.06,0.55],[side*12.35,floor+0.59,cabin+1.75],teak);
+        rod([side*12.35,floor+0.06,cabin+1.75],[side*12.35,floor+0.56,cabin+1.75],0.04,chrome);
         const curtainWidth=0.32+0.12*((deck+Math.round((cabin-start)/3.5))%3);
         for(const centre of [cabin+0.22+curtainWidth/2,cabin+3.28-curtainWidth/2]) {
           const folds=new T.PlaneGeometry(curtainWidth,2.44,24,1),positions=folds.attributes.position;
