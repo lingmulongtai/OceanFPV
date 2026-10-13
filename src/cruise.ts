@@ -2,6 +2,7 @@ import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { closedHullGeometry, foredeckGeometry, hullDeckHeight, hullHalfWidth, hullNameGeometry, upperHullSidePose } from './hull';
+import { metricPaintGeometry } from './paint';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
 export function deckOutline(length:number,beam:number,radius=6) {
@@ -45,6 +46,7 @@ export function buildCruiseShip() {
   const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1))=> {
     g.applyMatrix4(new T.Matrix4().compose(new T.Vector3(...p),new T.Quaternion().setFromEuler(rotation),scale));
     if(m===teak){const position=g.attributes.position,uv=g.attributes.uv;for(let i=0;i<position.count;i++)uv.setXY(i,position.getX(i)/1.8,position.getZ(i)/1.8);}
+    if(m===white){const projected=metricPaintGeometry(g);g.dispose();g=projected;}
     if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(g.index?g.toNonIndexed():g);
   };
   const box=(s:number[],p:number[],m=white,solid=false,round=0)=> {
@@ -58,7 +60,9 @@ export function buildCruiseShip() {
   const rod=(a:number[],b:number[],r=0.04,m=chrome)=> {
     const start=new T.Vector3(...a),end=new T.Vector3(...b),g=new T.CylinderGeometry(r,r,start.distanceTo(end),8);
     const q=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),end.clone().sub(start).normalize());
-    g.applyMatrix4(new T.Matrix4().compose(start.add(end).multiplyScalar(0.5),q,new T.Vector3(1,1,1)));if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(g.toNonIndexed());
+    g.applyMatrix4(new T.Matrix4().compose(start.add(end).multiplyScalar(0.5),q,new T.Vector3(1,1,1)));
+    const projected=m===white?metricPaintGeometry(g):g.toNonIndexed();if(m===white)g.dispose();
+    if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(projected);
   };
   const hullMat=white.clone();hullMat.side=T.DoubleSide;
   hullMat.onBeforeCompile=shader=> {
