@@ -25,3 +25,14 @@ test('yacht contacts reject bow airspace and include actual side and roof surfac
   assert.ok(model.boxes.some(box=>vesselBoxContains(box,roof.point)),'rendered roof is not solid to drone contacts');
   model.root.traverse(o=>{if(o instanceof T.Mesh)o.geometry.dispose();});
 });
+test('yacht side panes and raked windshield face outwards with solid contacts',()=> {
+  const model=buildMotorYacht(),ray=new T.Raycaster();model.root.updateMatrixWorld(true);
+  for(const side of [-1,1]) {
+    ray.set(new T.Vector3(side*8,3.7,0),new T.Vector3(-side,0,0));const hit=ray.intersectObject(model.root,true)[0];assert.ok(hit);
+    assert.ok(hit.face!.normal.x*side>0.9);assert.ok(model.boxes.some(box=>vesselBoxContains(box,hit.point)));
+  }
+  ray.set(new T.Vector3(0,3.7,-12),new T.Vector3(0,0,1));const front=ray.intersectObject(model.root,true)[0];assert.ok(front);
+  assert.ok(front.face!.normal.z< -0.6);assert.ok(front.point.z> -6.2&&front.point.z< -4.9);
+  assert.ok(model.boxes.some(box=>vesselBoxContains(box,front.point)));
+  model.root.traverse(o=>{if(o instanceof T.Mesh)o.geometry.dispose();});
+});
