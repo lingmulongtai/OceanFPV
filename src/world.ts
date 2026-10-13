@@ -3,13 +3,13 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Ocean } from './ocean';
-import { type SeaState } from './sea';
+import { SEA_SCALE, type SeaState } from './sea';
 import { GATES } from './race';
 import { closedHullGeometry } from './hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { buildMotorYacht,YACHT_BEAM } from './yacht';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
-import { blendGroundCover, loadSurfaces, type SurfaceGroup } from './surfaces';
+import { blendGroundCover, wetCoastalSurface, loadSurfaces, type SurfaceGroup } from './surfaces';
 import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS } from './terrain';
 import { COASTS } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
@@ -66,11 +66,13 @@ export class World {
   private groundMaterials:T.MeshStandardMaterial[]=[];
   private naturalObstacles:{x:number;z:number;y:number;radius:number;height:number}[]=[];
   private rockMaterial=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});
+  private shorelineWash={value:SEA_SCALE.breeze};
   private treeSites:TreeSite[]=[];
   forest:CoastalForest|null=null;
   quality='high';
 
   constructor() {
+    wetCoastalSurface(this.rockMaterial,this.shorelineWash);
     this.scene.add(this.ship,this.cruise.root,this.yacht,this.drone,this.sky,this.sunlight,this.hemisphere);
     this.sky.scale.setScalar(10000);
     this.sky.material.uniforms.turbidity.value = 4;
@@ -275,7 +277,7 @@ export class World {
     }
     geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.setAttribute('groundCover',new T.Float32BufferAttribute(cover,1));geo.computeVertexNormals();
     const material=new T.MeshStandardMaterial({vertexColors:true,roughness:0.96});this.surfaceGroups.push({asset:'rocky_terrain',resolution:'2k',materials:[material],colour:true});
-    blendGroundCover(material,this.groundCover);this.groundMaterials.push(material);
+    blendGroundCover(material,this.groundCover);wetCoastalSurface(material,this.shorelineWash);this.groundMaterials.push(material);
     const mesh=new T.Mesh(geo,material);mesh.position.set(x,0,z);mesh.receiveShadow=mesh.castShadow=true;this.scene.add(mesh);
     const crownParts:T.BufferGeometry[]=[];
     for(let i=0;i<7;i++) {const g=new T.IcosahedronGeometry(1,2),p=g.attributes.position;for(let v=0;v<p.count;v++){const k=0.9+0.1*Math.sin(p.getX(v)*17+p.getY(v)*19+p.getZ(v)*11);p.setXYZ(v,p.getX(v)*k,p.getY(v)*k,p.getZ(v)*k);}g.scale(i?2.6:3.1,i?3:4,i?2.6:3.1);g.translate(i?Math.cos(i*2.4)*2.3:0,6+i*0.55,i?Math.sin(i*2.4)*2.3:0);g.computeVertexNormals();crownParts.push(g);}
@@ -316,6 +318,7 @@ export class World {
     this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:model.paint,colour:false,roughness:1},{asset:'wood_floor_deck',resolution:'1k',materials:[model.teak],colour:true});
   }
   update(time: number,camera: T.Vector3,state: SeaState,dronePosition:T.Vector3,orientation:T.Quaternion,motor:number) {
+    this.shorelineWash.value=SEA_SCALE[state];
     this.ocean.update(time,camera,state);
     this.sky.material.uniforms.time.value=time;
     this.advanceVessels(time);
