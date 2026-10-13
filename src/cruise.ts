@@ -79,7 +79,7 @@ export function buildCruiseShip() {
   for(let deck=0;deck<8;deck++) {
     const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3,floor=y-1.27;
     if(deck===0)deckPlate(length+3,32.6,0.28,floor-0.14,z,8);
-    deckPlate(length,22.4,2.56,y,z);
+    deckPlate(length,15.2,2.56,y,z);
     // Keep the closed external glazing envelope solid to drone contacts.
     boxes.at(-1)!.min.x=-13.75;boxes.at(-1)!.max.x=13.75;
     deckPlate(length+3,32.6,0.28,y+1.44,z,8);
@@ -93,17 +93,17 @@ export function buildCruiseShip() {
       box([0.1,0.4,length-12],[side*13.77,y+1.08,z],white);
       const flatStart=z-length/2+6,flatEnd=z+length/2-6,lastEdge=start+Math.floor((end-start)/3.5)*3.5;
       for(const [a,b]of [[flatStart,start-0.22],[lastEdge-0.22,flatEnd]])box([0.1,2.56,b-a],[side*13.77,y,(a+b)/2],white);
-      box([2.62,2.56,0.08],[side*12.51,y,lastEdge],white);
+      box([6.22,2.56,0.08],[side*10.71,y,lastEdge],white);
       for(let cabin=start;cabin+3.5<=end;cabin+=3.5) {
-        box([2.62,2.56,0.08],[side*12.51,y,cabin],white);
-        box([2.62,0.06,3.42],[side*12.51,floor+0.03,cabin+1.75],teak);
-        box([1.95,0.26,1.3],[side*12.295,floor+0.19,cabin+0.97],teak);
-        box([0.12,0.95,1.55],[side*11.25,floor+0.535,cabin+0.97],teak);
-        box([1.98,0.22,1.36],[side*12.295,floor+0.43,cabin+0.97],linen,false,0.09);
-        for(const offset of [0.65,1.3])box([0.34,0.12,0.54],[side*11.52,floor+0.6,cabin+offset],linen,false,0.045);
+        box([6.22,2.56,0.08],[side*10.71,y,cabin],white);
+        box([6.22,0.06,3.42],[side*10.71,floor+0.03,cabin+1.75],teak);
+        box([1.95,0.26,1.3],[side*8.695,floor+0.19,cabin+0.97],teak);
+        box([0.12,0.95,1.55],[side*7.65,floor+0.535,cabin+0.97],teak);
+        box([1.98,0.22,1.36],[side*8.695,floor+0.43,cabin+0.97],linen,false,0.09);
+        for(const offset of [0.65,1.3])box([0.34,0.12,0.54],[side*7.92,floor+0.6,cabin+offset],linen,false,0.045);
         const fabric=quilts[(deck+Math.round((cabin-start)/3.5))%quilts.length];
-        box([1.15,0.035,1.38],[side*12.65,floor+0.555,cabin+0.97],fabric);
-        box([0.55,0.6,0.48],[side*11.475,floor+0.36,cabin+1.98],teak);
+        box([1.15,0.035,1.38],[side*9.05,floor+0.555,cabin+0.97],fabric);
+        box([0.55,0.6,0.48],[side*7.875,floor+0.36,cabin+1.98],teak);
         const curtainWidth=0.32+0.12*((deck+Math.round((cabin-start)/3.5))%3);
         for(const centre of [cabin+0.22+curtainWidth/2,cabin+3.28-curtainWidth/2]) {
           const folds=new T.PlaneGeometry(curtainWidth,2.44,24,1),positions=folds.attributes.position;
