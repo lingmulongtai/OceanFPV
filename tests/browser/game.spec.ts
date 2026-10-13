@@ -190,6 +190,13 @@ test('settings persist, help is keyboard accessible and mobile panels fit', asyn
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
   await page.screenshot({path:'test-results/oceanfpv-mobile-menu.png'});
 });
+test('terrain projections preserve physical periods and normal direction on the GPU',async({page})=> {
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto('/tests/browser/fixtures/ground-probe.html');
+  await page.waitForFunction(()=>!!(window as any).__GROUND_PROBE__,{},{timeout:60000});
+  const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum};});
+  expect(probe.count).toBe(96);expect(probe.maximum).toBeLessThan(0.002);expect(errors).toEqual([]);
+});
 test('WebGL-unavailable browser gets a clear recovery screen', async ({page})=> {
   await page.addInitScript(()=> {
     const original=HTMLCanvasElement.prototype.getContext;
