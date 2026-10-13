@@ -100,6 +100,8 @@ The preceding yacht used an ellipsoid and three boxes. Its28m replacement has a6
 
 Actual paused RTX4050 Direct3D11 ULTRA yacht views use fixed wave/vessel time120s and safe bow/side/stern cameras. Recorded camera positions agree with the requested ship-local poses. The yacht paint has2048² normal maps with roughness factor1, and photographed wood has1024² colour/normal maps. Final post-contact/header-correction draws produced no page/console errors; the side view reported1,038,926 triangles including reflection/shadow passes. All9 native browser cases passed1.9m after those corrections, including keyboard, virtual controllers, race, settings and context loss. Yacht glass remains opaque, rooms are absent, and rounded/underwater contacts are conservative. Physical controllers, sustained performance, full CI and public deployment remain unaccepted for this revision.
 
+The yacht's flat transom now receives the same stern-shaped ocean cutout as the passenger ship. A controlled native-GPU mask comparison isolated the old pinched stern outline and the corrected flat outline at the same camera and fixed vessel time. After this correction, **43/43 unit tests**, strict build, **all9 native RTX4050 browser cases** (2.4m) and paused ULTRA bow/side/stern draws passed without page/console errors. The cutout uses the upper hull outline with its existing0.98 inset; exact displaced waterline, heave and pitch intersections remain approximate.
+
 ## Earlier visual-release verification
 
 - ZIP extracted without editing its source. SHA-256 comparison against the ZIP's file streams passed for all extracted files. Source review: `SOURCE_REVIEW.md`.
