@@ -73,6 +73,11 @@ async function boot() {
     world.ocean.setQuality(value('quality'));
     world.quality=value('quality');
     renderer.shadowMap.enabled=value('quality')!=='balanced';
+    const glazing=world.cruise.glazing,simpleGlass=value('quality')==='balanced';
+    if(glazing.transparent!==simpleGlass) {
+      glazing.transparent=simpleGlass;glazing.opacity=simpleGlass?0.18:1;
+      glazing.transmission=simpleGlass?0:0.94;glazing.depthWrite=!simpleGlass;glazing.needsUpdate=true;
+    }
     const samples=value('quality')==='balanced'?0:Math.min(4,renderer.capabilities.maxSamples);
     for(const target of [composer.renderTarget1,composer.renderTarget2]) {
       if(target.samples!==samples) {target.samples=samples;target.dispose();}

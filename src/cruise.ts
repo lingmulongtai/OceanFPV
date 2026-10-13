@@ -17,9 +17,9 @@ export function deckGeometry(length:number,beam:number,height:number,radius=6) {
   const geometry=new T.ExtrudeGeometry(deckOutline(length,beam,radius),{depth:height,bevelEnabled:false,curveSegments:12});
   geometry.rotateX(Math.PI/2);geometry.translate(0,height/2,0);return geometry;
 }
-export function windowRibbon(length:number,beam:number,height:number,radius=6) {
+export function windowRibbon(length:number,beam:number,height:number,radius=6,endsOnly=false) {
   const points=deckOutline(length,beam,radius).getPoints(12),positions:number[]=[],uvs:number[]=[],indices:number[]=[];
-  for(let i=0;i<points.length;i++) {const p=points[i];positions.push(p.x,-height/2,p.y,p.x,height/2,p.y);uvs.push(i/points.length,0,i/points.length,1);if(i){const a=(i-1)*2,b=i*2;indices.push(a,a+1,b,a+1,b+1,b);}}
+  for(let i=0;i<points.length;i++) {const p=points[i];positions.push(p.x,-height/2,p.y,p.x,height/2,p.y);uvs.push(i/points.length,0,i/points.length,1);if(i){const a=(i-1)*2,b=i*2,previous=points[i-1],longSide=Math.abs(p.x-previous.x)<1e-7&&Math.abs(Math.abs(p.x)-beam/2)<1e-7;if(!endsOnly||!longSide)indices.push(a,a+1,b,a+1,b+1,b);}}
   const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
 }
 export function vesselBoxContains(box:VesselBox,p:T.Vector3,padding=0.2) {
@@ -36,12 +36,17 @@ export function buildCruiseShip() {
   const white=new T.MeshStandardMaterial({color:0xf2f0e5,roughness:0.45,metalness:0});
   const navy=new T.MeshStandardMaterial({color:0x172f48,roughness:0.4,metalness:0.25});
   const glass=new T.MeshPhysicalMaterial({color:0x193c49,metalness:0,roughness:0.14,clearcoat:1,clearcoatRoughness:0.08,envMapIntensity:1.3,side:T.DoubleSide});
+  const cabinGlass=new T.MeshPhysicalMaterial({color:0xecf4f1,roughness:0.055,transmission:0.94,thickness:0.012,ior:1.5,attenuationColor:0xd9ece5,attenuationDistance:2});
+  cabinGlass.name='Cabin glazing';
   const balconyGlass=glass.clone();balconyGlass.transparent=true;balconyGlass.opacity=0.42;balconyGlass.depthWrite=false;
   const teak=new T.MeshStandardMaterial({color:0xbb9874,roughness:0.75});
   const orange=new T.MeshStandardMaterial({color:0xde6b22,roughness:0.38});
   const chrome=new T.MeshStandardMaterial({color:0xc1cdd0,metalness:0.82,roughness:0.28});
   const black=new T.MeshStandardMaterial({color:0x182329,roughness:0.75});
   const pool=new T.MeshPhysicalMaterial({color:0x36b9c7,roughness:0.08,metalness:0.12,clearcoat:1});
+  const linen=new T.MeshPhysicalMaterial({color:0xe4e0d5,roughness:0.94,sheen:0.8,sheenColor:0xeee9de,sheenRoughness:0.8});
+  const quilts=[0x557d83,0x8b8579,0x8e6551].map(color=>new T.MeshPhysicalMaterial({color,roughness:0.95,sheen:0.7,sheenColor:color,sheenRoughness:0.85}));
+  const curtain=new T.MeshPhysicalMaterial({color:0xb7ad96,roughness:0.94,sheen:0.7,sheenColor:0xd4c8af,sheenRoughness:0.9,side:T.DoubleSide});
   const boxes:VesselBox[]=[],buckets=new Map<T.Material,T.BufferGeometry[]>();
   const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1))=> {
     g.applyMatrix4(new T.Matrix4().compose(new T.Vector3(...p),new T.Quaternion().setFromEuler(rotation),scale));
@@ -74,15 +79,51 @@ export function buildCruiseShip() {
   for(let deck=0;deck<8;deck++) {
     const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3,floor=y-1.27;
     if(deck===0)deckPlate(length+3,32.6,0.28,floor-0.14,z,8);
-    deckPlate(length,27.5,2.56,y,z);
+    deckPlate(length,15.2,2.56,y,z);
+    // Keep the closed external glazing envelope solid to drone contacts.
+    boxes.at(-1)!.min.x=-13.75;boxes.at(-1)!.max.x=13.75;
     deckPlate(length+3,32.6,0.28,y+1.44,z,8);
-    add(windowRibbon(length+0.14,27.64,1.72,6.07),[0,y+0.02,z],glass);
+    add(windowRibbon(length+0.14,27.64,1.72,6.07,true),[0,y+0.02,z],glass);
     for(const p of deckOutline(length+0.2,27.7,6.1).getPoints(4)) {
       if(Math.abs(p.y)>length/2-7)rod([p.x,y-0.85,z+p.y],[p.x,y+0.9,z+p.y],0.045,white);
     }
     const start=z-length/2+8,end=z+length/2-8;
     for(const side of [-1,1]) {
+      box([0.1,0.43,length-12],[side*13.77,floor+0.215,z],white);
+      box([0.1,0.4,length-12],[side*13.77,y+1.08,z],white);
+      const flatStart=z-length/2+6,flatEnd=z+length/2-6,lastEdge=start+Math.floor((end-start)/3.5)*3.5;
+      for(const [a,b]of [[flatStart,start-0.22],[lastEdge-0.22,flatEnd]])box([0.1,2.56,b-a],[side*13.77,y,(a+b)/2],white);
+      box([6.22,2.56,0.08],[side*10.71,y,lastEdge],white);
       for(let cabin=start;cabin+3.5<=end;cabin+=3.5) {
+        box([6.22,2.56,0.08],[side*10.71,y,cabin],white);
+        box([6.22,0.06,3.42],[side*10.71,floor+0.03,cabin+1.75],teak);
+        box([1.95,0.26,1.3],[side*8.695,floor+0.19,cabin+0.97],teak);
+        box([0.12,0.95,1.55],[side*7.65,floor+0.535,cabin+0.97],teak);
+        box([1.98,0.22,1.36],[side*8.695,floor+0.43,cabin+0.97],linen,false,0.09);
+        for(const offset of [0.65,1.3])box([0.34,0.12,0.54],[side*7.92,floor+0.6,cabin+offset],linen,false,0.045);
+        const fabric=quilts[(deck+Math.round((cabin-start)/3.5))%quilts.length];
+        box([1.15,0.035,1.38],[side*9.05,floor+0.555,cabin+0.97],fabric);
+        box([0.55,0.6,0.48],[side*7.875,floor+0.36,cabin+1.98],teak);
+        for(const seat of [cabin+0.8,cabin+2.62]) {
+          box([0.72,0.13,0.74],[side*11.8,floor+0.425,seat],fabric,false,0.06);
+          box([0.13,0.78,0.74],[side*11.46,floor+0.79,seat],fabric,false,0.06);
+          for(const lift of [-0.38,0.38]) {
+            box([0.65,0.11,0.09],[side*11.8,floor+0.72,seat+lift],fabric,false,0.04);
+            rod([side*12.05,floor+0.49,seat+lift],[side*12.05,floor+0.665,seat+lift],0.015,chrome);
+          }
+          for(const x of [11.55,12.05])for(const dz of [-0.26,0.26])rod([side*x,floor+0.06,seat+dz],[side*x,floor+0.36,seat+dz],0.02,chrome);
+        }
+        box([0.55,0.06,0.55],[side*12.35,floor+0.59,cabin+1.75],teak);
+        rod([side*12.35,floor+0.06,cabin+1.75],[side*12.35,floor+0.56,cabin+1.75],0.04,chrome);
+        const curtainWidth=0.32+0.12*((deck+Math.round((cabin-start)/3.5))%3);
+        for(const centre of [cabin+0.22+curtainWidth/2,cabin+3.28-curtainWidth/2]) {
+          const folds=new T.PlaneGeometry(curtainWidth,2.44,24,1),positions=folds.attributes.position;
+          for(let i=0;i<positions.count;i++)positions.setZ(i,0.025*Math.sin(positions.getX(i)/curtainWidth*Math.PI*12));folds.computeVertexNormals();
+          add(folds,[side*13.70,floor+1.28,centre],curtain,new T.Euler(0,side*Math.PI/2,0));
+        }
+        rod([side*13.705,floor+2.51,cabin+0.22],[side*13.705,floor+2.51,cabin+3.28],0.02,chrome);
+        box([0.1,1.72,0.44],[side*13.77,y+0.02,cabin],white);
+        add(new T.PlaneGeometry(3.06,1.72),[side*13.82,y+0.02,cabin+1.75],cabinGlass,new T.Euler(0,side*Math.PI/2,0));
         box([0.1,2.57,0.09],[side*13.85,floor+1.285,cabin],white);
         box([2.1,2.57,0.075],[side*14.85,floor+1.285,cabin],white);
         // Raised jambs, sill and sliding-panel mullion give each cabin depth.
@@ -154,9 +195,9 @@ export function buildCruiseShip() {
     rod(top.point.addScaledVector(top.normal,0.12).toArray(),bottom.point.addScaledVector(bottom.normal,0.12).toArray(),0.1,chrome);
   }
   for(const x of [-5,5])for(const z of [-113,116]) {const y=hullDeckHeight((z+130)/260,260,9)+0.15;add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,y+0.45,z],chrome);box([1.9,0.12,1.2],[x,y,z],navy);}
-  for(const [m,geometries]of buckets) {const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}
+  for(const [m,geometries]of buckets) {const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=m!==cabinGlass;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}
   const labelCanvas=document.createElement('canvas');labelCanvas.width=1024;labelCanvas.height=128;const ctx=labelCanvas.getContext('2d')!;ctx.fillStyle='#d8dfe0';ctx.font='600 68px Arial';ctx.textAlign='center';ctx.fillText('OCEAN  MERIDIAN',512,87);
   const label=new T.CanvasTexture(labelCanvas);label.colorSpace=T.SRGBColorSpace;
   for(const side of [-1,1])root.add(new T.Mesh(hullNameGeometry(side),new T.MeshStandardMaterial({map:label,transparent:true,depthWrite:false,roughness:0.5})));
-  return {root,boxes,paint:[white,hullMat],teak};
+  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass};
 }

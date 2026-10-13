@@ -1,6 +1,6 @@
 # OceanFPV validation
 
-Date: 2026-10-13 (Asia/Tokyo). This records the new browser game. The original `OceanLab/VALIDATION.md` describes a separate Godot application and is not evidence that this game passed.
+Date: 2026-10-14 (Asia/Tokyo). This records the new browser game. The original `OceanLab/VALIDATION.md` describes a separate Godot application and is not evidence that this game passed.
 
 ## Marine follow-up
 
@@ -63,6 +63,26 @@ Actual RTX4050 ULTRA roof/stern comparisons at fixed wave time120s used a preced
 Balcony partitions, guard glass and table legs now meet a shared floor plane; the lowest balcony tier has a supporting slab. Actual mesh ray casts confirmed floor contact at16 positions across all eight decks and both sides, within0.1mm. Raised window jambs, sills, sliding-panel mullions and handles give the straight cabin rows individual depth. Same-camera RTX4050 ULTRA comparisons on both sides were inspected at fixed wave time120s. The first visual run reported a host AudioContext device error; a visual rerun with audio output muted passed without page/console errors. These draws do not validate physical audio output.
 
 The wraparound glazing's triangle winding previously faced inward. A new FrontSide ray-cast regression checks outward hits on all four sides, and every vertex normal points outwards without DoubleSide correction. Independent review found the new handles unsupported; two brackets now overlap the glazing by5mm and the handle by18mm. Twelve actual geometry ray checks cover both sides and both brackets. The final source passed **34/34 unit tests**, strict TypeScript/Vite build and **all9 browser cases** on native RTX4050 Direct3D11 in58.5s. Existing flight, virtual Xbox/radio, race, pause, settings and context-loss checks passed. Full CI and public deployment remain separate. Cabin glass remains opaque and the continuous rounded end windows remain; actual cabin interiors and further photographic vessel detail are not implemented.
+
+## Transmitting cabin interiors follow-up
+
+The subsequent cabin revision passed **35/35 unit tests**, strict TypeScript/Vite build and **all9 browser cases** on native RTX4050 Direct3D11 in1.5m. The added geometry regression retains rounded end glazing while opening straight sides for individual panes. Actual room back-wall rays cover all eight decks and both sides; the visible room depth is6.22m. Floor contacts and the external glazing collision envelope were checked independently. Bodies remain solid to drone contact despite the visible interiors.
+
+Actual paused ULTRA comparisons at1280×720 use the preceding opaque-window builder and the new builder at wave time120s, with identical loaded paint/teak materials and safe cameras on both sides. Interior floors, beds, pillows, furniture, seating and pleated curtains are now visible through the physical panes. The final near-side draw reported14,995,394 triangles including shadow/reflection/transmission passes, with no page/console errors. This is rendering evidence, not a sustained frame-rate benchmark. Optical transmission is a screen-space approximation; transparent balcony guards and off-screen content are not fully refracted, rounded end glazing remains opaque, and bathrooms/full accommodation layouts are absent.
+
+A separate same-camera60-frame probe measured two actual reflector updates per frame before reuse, and one per frame after reuse. It retains the3072² ULTRA reflection target, invalidates on each world update and respects a different camera or explicit forceUpdate. The probe preceded the final room furnishing additions; native functional checks cover the final source. These checks do not accept physical Xbox/USB-radio hardware or other GPUs. Full CI/public deployment remain required before publication.
+
+The preceding paint/highlight release passed CI38402021527 and main38409098953; public bytes matched at2026-10-13T14:21:26.824Z. The metric-paint release passed CI38409143529 and main38413102510; public bytes matched at2026-10-13T14:38:53.617Z. Both separately passed native public keyboard climb, light switching, pause/resume/reset and real pointer lock/mouse-stick verification, with25 photo/model HTTP200 responses and no errors.
+
+Balcony CI38412062798 passed eight cases but hit the keyboard case's180s overall deadline. Its trace reached collision/reset, ACRO selection, modal dismissal and the final armed-state query; the snapshot shows ACRO/ARMED at1FPS. That case now has300s and the workflow35min, preserving assertions, viewport and product quality. The native keyboard/build check passed after the harness change; a full CI retry is distinct and required.
+
+## Software-GPU cabin follow-up
+
+Cabin CI [38419039946](https://github.com/lingmulongtai/OceanFPV/actions/runs/38419039946) passed units/build but timed out eight browser cases before most functional assertions. Its race trace shows time0.36→0.42→0.48→0.54 with roughly12s per page evaluation, no shader/page errors, and repeated GPU-readback stall warnings. Continuous trace screenshots are now disabled; DOM snapshots and failure screenshots remain, and the actual GL backend is logged. Local SwiftShader scene verification still timed out with this change alone and with transmissionResolutionScale0.5. The subsequent race runs were stopped once scene failure established that those candidates remained unsuitable; neither run is counted as a pass.
+
+The final BALANCED alpha-glass path passed the actual scene and complete18-crossing race cases on Vulkan SwiftShader (**2/2**,4.0m), at the existing viewport, assertions and time budgets. Units **35/35** and strict build passed. A native RTX4050 Direct3D11 probe switched BALANCED→HIGH→ULTRA→BALANCED and rendered every mode without page/console errors. Physical transmission/depth writes returned correctly in HIGH/ULTRA; ULTRA used a1920×1280 drawing buffer in a960×640 viewport. These are functional/draw checks, not sustained FPS measurements. Full CI/public deployment remain required.
+
+All9 browser cases subsequently passed on native RTX4050 Direct3D11 in3.2m with source fixed throughout, covering keyboard flight, virtual Xbox/radio, complete race scoring, material fallback, pause, reset, settings/mobile layout and context loss. The BALANCED optical approximation is an explicit quality tradeoff; physical controllers and other hardware remain unverified.
 
 ## Earlier visual-release verification
 
