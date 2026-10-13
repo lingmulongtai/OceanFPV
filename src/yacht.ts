@@ -1,7 +1,7 @@
 import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { closedHullGeometry,hullDeckHeight,hullHalfWidth } from './hull';
+import { closedHullGeometry,hullDeckHeight,hullHalfWidth,upperHullSidePose } from './hull';
 import { metricPaintGeometry } from './paint';
 import { type VesselBox } from './cruise';
 
@@ -78,6 +78,20 @@ export function buildMotorYacht() {
   box([4.2,0.55,0.85],[0,2.36,10.7]);box([4.17,0.16,0.83],[0,2.71,10.7],cushions,true,0.06);box([4.2,0.85,0.18],[0,2.95,11.08],cushions,true,0.06);
   box([1.3,0.08,0.8],[0,2.8,8.5],teak);rod([0,2.085,8.5],[0,2.76,8.5],0.07);
   for(const side of [-1,1]) {box([1.7,0.55,0.75],[side*1.48,4.97,3.5]);box([1.66,0.13,0.73],[side*1.48,5.31,3.5],cushions,true,0.05);}
+  for(const side of [-1,1])for(const centre of [-4.5,0.5,5.5]) {
+    const positions:number[]=[],uvs:number[]=[],indices:number[]=[];
+    for(let row=0;row<2;row++)for(let col=0;col<=8;col++) {
+      const pose=upperHullSidePose(0.65+row*0.68,centre-1.85+col/8*3.7,side,YACHT_LENGTH,YACHT_BEAM,YACHT_DECK,YACHT_DRAFT,true),point=pose.point.addScaledVector(pose.normal,0.018);positions.push(point.x,point.y,point.z);uvs.push(col/8,row);
+    }
+    for(let col=0;col<8;col++){const a=col,b=col+9,c=col+1,d=b+1;indices.push(...(side>0?[a,b,c,c,b,d]:[a,c,b,c,d,b]));}
+    const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();add(geometry,glass);
+  }
+  box([0.9,0.12,0.9],[0,7.02,1.5]);
+  const dome=new T.SphereGeometry(0.42,24,12,0,Math.PI*2,0,Math.PI/2);dome.translate(0,7.08,1.5);add(dome,paint);boxes.push({min:new T.Vector3(-0.42,7.08,1.08),max:new T.Vector3(0.42,7.5,1.92),radius:0.42});
+  rod([0,6.96,-1.1],[0,7.85,-1.1],0.035);rod([-0.45,6.96,0.7],[-0.45,7.58,0.7],0.018);rod([0.45,6.96,0.7],[0.45,7.58,0.7],0.018);
+  for(const [side,color]of [[-1,0xff3030],[1,0x39f38b]]) {
+    box([0.16,0.11,0.2],[side*2.77,4.5,-5]);const lamp=new T.SphereGeometry(0.08,12,8);lamp.translate(side*2.77,4.58,-5);add(lamp,new T.MeshStandardMaterial({color,emissive:color,emissiveIntensity:0.8,roughness:0.3}));
+  }
   for(const [material,geometries]of buckets){const mesh=new T.Mesh(mergeGeometries(geometries)!,material);mesh.castShadow=true;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}
   return {root,boxes,paint:[paint,hullPaint],teak};
 }
