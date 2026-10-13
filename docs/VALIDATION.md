@@ -4,7 +4,7 @@ Date: 2026-10-13 (Asia/Tokyo). This records the new browser game. The original `
 
 ## Marine follow-up
 
-The 2026-10-13 follow-up passed **26/26 unit tests** and the strict production build. Added coverage checks curved-deck airspace versus solid contacts, bow planking against the closed hull's actual station vertices, packed coastal depths against rendered terrain triangles, displaced wave tangents at all sea strengths, and stronger whitecaps plus deterministic foam reset on preset changes/time rewind. The final browser suite and publication are checked separately before this revision is deployed.
+The 2026-10-13 follow-up passed **27/27 unit tests** and the strict production build. Added coverage checks curved-deck airspace versus solid contacts, bow planking against the closed hull's actual station vertices, packed coastal depths against rendered terrain triangles, displaced wave tangents at all sea strengths, and stronger whitecaps plus deterministic foam reset on preset changes/time rewind. An additional check samples combined horizontal Jacobians at 4,000 positions/times and verifies that SWELL height is preserved when excessive crest compression is limited. The final browser suite and publication are checked separately before this revision is deployed.
 
 HIGH comparison images at 1100×740 verify curved passenger-deck ends, wraparound windows and translucent balcony glazing, shoreline wash, and the updated ocean normals. These use a paused diagnostic camera and are WebGL renders, not human flight or real-device performance acceptance. The rendering and hardware limits below still apply.
 
