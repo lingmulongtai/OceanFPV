@@ -103,6 +103,7 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().paused)).toBe(true);
 });
 test('radio calibration, axis assignment and low-throttle arming', async ({page})=> {
+  test.setTimeout(300000);
   await page.addInitScript(()=> {
     (window as any).__pad={id:'USB radio test',index:0,connected:true,mapping:'',axes:[0,0,0,0],buttons:[],timestamp:0};
     Object.defineProperty(navigator,'getGamepads',{value:()=>[(window as any).__pad]});

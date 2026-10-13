@@ -8,13 +8,21 @@ The 2026-10-13 marine follow-up passed **27/27 unit tests**, the strict producti
 
 HIGH comparison images at 1100×740 verify curved passenger-deck ends, wraparound windows and translucent balcony glazing, shoreline wash, and the updated ocean normals. These use a paused diagnostic camera and are WebGL renders, not human flight or real-device performance acceptance. The rendering and hardware limits below still apply.
 
+Marine PR verification [38377022441](https://github.com/lingmulongtai/OceanFPV/actions/runs/38377022441) passed eight browser cases. The race case reached its 180-second deadline after completing all three laps: the failure snapshot already showed the completion dialog, lap totals and saved best time. This case now has a 300-second budget for its 18 rendered gate crossings and final result/storage checks on the software GPU. Assertions, viewport and product rendering are unchanged.
+
 ## Vessel fixture follow-up
 
 The subsequent fixture revision passed **29/29 unit tests** and the strict production build. Independent ray casts against the closed hull check 32 fitting positions on both sides, including the differing triangle diagonals. Ray casts from all 132 ship-name vertices check that the curved labels remain just above the painted hull. Portholes, anchor recesses and chains now follow that surface instead of fixed lateral coordinates.
 
 Actual paused HIGH renders at 1100×740 checked both bow sides and the sun deck without page/console errors. The wooden sun deck, chair legs, roof railing posts, funnel, radar pedestal and forward mast now meet their supporting surfaces. The roof view reported 946,822 rendered triangles including reflection; this is scene evidence, not a real-GPU speed measurement. Browser CI and publication are checked independently before this revision is deployed.
 
-Marine PR verification [38377022441](https://github.com/lingmulongtai/OceanFPV/actions/runs/38377022441) passed eight browser cases. The race case reached its 180-second deadline after completing all three laps: the failure snapshot already showed the completion dialog, lap totals and saved best time. This case now has a 300-second budget for its 18 rendered gate crossings and final result/storage checks on the software GPU. Assertions, viewport and product rendering are unchanged.
+## Horizon reflection follow-up
+
+The subsequent screen-footprint filtering revision passed **29/29 unit tests** and the strict production build. Actual paused 960×640 HIGH draws compared the preceding and updated shaders at the same wave time (0.84 seconds): CALM, BREEZE and SWELL in daylight, plus SWELL in golden light. The preceding shader uses reflection mip level zero for this comparison. Updated reflections account for unresolved wave slopes and screen footprint. The updated shader also rendered through manual float-field interpolation without page/console errors. The geometry displacement and contact sampler are unchanged.
+
+These checks cover static WebGL comparisons and the fallback path; they do not establish temporal anti-aliasing, real GPU performance or physical-controller acceptance. Foam texture filtering and curved historical vessel wakes remain further work. Full browser CI and publication are checked independently before deployment.
+
+Horizon PR [run 38385324621](https://github.com/lingmulongtai/OceanFPV/actions/runs/38385324621) passed eight browser cases. Radio calibration reached its 180-second whole-test deadline after calibration, the high-throttle arming rejection, throttle-zero detection and flight start; its failure screenshot already shows RADIO/ARMED with the intro hidden. That case now has a 300-second software-GPU budget. Its input values, safety assertions, viewport and product rendering are unchanged.
 
 ## Earlier visual-release verification
 

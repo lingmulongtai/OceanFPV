@@ -40,6 +40,7 @@ export class WaveCascade {
   private foamTime=NaN;
   private foamScale=NaN;
   compressionBound=0;
+  slopeVariance=0;
 
   constructor(readonly size: number, readonly length: number, seed: number, rms: number, minWave: number, maxWave: number, readonly chop=1.6) {
     const count=size*size;this.displacement=new Float32Array(count*4);this.tangentX=new Float32Array(count*4);this.tangentZ=new Float32Array(count*4);
@@ -78,10 +79,11 @@ export class WaveCascade {
     }
     this.fields.forEach(f=>inverseFFT(f.real,f.imaginary,n));
     const h=this.fields[0].real,dx=this.fields[1].real,dz=this.fields[2].real;
-    const derivative= n/(2*this.length);
+    const derivative= n/(2*this.length);let slopeEnergy=0;
     for(let z=0;z<n;z++) for(let x=0;x<n;x++) {
       const i=z*n+x,l=z*n+(x+n-1)%n,r=z*n+(x+1)%n,b=((z+n-1)%n)*n+x,t=((z+1)%n)*n+x;
       const hx=(h[r]-h[l])*derivative,hz=(h[t]-h[b])*derivative;
+      slopeEnergy+=hx*hx+hz*hz;
       const dxx=(dx[r]-dx[l])*derivative,dxz=(dx[t]-dx[b])*derivative,dzx=(dz[r]-dz[l])*derivative,dzz=(dz[t]-dz[b])*derivative;
       this.displacement[i*4]=dx[i];this.displacement[i*4+1]=h[i];this.displacement[i*4+2]=dz[i];
       this.tangentX[i*4]=dxx;this.tangentX[i*4+1]=hx;this.tangentX[i*4+2]=dzx;
@@ -89,6 +91,7 @@ export class WaveCascade {
       const cross=(dxz+dzx)*0.5;
       this.compressionBound=Math.max(this.compressionBound,(Math.hypot(dxx-dzz,2*cross)-dxx-dzz)*0.5);
     }
+    this.slopeVariance=slopeEnergy/count;
     // Imaginary residues are only round-off: Hermitian symmetry is preserved.
     if(count!==this.fields[0].real.length) throw new Error('Invalid ocean field');
   }

@@ -30,10 +30,10 @@ vec4 displacementAt(vec2 p) {
   vec4 a=fieldSample(displacement0,cascadeUV(p,433.0)),b=fieldSample(displacement1,cascadeUV(p,97.0)),c=fieldSample(displacement2,cascadeUV(p,23.3));
   return vec4((a.xyz+b.xyz+c.xyz)*vec3(chopScale,seaScale,chopScale),max(max(a.w,b.w),c.w));
 }
-vec3 normalAt(vec2 p) {
+vec3 normalAt(vec2 p,vec3 resolved) {
   vec3 strength=vec3(chopScale,seaScale,chopScale);
-  vec3 tx=vec3(1,0,0)+(fieldSample(tangentX0,cascadeUV(p,433.0)).xyz+fieldSample(tangentX1,cascadeUV(p,97.0)).xyz+fieldSample(tangentX2,cascadeUV(p,23.3)).xyz)*strength;
-  vec3 tz=vec3(0,0,1)+(fieldSample(tangentZ0,cascadeUV(p,433.0)).xyz+fieldSample(tangentZ1,cascadeUV(p,97.0)).xyz+fieldSample(tangentZ2,cascadeUV(p,23.3)).xyz)*strength;
+  vec3 tx=vec3(1,0,0)+(fieldSample(tangentX0,cascadeUV(p,433.0)).xyz*resolved.x+fieldSample(tangentX1,cascadeUV(p,97.0)).xyz*resolved.y+fieldSample(tangentX2,cascadeUV(p,23.3)).xyz*resolved.z)*strength;
+  vec3 tz=vec3(0,0,1)+(fieldSample(tangentZ0,cascadeUV(p,433.0)).xyz*resolved.x+fieldSample(tangentZ1,cascadeUV(p,97.0)).xyz*resolved.y+fieldSample(tangentZ2,cascadeUV(p,23.3)).xyz*resolved.z)*strength;
   vec3 n=cross(tz,tx);return normalize(vec3(n.x,max(n.y,0.025),n.z));
 }
 `;
@@ -47,12 +47,15 @@ export class Ocean {
   private state:SeaState='breeze';
   constructor(sun:T.Vector3) {
     this.mesh=new Reflector(radialGeometry(),{textureWidth:1536,textureHeight:1536,multisample:0,clipBias:0.012});
+    this.mesh.getRenderTarget().texture.generateMipmaps=true;this.mesh.getRenderTarget().texture.minFilter=T.LinearMipmapLinearFilter;
     this.mesh.rotation.x=-Math.PI/2;this.mesh.frustumCulled=false;
     this.material=this.mesh.material as T.ShaderMaterial;this.material.lights=false;this.material.side=T.DoubleSide;
     Object.assign(this.material.uniforms,{
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
       dusk:{value:0.4},foamEnabled:{value:true},vessels:{value:Array.from({length:3},()=>new T.Vector4())},headings:{value:[0,0,0]},vesselWidths:{value:[4.4,17,4.5]},vesselSpeeds:{value:[0,0,0]},
       chopScale:{value:this.simulation.horizontalScale},
+      slopeVariance:{value:new T.Vector3()},
+      reflectionSize:{value:1536},
       islands:{value:[...COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.height)),new T.Vector4(145,-135,36,27)]},
     });
     const bottom=new T.DataTexture(bathymetryData(),BATHY_SIZE,BATHY_SIZE,T.RGBAFormat,T.FloatType);
@@ -75,7 +78,7 @@ export class Ocean {
     this.material.fragmentShader=`${spectralCode}
       uniform sampler2D mirrorSampler;
       uniform sampler2D bathymetry;
-      uniform vec3 eye,sunDirection,sunColor;uniform float time,dusk;uniform bool foamEnabled;
+      uniform vec3 eye,sunDirection,sunColor,slopeVariance;uniform float time,dusk,reflectionSize;uniform bool foamEnabled;
       uniform vec4 vessels[3],islands[4];uniform float headings[3],vesselWidths[3],vesselSpeeds[3];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
       float hash(vec2 p) {return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
@@ -89,10 +92,17 @@ export class Ocean {
       }
       void main() {
         vec3 view=normalize(eye-worldPosition);float distanceToEye=length(eye-worldPosition);vec2 p=worldPosition.xz;
-        vec3 normal=normalAt(waveCoordinate);
-        float detailFade=1.0-smoothstep(40.0,1200.0,distanceToEye),d=0.035;vec2 flow=p*2.1+vec2(time*0.28,-time*0.17);
+        float footprint=max(length(dFdx(waveCoordinate)),length(dFdy(waveCoordinate)));
+        // Transfer subpixel wave slopes into the BRDF before the hull discard.
+        vec3 resolved=1.0-smoothstep(vec3(9.0,1.0,0.1125),vec3(18.0,2.0,0.225),vec3(footprint));
+        vec3 normal=normalAt(waveCoordinate,resolved);
+        float detailFade=(1.0-smoothstep(40.0,1200.0,distanceToEye))*(1.0-smoothstep(0.08,0.24,footprint)),d=0.035;vec2 flow=p*2.1+vec2(time*0.28,-time*0.17);
         vec2 micro=vec2(noise(flow+vec2(d,0))-noise(flow-vec2(d,0)),noise(flow+vec2(0,d))-noise(flow-vec2(0,d)))/d;
         normal=normalize(normal+vec3(micro.x,0.0,micro.y)*0.13*detailFade);
+        vec3 normalFootprint=fwidth(normal);
+        float unresolvedVariance=0.5*dot(slopeVariance,vec3(1.0)-resolved*resolved);
+        vec2 mirrorUV=mirrorCoord.xy/max(mirrorCoord.w,0.001);
+        float mirrorFootprint=max(length(dFdx(mirrorUV)),length(dFdy(mirrorUV)))*reflectionSize;
         float wakeFoam=0.0,wakeWave=0.0,n=foamNoise(p*0.53+vec2(time*0.12,-time*0.09));
         for(int i=0;i<3;i++) {
           vec2 rel=p-vessels[i].xz;float c=cos(headings[i]),s=sin(headings[i]);vec2 local=vec2(c*rel.x-s*rel.y,s*rel.x+c*rel.y);
@@ -112,8 +122,10 @@ export class Ocean {
         }
         normal=normalize(normal+vec3(wakeWave*0.12,0.0,wakeWave*0.16));
         float nv=max(dot(normal,view),0.015),fresnel=0.0204+0.9796*pow(1.0-nv,5.0);
-        vec2 reflectionUV=mirrorCoord.xy/max(mirrorCoord.w,0.001)+normal.xz*(0.012+0.16/max(distanceToEye,2.0));
-        vec3 reflected=texture2D(mirrorSampler,clamp(reflectionUV,0.001,0.999)).rgb;float shallow=0.0,shoreFoam=0.0;
+        float distortion=0.012+0.16/max(distanceToEye,2.0);
+        vec2 reflectionUV=mirrorUV+normal.xz*distortion;
+        float reflectionLOD=log2(max(1.0,max(mirrorFootprint,sqrt(unresolvedVariance)*distortion*reflectionSize)));
+        vec3 reflected=textureLod(mirrorSampler,clamp(reflectionUV,0.001,0.999),reflectionLOD).rgb;float shallow=0.0,shoreFoam=0.0;
         for(int i=0;i<4;i++) {
           vec2 uv=(p-islands[i].xy)/(islands[i].z*2.4)+0.5;float bottomHeight=-60.0;
           if(i<3&&all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1))))bottomHeight=bottomAt(uv)[i];
@@ -125,9 +137,9 @@ export class Ocean {
         }
         vec3 absorption=mix(vec3(0.006,0.045,0.082),vec3(0.016,0.17,0.145),shallow);
         float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);absorption+=vec3(0.018,0.11,0.078)*crestLight;
-        vec3 halfV=normalize(view+sunDirection);float rough=0.12+smoothstep(80.0,1800.0,distanceToEye)*0.16;
-        vec3 normalFootprint=fwidth(normal);rough=max(rough,min(0.48,sqrt(length(normalFootprint))*0.6));
-        float a2=pow(rough,4.0),nh=max(dot(normal,halfV),0.0),nl=max(dot(normal,sunDirection),0.001),den=nh*nh*(a2-1.0)+1.0;
+        vec3 halfV=normalize(view+sunDirection);
+        float a2=pow(0.12,4.0)+min(0.2,unresolvedVariance+0.15*dot(normalFootprint,normalFootprint));
+        float nh=max(dot(normal,halfV),0.0),nl=max(dot(normal,sunDirection),0.001),den=nh*nh*(a2-1.0)+1.0;
         float distribution=a2/(3.14159*den*den+0.000001),masking=2.0*nv/(nv+sqrt(a2+(1.0-a2)*nv*nv));masking*=2.0*nl/(nl+sqrt(a2+(1.0-a2)*nl*nl));
         vec3 glint=sunColor*distribution*masking*fresnel*0.19/max(4.0*nv,0.1);
         float breaking=smoothstep(0.12,0.8,displacementAt(waveCoordinate).w)*smoothstep(0.42,0.76,n),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
@@ -149,12 +161,14 @@ export class Ocean {
     if(this.simulation.update(time,SEA_SCALE[state]))this.textures.forEach(t=>t.needsUpdate=true);
     this.material.uniforms.time.value=time;this.material.uniforms.seaScale.value=SEA_SCALE[state];
     this.material.uniforms.chopScale.value=this.simulation.horizontalScale;
+    this.material.uniforms.slopeVariance.value.set(...this.simulation.cascades.map(c=>c.slopeVariance*SEA_SCALE[state]**2));
   }
   update(time:number,camera:T.Vector3,state:SeaState) {
     this.advance(time,state);this.material.uniforms.eye.value.copy(camera);this.mesh.position.x=camera.x;this.mesh.position.z=camera.z;
   }
   setQuality(quality:string) {
     const size=quality==='ultra'?3072:quality==='high'?1536:512,target=this.mesh.getRenderTarget();if(target.width!==size)target.setSize(size,size);
+    this.material.uniforms.reflectionSize.value=size;
     if(this.quality!==quality) {this.mesh.geometry.dispose();this.mesh.geometry=radialGeometry(quality);this.quality=quality;}
   }
 }
