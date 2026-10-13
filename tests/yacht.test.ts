@@ -43,3 +43,11 @@ test('sloped windshield and canopy struts leave nearby airspace flyable',()=> {
   assert.equal(model.contains(new T.Vector3(2.13,5.9,2.934)),true);
   model.root.traverse(o=>{if(o instanceof T.Mesh)o.geometry.dispose();});
 });
+test('front and rear window headers close the roof junction across their width',()=> {
+  const model=buildMotorYacht(),ray=new T.Raycaster();model.root.updateMatrixWorld(true);
+  for(const x of [-2.5,0,2.5])for(const end of [-1,1]) {
+    ray.set(new T.Vector3(x,4.31,end*12),new T.Vector3(0,0,-end));const hit=ray.intersectObject(model.root,true)[0];assert.ok(hit,'window header is open');
+    assert.ok((hit.object as T.Mesh).material instanceof T.MeshStandardMaterial);assert.ok(model.contains(hit.point));
+  }
+  model.root.traverse(o=>{if(o instanceof T.Mesh)o.geometry.dispose();});
+});
