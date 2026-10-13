@@ -89,7 +89,8 @@ export function buildCruiseShip() {
         for(const edge of [0.22,3.28])box([0.24,1.88,0.075],[side*13.94,y+0.02,cabin+edge],white);
         for(const edge of [-0.875,0.915])box([0.24,0.09,3.135],[side*13.94,y+edge,cabin+1.75],white);
         box([0.15,1.72,0.045],[side*13.94,y+0.02,cabin+1.65],chrome);
-        rod([side*14.055,y-0.24,cabin+1.52],[side*14.055,y-0.02,cabin+1.52],0.018,chrome);
+        rod([side*13.895,y-0.24,cabin+1.52],[side*13.895,y-0.02,cabin+1.52],0.018,chrome);
+        for(const lift of [-0.24,-0.02])rod([side*13.815,y+lift,cabin+1.52],[side*13.895,y+lift,cabin+1.52],0.012,chrome);
         box([0.055,1.02,3.32],[side*16.05,floor+0.51,cabin+1.72],balconyGlass);
         rod([side*16.18,floor+1.05,cabin],[side*16.18,floor+1.05,cabin+3.5],0.035);
         // Balcony chairs and table are actual geometry at FPV distance.
