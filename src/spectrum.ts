@@ -36,6 +36,7 @@ export class WaveCascade {
   private readonly waveZ: Float64Array;
   private readonly fields: {real: Float64Array; imaginary: Float64Array}[];
   private lastTime=NaN;
+  private lastScale=NaN;
 
   constructor(readonly size: number, readonly length: number, seed: number, rms: number, minWave: number, maxWave: number, readonly chop=1.6) {
     const count=size*size;this.displacement=new Float32Array(count*4);this.normal=new Float32Array(count*4);
@@ -57,10 +58,11 @@ export class WaveCascade {
     for(let i=0;i<this.h0.length;i++) this.h0[i]*=factor;
     this.update(0);
   }
-  update(time: number) {
-    if(time===this.lastTime) return;
+  update(time: number,scale=1) {
+    if(time===this.lastTime&&scale===this.lastScale) return;
     const dt=Number.isFinite(this.lastTime)?Math.min(Math.abs(time-this.lastTime),0.1):0;
-    this.lastTime=time;
+    const resetFoam=scale!==this.lastScale||time<this.lastTime;
+    this.lastTime=time;this.lastScale=scale;
     const n=this.size,count=n*n;
     for(let z=0;z<n;z++) for(let x=0;x<n;x++) {
       const i=z*n+x,opposite=((n-z)%n)*n+(n-x)%n,c=Math.cos(this.omega[i]*time),s=Math.sin(this.omega[i]*time);
@@ -81,7 +83,8 @@ export class WaveCascade {
       const hx=(h[r]-h[l])*derivative,hz=(h[t]-h[b])*derivative;
       const dxx=(dx[r]-dx[l])*derivative,dxz=(dx[t]-dx[b])*derivative,dzx=(dz[r]-dz[l])*derivative,dzz=(dz[t]-dz[b])*derivative;
       const jacobian=(1+dxx)*(1+dzz)-dxz*dzx;
-      const foam=Math.max(this.displacement[i*4+3]*Math.exp(-dt*0.85),Math.max(0,Math.min(1,(0.55-jacobian)*3.6)));
+      const breakingJacobian=(1+scale*dxx)*(1+scale*dzz)-scale*scale*dxz*dzx;
+      const foam=Math.max(resetFoam?0:this.displacement[i*4+3]*Math.exp(-dt*0.85),Math.max(0,Math.min(1,(0.55-breakingJacobian)*3.6)));
       this.displacement[i*4]=dx[i];this.displacement[i*4+1]=h[i];this.displacement[i*4+2]=dz[i];this.displacement[i*4+3]=foam;
       const nx=hz*dzx-(1+dzz)*hx,ny=jacobian,nz=dxz*hx-hz*(1+dxx),norm=Math.hypot(nx,ny,nz)||1;
       this.normal[i*4]=nx/norm;this.normal[i*4+1]=Math.max(ny/norm,0.15);this.normal[i*4+2]=nz/norm;this.normal[i*4+3]=foam;
@@ -100,7 +103,11 @@ export class WaveCascade {
 export class SpectralSea {
   readonly cascades=[new WaveCascade(128,433,173,0.85,36,433,1.8),new WaveCascade(128,97,519,0.34,4,36,1.3),new WaveCascade(128,23.3,831,0.085,0.45,4,0.85)];
   time=0;
-  update(time:number) {if(Math.abs(time-this.time)<1/30&&time!==0)return;this.time=time;this.cascades.forEach(c=>c.update(time));}
+  private scale=1;
+  update(time:number,scale=1) {
+    if(Math.abs(time-this.time)<1/30&&time!==0&&scale===this.scale)return false;
+    this.time=time;this.scale=scale;this.cascades.forEach(c=>c.update(time,scale));return true;
+  }
   heightAt(x:number,z:number,scale=1) {
     let qx=x,qz=z;
     for(let i=0;i<3;i++) {let dx=0,dz=0;for(const c of this.cascades){dx+=c.sample(qx,qz,0);dz+=c.sample(qx,qz,2);}qx=x-dx*scale;qz=z-dz*scale;}

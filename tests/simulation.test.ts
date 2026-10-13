@@ -12,6 +12,14 @@ import { vesselPose } from '../src/navigation';
 import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
 import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
 
+test('rough seas generate more whitecaps and changing presets clears stale foam while paused',()=> {
+  const sea=new SpectralSea(),foam=()=>sea.cascades.reduce((sum,c)=>sum+c.displacement.reduce((v,x,i)=>v+(i%4===3?x:0),0),0);
+  sea.update(6,0.55);const calm=foam();sea.update(6,2.15);assert.ok(foam()>calm+100);
+  assert.equal(sea.update(6,0.55),true);assert.ok(foam()<0.01);assert.equal(sea.update(6,0.55),false);
+  sea.update(12,2.15);sea.update(0,2.15);const fresh=new SpectralSea();fresh.update(0,2.15);
+  for(let i=0;i<3;i++)assert.deepEqual(sea.cascades[i].displacement,fresh.cascades[i].displacement);
+});
+
 test('coastal water depths follow the same terrain triangles as visible shores',()=> {
   const data=bathymetryData(),n=BATHY_SIZE;
   for(const [channel,coast]of COASTS.entries())for(let i=0;i<80;i++) {

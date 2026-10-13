@@ -143,8 +143,8 @@ export class Ocean {
     if(!floatLinear)this.textures.forEach(texture=>{texture.magFilter=texture.minFilter=T.NearestFilter;texture.needsUpdate=true;});
   }
   advance(time:number,state:SeaState) {
-    this.state=state;const before=this.simulation.time;this.simulation.update(time);
-    if(before!==this.simulation.time)this.textures.forEach(t=>t.needsUpdate=true);
+    this.state=state;
+    if(this.simulation.update(time,SEA_SCALE[state]))this.textures.forEach(t=>t.needsUpdate=true);
     this.material.uniforms.time.value=time;this.material.uniforms.seaScale.value=SEA_SCALE[state];
   }
   update(time:number,camera:T.Vector3,state:SeaState) {
