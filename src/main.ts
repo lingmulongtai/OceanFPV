@@ -71,6 +71,7 @@ async function boot() {
   function resize() {
     const ratio=value('quality')==='ultra'?2:Math.min(devicePixelRatio||1,value('quality')==='high'?1.5:1);
     world.ocean.setQuality(value('quality'));
+    world.cruise.setQuality(value('quality'));
     world.quality=value('quality');
     renderer.shadowMap.enabled=value('quality')!=='balanced';
     const glazing=world.cruise.glazing,simpleGlass=value('quality')==='balanced';
