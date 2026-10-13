@@ -1,7 +1,7 @@
 import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { closedHullGeometry } from './hull';
+import { closedHullGeometry, foredeckGeometry, hullDeckHeight, hullHalfWidth } from './hull';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
 export function deckOutline(length:number,beam:number,radius=6) {
@@ -93,7 +93,12 @@ export function buildCruiseShip() {
   box([34.2,0.42,12],[0,33.82,-70],white);
   for(const side of [-1,1]) {box([0.08,1.6,8],[side*15.58,32.6,-70],glass);box([2.8,0.2,10],[side*16.2,31,-70],white);}
   // Teak promenade, bow foredeck, stern terraces and pool deck.
-  box([25,0.16,21],[0,9.2,-109],teak);
+  add(foredeckGeometry(),[0,0,0],teak);
+  for(const side of [-1,1])for(let station=2;station<=15;station++) {
+    const u=station/128,z=(u-0.5)*260,x=side*(hullHalfWidth(u,34)-0.3),y=hullDeckHeight(u,260,9);
+    if(station%2===0||station===15)rod([x,y,z],[x,y+1.05,z],0.035);
+    if(station<15){const next=(station+1)/128,nx=side*(hullHalfWidth(next,34)-0.3),ny=hullDeckHeight(next,260,9),nz=(next-0.5)*260;for(const lift of [0.55,1.05])rod([x,y+lift,z],[nx,ny+lift,nz],0.03);}
+  }
   box([26,0.16,24],[0,9.2,112],teak);
   box([28,0.18,74],[0,34.1,18],teak,true);
   for(const z of [7,37]) {
@@ -114,14 +119,14 @@ export function buildCruiseShip() {
   for(const z of [-47,-20]) {add(new T.SphereGeometry(2.6,32,20),[0,38.2,z],white);add(new T.CylinderGeometry(1.8,2.1,2,24),[0,35.6,z],white);}
   rod([0,34,-59],[0,47,-59],0.22,white);rod([-7,42,-59],[7,42,-59],0.09,chrome);
   for(let x=-4;x<=4;x+=2)rod([x,42,-59],[x,44,-59],0.035);
-  for(const side of [-1,1])for(const [y,start,end,width]of [[35,-53,80,14],[10,-125,-98,12],[10,101,123,13]]) {
+  for(const side of [-1,1])for(const [y,start,end,width]of [[35,-53,80,14],[10,101,123,13]]) {
     rod([side*width,y,start],[side*width,y,end]);rod([side*width,y-0.5,start],[side*width,y-0.5,end],0.025);
     for(let z=start;z<=end;z+=2.2)rod([side*width,y-1,z],[side*width,y,z]);
   }
   // Hull portholes, seam bands, anchor recesses and bow mooring machinery.
   for(const side of [-1,1])for(let z=-85;z<99;z+=3.4) {add(new T.CylinderGeometry(0.25,0.25,0.06,16),[side*16.85,7.6,z],black,new T.Euler(0,0,Math.PI/2));}
   for(const side of [-1,1]) {box([0.07,2.4,3.3],[side*11.7,7,-113],navy);rod([side*11.9,7.2,-113],[side*11.9,4.8,-113],0.1,chrome);}
-  for(const x of [-5,5])for(const z of [-113,116]) {add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,9.75,z],chrome);box([1.9,0.12,1.2],[x,9.32,z],navy);}
+  for(const x of [-5,5])for(const z of [-113,116]) {const y=hullDeckHeight((z+130)/260,260,9)+0.15;add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,y+0.45,z],chrome);box([1.9,0.12,1.2],[x,y,z],navy);}
   for(const [m,geometries]of buckets) {const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}
   const labelCanvas=document.createElement('canvas');labelCanvas.width=1024;labelCanvas.height=128;const ctx=labelCanvas.getContext('2d')!;ctx.fillStyle='#d8dfe0';ctx.font='600 68px Arial';ctx.textAlign='center';ctx.fillText('OCEAN  MERIDIAN',512,87);
   const label=new T.CanvasTexture(labelCanvas);label.colorSpace=T.SRGBColorSpace;

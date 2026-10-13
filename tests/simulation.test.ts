@@ -6,11 +6,21 @@ import { DEFAULT_RADIO, Inputs, mapGamepad, normalizeAxis } from '../src/input';
 import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
-import { closedHullGeometry } from '../src/hull';
+import { closedHullGeometry, foredeckGeometry } from '../src/hull';
 import { deckGeometry, vesselBoxContains } from '../src/cruise';
 import { vesselPose } from '../src/navigation';
 import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
 import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
+
+test('bow planking stays on the hull instead of cutting through or extending beyond it',()=> {
+  const hull=closedHullGeometry(260,34,9,7,true),wood=foredeckGeometry(),hp=hull.attributes.position,wp=wood.attributes.position;
+  for(let i=0;i<wp.count;i++) {
+    const station=Math.round((wp.getZ(i)/260+0.5)*128),top=hp.getY(station*6),halfWidth=hp.getX(station*6+1);
+    assert.ok(wp.getY(i)-top>0.04&&wp.getY(i)-top<0.05);
+    assert.ok(Math.abs(wp.getX(i))<halfWidth-0.4);
+  }
+  hull.dispose();wood.dispose();
+});
 
 test('wave tangents match displaced surface geometry for every sea strength',()=> {
   const sea=new SpectralSea();sea.update(6);
