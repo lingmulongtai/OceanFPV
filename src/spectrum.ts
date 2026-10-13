@@ -29,7 +29,8 @@ export function inverseFFT(real: Float64Array, imaginary: Float64Array, size: nu
 
 export class WaveCascade {
   readonly displacement: Float32Array;
-  readonly normal: Float32Array;
+  readonly tangentX: Float32Array;
+  readonly tangentZ: Float32Array;
   private readonly h0: Float64Array;
   private readonly omega: Float64Array;
   private readonly waveX: Float64Array;
@@ -39,7 +40,7 @@ export class WaveCascade {
   private lastScale=NaN;
 
   constructor(readonly size: number, readonly length: number, seed: number, rms: number, minWave: number, maxWave: number, readonly chop=1.6) {
-    const count=size*size;this.displacement=new Float32Array(count*4);this.normal=new Float32Array(count*4);
+    const count=size*size;this.displacement=new Float32Array(count*4);this.tangentX=new Float32Array(count*4);this.tangentZ=new Float32Array(count*4);
     this.h0=new Float64Array(count*2);this.omega=new Float64Array(count);this.waveX=new Float64Array(count);this.waveZ=new Float64Array(count);
     this.fields=Array.from({length:3},()=>({real:new Float64Array(count),imaginary:new Float64Array(count)}));
     const random=()=> {seed=(Math.imul(seed,1664525)+1013904223)>>>0;return (seed+1)/4294967297;};
@@ -82,20 +83,19 @@ export class WaveCascade {
       const i=z*n+x,l=z*n+(x+n-1)%n,r=z*n+(x+1)%n,b=((z+n-1)%n)*n+x,t=((z+1)%n)*n+x;
       const hx=(h[r]-h[l])*derivative,hz=(h[t]-h[b])*derivative;
       const dxx=(dx[r]-dx[l])*derivative,dxz=(dx[t]-dx[b])*derivative,dzx=(dz[r]-dz[l])*derivative,dzz=(dz[t]-dz[b])*derivative;
-      const jacobian=(1+dxx)*(1+dzz)-dxz*dzx;
       const breakingJacobian=(1+scale*dxx)*(1+scale*dzz)-scale*scale*dxz*dzx;
       const foam=Math.max(resetFoam?0:this.displacement[i*4+3]*Math.exp(-dt*0.85),Math.max(0,Math.min(1,(0.55-breakingJacobian)*3.6)));
       this.displacement[i*4]=dx[i];this.displacement[i*4+1]=h[i];this.displacement[i*4+2]=dz[i];this.displacement[i*4+3]=foam;
-      const nx=hz*dzx-(1+dzz)*hx,ny=jacobian,nz=dxz*hx-hz*(1+dxx),norm=Math.hypot(nx,ny,nz)||1;
-      this.normal[i*4]=nx/norm;this.normal[i*4+1]=Math.max(ny/norm,0.15);this.normal[i*4+2]=nz/norm;this.normal[i*4+3]=foam;
+      this.tangentX[i*4]=dxx;this.tangentX[i*4+1]=hx;this.tangentX[i*4+2]=dzx;
+      this.tangentZ[i*4]=dxz;this.tangentZ[i*4+1]=hz;this.tangentZ[i*4+2]=dzz;
     }
     // Imaginary residues are only round-off: Hermitian symmetry is preserved.
     if(count!==this.fields[0].real.length) throw new Error('Invalid ocean field');
   }
-  sample(x:number,z:number,channel=1) {
+  sample(x:number,z:number,channel=1,data=this.displacement) {
     const n=this.size,fx=((x/this.length*n)%n+n)%n,fz=((z/this.length*n)%n+n)%n,ix=Math.floor(fx),iz=Math.floor(fz),u=fx-ix,v=fz-iz;
-    const a=this.displacement[(iz*n+ix)*4+channel],b=this.displacement[(iz*n+(ix+1)%n)*4+channel];
-    const c=this.displacement[(((iz+1)%n)*n+ix)*4+channel],d=this.displacement[(((iz+1)%n)*n+(ix+1)%n)*4+channel];
+    const a=data[(iz*n+ix)*4+channel],b=data[(iz*n+(ix+1)%n)*4+channel];
+    const c=data[(((iz+1)%n)*n+ix)*4+channel],d=data[(((iz+1)%n)*n+(ix+1)%n)*4+channel];
     return (a*(1-u)+b*u)*(1-v)+(c*(1-u)+d*u)*v;
   }
 }

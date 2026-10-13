@@ -17,7 +17,7 @@ function radialGeometry(quality='high') {
 
 const spectralCode=`
 uniform sampler2D displacement0, displacement1, displacement2;
-uniform sampler2D normals0, normals1, normals2;
+uniform sampler2D tangentX0, tangentX1, tangentX2, tangentZ0, tangentZ1, tangentZ2;
 uniform float seaScale;
 uniform bool manualInterpolation;
 vec2 cascadeUV(vec2 p,float length) {return fract(p/length)+vec2(0.5/128.0);}
@@ -30,10 +30,10 @@ vec4 displacementAt(vec2 p) {
   vec4 a=fieldSample(displacement0,cascadeUV(p,433.0)),b=fieldSample(displacement1,cascadeUV(p,97.0)),c=fieldSample(displacement2,cascadeUV(p,23.3));
   return vec4((a.xyz+b.xyz+c.xyz)*seaScale,max(max(a.w,b.w),c.w));
 }
-vec3 normalAt(vec2 p,float distanceToEye) {
-  vec3 a=fieldSample(normals0,cascadeUV(p,433.0)).xyz,b=fieldSample(normals1,cascadeUV(p,97.0)).xyz,c=fieldSample(normals2,cascadeUV(p,23.3)).xyz;
-  vec2 slope=a.xz/max(a.y,0.15)+b.xz/max(b.y,0.15)+c.xz/max(c.y,0.15)*(1.0-smoothstep(250.0,4000.0,distanceToEye));
-  return normalize(vec3(slope.x*seaScale,1.0,slope.y*seaScale));
+vec3 normalAt(vec2 p) {
+  vec3 tx=vec3(1,0,0)+(fieldSample(tangentX0,cascadeUV(p,433.0)).xyz+fieldSample(tangentX1,cascadeUV(p,97.0)).xyz+fieldSample(tangentX2,cascadeUV(p,23.3)).xyz)*seaScale;
+  vec3 tz=vec3(0,0,1)+(fieldSample(tangentZ0,cascadeUV(p,433.0)).xyz+fieldSample(tangentZ1,cascadeUV(p,97.0)).xyz+fieldSample(tangentZ2,cascadeUV(p,23.3)).xyz)*seaScale;
+  vec3 n=cross(tz,tx);return normalize(vec3(n.x,max(n.y,0.025),n.z));
 }
 `;
 
@@ -56,7 +56,7 @@ export class Ocean {
     const bottom=new T.DataTexture(bathymetryData(),BATHY_SIZE,BATHY_SIZE,T.RGBAFormat,T.FloatType);
     bottom.magFilter=bottom.minFilter=T.NearestFilter;bottom.needsUpdate=true;this.material.uniforms.bathymetry={value:bottom};
     this.simulation.cascades.forEach((c,i)=> {
-      for(const [name,data] of [['displacement',c.displacement],['normals',c.normal]] as const) {
+      for(const [name,data] of [['displacement',c.displacement],['tangentX',c.tangentX],['tangentZ',c.tangentZ]] as const) {
         const texture=new T.DataTexture(data,c.size,c.size,T.RGBAFormat,T.FloatType);texture.wrapS=texture.wrapT=T.RepeatWrapping;texture.magFilter=texture.minFilter=T.LinearFilter;texture.needsUpdate=true;
         this.material.uniforms[`${name}${i}`]={value:texture};this.textures.push(texture);
       }
@@ -87,7 +87,7 @@ export class Ocean {
       }
       void main() {
         vec3 view=normalize(eye-worldPosition);float distanceToEye=length(eye-worldPosition);vec2 p=worldPosition.xz;
-        vec3 normal=normalAt(waveCoordinate,distanceToEye);
+        vec3 normal=normalAt(waveCoordinate);
         float detailFade=1.0-smoothstep(40.0,1200.0,distanceToEye),d=0.035;vec2 flow=p*2.1+vec2(time*0.28,-time*0.17);
         vec2 micro=vec2(noise(flow+vec2(d,0))-noise(flow-vec2(d,0)),noise(flow+vec2(0,d))-noise(flow-vec2(0,d)))/d;
         normal=normalize(normal+vec3(micro.x,0.0,micro.y)*0.13*detailFade);

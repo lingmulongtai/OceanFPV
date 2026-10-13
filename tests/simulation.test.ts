@@ -12,6 +12,19 @@ import { vesselPose } from '../src/navigation';
 import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
 import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
 
+test('wave tangents match displaced surface geometry for every sea strength',()=> {
+  const sea=new SpectralSea();sea.update(6);
+  for(const c of sea.cascades)for(const scale of [0.55,1.15,2.15])for(let i=0;i<32;i++) {
+    const step=c.length/c.size,x=(i*17%c.size)*step,z=(i*31%c.size)*step;
+    const point=(x:number,z:number)=>new Vector3(x+scale*c.sample(x,z,0),scale*c.sample(x,z,1),z+scale*c.sample(x,z,2));
+    const actualX=point(x+step,z).sub(point(x-step,z)).divideScalar(2*step),actualZ=point(x,z+step).sub(point(x,z-step)).divideScalar(2*step);
+    const tx=new Vector3(...[0,1,2].map(j=>c.sample(x,z,j,c.tangentX))).multiplyScalar(scale).add(new Vector3(1,0,0));
+    const tz=new Vector3(...[0,1,2].map(j=>c.sample(x,z,j,c.tangentZ))).multiplyScalar(scale).add(new Vector3(0,0,1));
+    assert.ok(tx.distanceTo(actualX)<0.00003);assert.ok(tz.distanceTo(actualZ)<0.00003);
+    const normal=tz.clone().cross(tx).normalize();assert.ok(Math.abs(normal.dot(actualX))<0.00003);assert.ok(Math.abs(normal.dot(actualZ))<0.00003);
+  }
+});
+
 test('rough seas generate more whitecaps and changing presets clears stale foam while paused',()=> {
   const sea=new SpectralSea(),foam=()=>sea.cascades.reduce((sum,c)=>sum+c.displacement.reduce((v,x,i)=>v+(i%4===3?x:0),0),0);
   sea.update(6,0.55);const calm=foam();sea.update(6,2.15);assert.ok(foam()>calm+100);
@@ -90,7 +103,7 @@ test('spectral waves evolve, remain periodic within each cascade and produce fin
   const sea=new SpectralSea(),first=sea.heightAt(17,39);
   for(const c of sea.cascades) {
     assert.ok(Math.abs(c.sample(13,19)-c.sample(13+c.length,19-c.length))<1e-6);
-    assert.ok(c.displacement.every(Number.isFinite));assert.ok(c.normal.every(Number.isFinite));
+    assert.ok(c.displacement.every(Number.isFinite));assert.ok(c.tangentX.every(Number.isFinite));assert.ok(c.tangentZ.every(Number.isFinite));
     const rms=Math.sqrt(c.displacement.reduce((s,v,i)=>s+(i%4===1?v*v:0),0)/(c.size*c.size));assert.ok(rms>0.02&&rms<2);
   }
   sea.update(9);assert.notEqual(sea.heightAt(17,39),first);
