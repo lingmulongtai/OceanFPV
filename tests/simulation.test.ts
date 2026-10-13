@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DoubleSide, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from 'three';
+import { DoubleSide, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, Vector3 } from 'three';
 import { Flight, NEUTRAL, rateCurve } from '../src/flight';
 import { DEFAULT_RADIO, Inputs, mapGamepad, normalizeAxis } from '../src/input';
 import { crossedGate, GATES, Race } from '../src/race';
@@ -9,8 +9,24 @@ import { inverseFFT, SpectralSea } from '../src/spectrum';
 import { closedHullGeometry, foredeckGeometry, hullNameGeometry, upperHullSidePose } from '../src/hull';
 import { deckGeometry, vesselBoxContains } from '../src/cruise';
 import { vesselPose } from '../src/navigation';
-import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
+import { coastalTreeSites, terrainHeight, terrainSurfaceHeight, TERRAIN_SEGMENTS } from '../src/terrain';
 import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
+
+test('coastal trees root on dry rendered triangles below 35 degrees',()=> {
+  for(const coast of COASTS) {
+    const sites=coastalTreeSites(coast.x,coast.z,coast.size,coast.height);assert.ok(sites.length>60&&sites.length<=170);
+    assert.deepEqual(sites,coastalTreeSites(coast.x,coast.z,coast.size,coast.height));
+    const geometry=new PlaneGeometry(coast.size*2.4,coast.size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geometry.rotateX(-Math.PI/2);
+    const p=geometry.attributes.position;for(let i=0;i<p.count;i++)p.setY(i,terrainHeight(p.getX(i),p.getZ(i),coast.size,coast.height));
+    const material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(geometry,material);mesh.updateMatrixWorld();
+    for(let i=0;i<sites.length;i+=5) {
+      const site=sites[i];assert.ok(site.y>10&&site.scale>=0.65&&site.scale<=1.35);
+      const origin=new Vector3(site.x-coast.x,site.y+10,site.z-coast.z),hit=new Raycaster(origin,new Vector3(0,-1,0),0,20).intersectObject(mesh)[0];
+      assert.ok(hit);assert.ok(Math.abs(hit.point.y-site.y)<0.0001);assert.ok(hit.face!.normal.y>Math.cos(35*Math.PI/180));
+    }
+    geometry.dispose();material.dispose();
+  }
+});
 
 test('ship names follow the curved hull at a small offset on both sides',()=> {
   const hull=closedHullGeometry(260,34,9,7,true),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(hull,material);mesh.updateMatrixWorld();
