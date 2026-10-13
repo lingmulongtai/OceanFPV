@@ -44,6 +44,12 @@ The final source subsequently passed **all nine browser cases** on native Direct
 
 Actual RTX 4050 ULTRA before/after frames at the same diagnostic camera and wave time 120 s show the propulsion foam following the curved stern path. The linked shader uploaded 39 wake points without adding texture samplers; the device reported 1024 fragment uniform vectors. A 120-frame sample of this paused comparison view was 16.7 ms median and 16.8 ms p95 after the change, without page/console errors. This is a short view-specific sample, not an interactive sustained flight or other-device benchmark. Source route history is deterministic and does not depend on wall-clock time. Full nine-case CI and deployment remain separate requirements.
 
+## Paint and highlight follow-up
+
+Actual RTX 4050 ULTRA comparisons at wave time120s separated paint mapping from Bloom. The preceding paint factor multiplied the measured roughness-map mean0.284 by0.45; loading now uses factor1. A valid-map draw confirmed both paint materials received the maps and factor1. Deliberately invalid JPEG responses confirmed both retained factor0.45 without maps or page errors.
+
+Three fixed roof samples were about RGB233–236 with the preceding Bloom, versus220–222 with the reduced effect. With the final settings those diffuse roof samples matched Bloom-off at 8-bit precision. DAY/GOLDEN/BLUE and DAY/SWELL captures were inspected without page/console errors. A separate sun-facing draw still measured greater output luminance with Bloom on (mean207.603 versus206.617 in 8-bit output units), confirming it remains active for bright regions. Captures use a safely placed, paused diagnostic camera and do not establish optical calibration, sustained frame rate or human flight acceptance.
+
 ## Earlier visual-release verification
 
 - ZIP extracted without editing its source. SHA-256 comparison against the ZIP's file streams passed for all extracted files. Source review: `SOURCE_REVIEW.md`.

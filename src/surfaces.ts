@@ -1,6 +1,6 @@
 import * as T from 'three';
 
-export type SurfaceGroup={asset:string;resolution:'1k'|'2k';materials:T.MeshStandardMaterial[];colour:boolean};
+export type SurfaceGroup={asset:string;resolution:'1k'|'2k';materials:T.MeshStandardMaterial[];colour:boolean;roughness?:number};
 /** Use the same slope/height cover weight for colour, roughness and normals. */
 export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshStandardMaterial) {
   const available=()=>!!(material.map&&material.normalMap&&cover.map&&cover.normalMap&&cover.roughnessMap);
@@ -25,7 +25,7 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
 /** Optional local assets fail as one coherent material group, retaining fallback. */
 export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number) {
   const unique=new Map<string,SurfaceGroup>();
-  for(const group of groups){const key=`${group.asset}:${group.resolution}:${group.colour}`;const existing=unique.get(key);if(existing)existing.materials.push(...group.materials);else unique.set(key,{...group,materials:[...group.materials]});}
+  for(const group of groups){const key=`${group.asset}:${group.resolution}:${group.colour}:${group.roughness??''}`;const existing=unique.get(key);if(existing)existing.materials.push(...group.materials);else unique.set(key,{...group,materials:[...group.materials]});}
   const results=await Promise.all(Array.from(unique.values()).map(async group=> {
     const names=group.colour?['diff','nor_gl','rough']:['nor_gl','rough'];
     const loaded=await Promise.allSettled(names.map(async name=> {
@@ -42,6 +42,7 @@ export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number) {
     for(const material of group.materials) {
       if(group.colour)material.map=textures.diff;
       material.normalMap=textures.nor_gl;material.normalScale.set(group.colour?0.65:0.22,group.colour?0.65:0.22);material.roughnessMap=textures.rough;
+      if(group.roughness!==undefined)material.roughness=group.roughness;
       material.bumpMap=null;material.needsUpdate=true;
     }
     return null;

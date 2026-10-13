@@ -41,7 +41,7 @@ async function boot() {
   const camera=new T.PerspectiveCamera(65,innerWidth/innerHeight,0.06,18000);
   const renderTarget=new T.WebGLRenderTarget(innerWidth,innerHeight,{type:T.HalfFloatType,samples:Math.min(4,renderer.capabilities.maxSamples)});
   const composer=new EffectComposer(renderer,renderTarget);composer.addPass(new RenderPass(world.scene,camera));
-  const bloom=new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),0.17,0.6,1.2);composer.addPass(bloom);composer.addPass(new OutputPass());
+  const bloom=new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),0.035,0.35,2.4);composer.addPass(bloom);composer.addPass(new OutputPass());
   const flight=new Flight(),input=new Inputs(),race=new Race(),sound=new FlightAudio();
   let sea:SeaState='breeze', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0;
   let accumulator=0,last=performance.now(),lastHUD=0,lastControllerUI=0,frameCount=0,fpsTime=last,toastUntil=0;

@@ -92,7 +92,7 @@ export class World {
     this.buildShip(); this.buildDrone(); this.buildGates();
     for(const coast of COASTS)this.buildIsland(coast.x,coast.z,coast.size,coast.height);
     this.buildLighthouse(); this.buildYacht();
-    this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:this.cruise.paint,colour:false},{asset:'wood_floor_deck',resolution:'1k',materials:[this.cruise.teak],colour:true},{asset:'rocky_terrain',resolution:'2k',materials:[this.rockMaterial],colour:true});
+    this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:this.cruise.paint,colour:false,roughness:1},{asset:'wood_floor_deck',resolution:'1k',materials:[this.cruise.teak],colour:true},{asset:'rocky_terrain',resolution:'2k',materials:[this.rockMaterial],colour:true});
     this.surfaceGroups.push({asset:'aerial_grass_rock',resolution:'2k',materials:[this.groundCover],colour:true});
     this.scene.fog = new T.FogExp2(0x9facac,0.00019);
   }
