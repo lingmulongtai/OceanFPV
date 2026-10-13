@@ -1,7 +1,7 @@
 import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { closedHullGeometry, foredeckGeometry, hullDeckHeight, hullHalfWidth } from './hull';
+import { closedHullGeometry, foredeckGeometry, hullDeckHeight, hullHalfWidth, upperHullSidePose } from './hull';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
 export function deckOutline(length:number,beam:number,radius=6) {
@@ -124,7 +124,11 @@ export function buildCruiseShip() {
     for(let z=start;z<=end;z+=2.2)rod([side*width,y-1,z],[side*width,y,z]);
   }
   // Hull portholes, seam bands, anchor recesses and bow mooring machinery.
-  for(const side of [-1,1])for(let z=-85;z<99;z+=3.4) {add(new T.CylinderGeometry(0.25,0.25,0.06,16),[side*16.85,7.6,z],black,new T.Euler(0,0,Math.PI/2));}
+  for(const side of [-1,1])for(let z=-85;z<99;z+=3.4) {
+    const pose=upperHullSidePose(7.6,z,side),position=pose.point.addScaledVector(pose.normal,0.026);
+    const rotation=new T.Euler().setFromQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),pose.normal));
+    add(new T.CylinderGeometry(0.25,0.25,0.06,16),position.toArray(),black,rotation);
+  }
   for(const side of [-1,1]) {box([0.07,2.4,3.3],[side*11.7,7,-113],navy);rod([side*11.9,7.2,-113],[side*11.9,4.8,-113],0.1,chrome);}
   for(const x of [-5,5])for(const z of [-113,116]) {const y=hullDeckHeight((z+130)/260,260,9)+0.15;add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,y+0.45,z],chrome);box([1.9,0.12,1.2],[x,y,z],navy);}
   for(const [m,geometries]of buckets) {const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}

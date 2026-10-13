@@ -1,16 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Vector3 } from 'three';
+import { DoubleSide, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from 'three';
 import { Flight, NEUTRAL, rateCurve } from '../src/flight';
 import { DEFAULT_RADIO, Inputs, mapGamepad, normalizeAxis } from '../src/input';
 import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
-import { closedHullGeometry, foredeckGeometry } from '../src/hull';
+import { closedHullGeometry, foredeckGeometry, upperHullSidePose } from '../src/hull';
 import { deckGeometry, vesselBoxContains } from '../src/cruise';
 import { vesselPose } from '../src/navigation';
 import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
 import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
+
+test('hull fixtures touch actual rendered side triangles and face outwards',()=> {
+  const geometry=closedHullGeometry(260,34,9,7,true),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(geometry,material);mesh.updateMatrixWorld();
+  for(const side of [-1,1])for(const y of [4.2,7.6])for(const z of [-120,-113,-96,-85,0,85,99,120]) {
+    const pose=upperHullSidePose(y,z,side),ray=new Raycaster(pose.point.clone().addScaledVector(pose.normal,2),pose.normal.clone().negate()),hits=ray.intersectObject(mesh);
+    assert.ok(hits.length>0);assert.ok(Math.abs(hits[0].distance-2)<0.00002);
+    assert.ok(hits[0].point.distanceTo(pose.point)<0.00002);assert.ok(pose.normal.x*side>0);
+  }
+  geometry.dispose();material.dispose();
+});
 
 test('bow planking stays on the hull instead of cutting through or extending beyond it',()=> {
   const hull=closedHullGeometry(260,34,9,7,true),wood=foredeckGeometry(),hp=hull.attributes.position,wp=wood.attributes.position;
