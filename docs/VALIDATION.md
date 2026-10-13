@@ -50,6 +50,14 @@ Actual RTX 4050 ULTRA comparisons at wave time120s separated paint mapping from 
 
 Three fixed roof samples were about RGB233–236 with the preceding Bloom, versus220–222 with the reduced effect. With the final settings those diffuse roof samples matched Bloom-off at 8-bit precision. DAY/GOLDEN/BLUE and DAY/SWELL captures were inspected without page/console errors. A separate sun-facing draw still measured greater output luminance with Bloom on (mean207.603 versus206.617 in 8-bit output units), confirming it remains active for bright regions. Captures use a safely placed, paused diagnostic camera and do not establish optical calibration, sustained frame rate or human flight acceptance.
 
+## Metric vessel paint follow-up
+
+Two additional geometry regressions check the 2.5 m photographed paint period. The 34.2×12 m bridge-roof fixture retains all positions/normals, and measured UV edge lengths agree with geometric lengths on all six faces. Horizontal faces of the 199×32.6 m rounded deck use the same scale. The full hull retains every source triangle and normal; both sides use metric charts, and all12 end-cap faces have valid UV area. Existing closed-edge and actual hull-fitting ray checks also passed.
+
+The final metric-paint source passed **33/33 unit tests**, the strict production build and **all9 browser cases** in native RTX4050 Direct3D11 Chromium. These include virtual Xbox/radio, keyboard flight, race completion, settings and context-loss checks. Full CI and public deployment are separate requirements.
+
+Actual RTX4050 ULTRA roof/stern comparisons at fixed wave time120s used a preceding cruise builder with the same loaded materials/lighting, followed by the updated builder. Both safely positioned views reported identical before/after triangle counts (1,386,618 roof;1,386,274 stern, including reflections) and no page/console errors. The close views show no geometry gaps. Material variation in these diffuse-light views is subtle; the scale and complete cap coverage are established by the independent geometry checks. Dominant-axis chart seams and exact curve arc length remain approximation limits.
+
 ## Earlier visual-release verification
 
 - ZIP extracted without editing its source. SHA-256 comparison against the ZIP's file streams passed for all extracted files. Source review: `SOURCE_REVIEW.md`.
