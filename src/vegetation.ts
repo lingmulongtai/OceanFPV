@@ -73,8 +73,10 @@ export class CoastalForest {
     this.spriteMaterial=new T.MeshBasicMaterial({map:this.atlas.texture,alphaTest:0.4,side:T.DoubleSide});
     this.spriteMaterial.onBeforeCompile=shader=> {
       shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nattribute float treeFrame;').replace('#include <uv_vertex>','#include <uv_vertex>\nvMapUv=(vMapUv+vec2(mod(treeFrame,4.0),floor(treeFrame/4.0)))/vec2(4.0,2.0);');
+      // Mips average opaque foliage with clear RGB=0; restore covered colour.
+      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',T.ShaderChunk.map_fragment.replace('diffuseColor *= sampledDiffuseColor;','sampledDiffuseColor.rgb/=max(sampledDiffuseColor.a,0.05);\ndiffuseColor *= sampledDiffuseColor;'));
     };
-    this.spriteMaterial.customProgramCacheKey=()=> 'coastal-tree-atlas';
+    this.spriteMaterial.customProgramCacheKey=()=> 'coastal-tree-atlas-coverage';
     const plane=new T.PlaneGeometry(1,1);this.frame=new T.InstancedBufferAttribute(new Float32Array(this.points.length),1);plane.setAttribute('treeFrame',this.frame);
     this.sprites=new T.InstancedMesh(plane,this.spriteMaterial,this.points.length);this.sprites.frustumCulled=false;this.group.add(this.sprites);
     for(const template of templates) {const mesh=new T.InstancedMesh(template.geometry,template.material,8);mesh.count=0;mesh.visible=false;mesh.castShadow=mesh.receiveShadow=true;mesh.frustumCulled=false;this.near.push(mesh);this.group.add(mesh);}
