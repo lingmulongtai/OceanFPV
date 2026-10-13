@@ -6,9 +6,81 @@ import { DEFAULT_RADIO, Inputs, mapGamepad, normalizeAxis } from '../src/input';
 import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
-import { closedHullGeometry } from '../src/hull';
+import { closedHullGeometry, foredeckGeometry } from '../src/hull';
+import { deckGeometry, vesselBoxContains } from '../src/cruise';
 import { vesselPose } from '../src/navigation';
 import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
+import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
+
+test('bow planking stays on the hull instead of cutting through or extending beyond it',()=> {
+  const hull=closedHullGeometry(260,34,9,7,true),wood=foredeckGeometry(),hp=hull.attributes.position,wp=wood.attributes.position;
+  for(let i=0;i<wp.count;i++) {
+    const station=Math.round((wp.getZ(i)/260+0.5)*128),top=hp.getY(station*6),halfWidth=hp.getX(station*6+1);
+    assert.ok(wp.getY(i)-top>0.04&&wp.getY(i)-top<0.05);
+    assert.ok(Math.abs(wp.getX(i))<halfWidth-0.4);
+  }
+  hull.dispose();wood.dispose();
+});
+
+test('wave tangents match displaced surface geometry for every sea strength',()=> {
+  const sea=new SpectralSea();sea.update(6);
+  for(const scale of [0.55,1.15,2.15]) {sea.update(6,scale);const strength=new Vector3(sea.horizontalScale,scale,sea.horizontalScale);
+  for(const c of sea.cascades)for(let i=0;i<32;i++) {
+    const step=c.length/c.size,x=(i*17%c.size)*step,z=(i*31%c.size)*step;
+    const point=(x:number,z:number)=>new Vector3(c.sample(x,z,0),c.sample(x,z,1),c.sample(x,z,2)).multiply(strength).add(new Vector3(x,0,z));
+    const actualX=point(x+step,z).sub(point(x-step,z)).divideScalar(2*step),actualZ=point(x,z+step).sub(point(x,z-step)).divideScalar(2*step);
+    const tx=new Vector3(...[0,1,2].map(j=>c.sample(x,z,j,c.tangentX))).multiply(strength).add(new Vector3(1,0,0));
+    const tz=new Vector3(...[0,1,2].map(j=>c.sample(x,z,j,c.tangentZ))).multiply(strength).add(new Vector3(0,0,1));
+    assert.ok(tx.distanceTo(actualX)<0.00003);assert.ok(tz.distanceTo(actualZ)<0.00003);
+    const normal=tz.clone().cross(tx).normalize();assert.ok(Math.abs(normal.dot(actualX))<0.00003);assert.ok(Math.abs(normal.dot(actualZ))<0.00003);
+  }
+  }
+});
+
+test('rough wave compression stays bounded without reducing swell height',()=> {
+  const sea=new SpectralSea();
+  for(const time of [0,3,6,12]) {
+    sea.update(time,2.15);const horizontal=sea.horizontalScale;
+    for(let i=0;i<1000;i++) {
+      const x=-1800+(i*31.731)%3600,z=-1800+(i*83.973)%3600;
+      const sum=(field:'tangentX'|'tangentZ',channel:number)=>sea.cascades.reduce((v,c)=>v+c.sample(x,z,channel,c[field]),0)*horizontal;
+      const jacobian=(1+sum('tangentX',0))*(1+sum('tangentZ',2))-sum('tangentX',2)*sum('tangentZ',0);
+      assert.ok(jacobian>0.03);
+      assert.ok(Math.abs(sea.heightAt(x,z,2.15)-sea.heightAt(x,z,1.15)*2.15/1.15)<1e-9);
+    }
+  }
+});
+
+test('rough seas generate more whitecaps and changing presets clears stale foam while paused',()=> {
+  const sea=new SpectralSea(),foam=()=>sea.cascades.reduce((sum,c)=>sum+c.displacement.reduce((v,x,i)=>v+(i%4===3?x:0),0),0);
+  sea.update(6,0.55);const calm=foam();sea.update(6,2.15);assert.ok(foam()>calm+100);
+  assert.equal(sea.update(6,0.55),true);assert.ok(foam()<0.01);assert.equal(sea.update(6,0.55),false);
+  sea.update(12,2.15);sea.update(0,2.15);const fresh=new SpectralSea();fresh.update(0,2.15);
+  for(let i=0;i<3;i++)assert.deepEqual(sea.cascades[i].displacement,fresh.cascades[i].displacement);
+});
+
+test('coastal water depths follow the same terrain triangles as visible shores',()=> {
+  const data=bathymetryData(),n=BATHY_SIZE;
+  for(const [channel,coast]of COASTS.entries())for(let i=0;i<80;i++) {
+    const gx=7.23+(i*31.7)%174,gz=4.71+(i*17.8)%181,ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz;
+    const h=(x:number,z:number)=>data[(z*n+x)*4+channel],a=h(ix,iz),b=h(ix,iz+1),d=h(ix+1,iz),c=h(ix+1,iz+1);
+    const sampled=u+v<=1?a+(b-a)*v+(d-a)*u:c+(b-c)*(1-u)+(d-c)*(1-v);
+    const expected=terrainSurfaceHeight((gx/(n-1)*2-1)*coast.size*1.2,(gz/(n-1)*2-1)*coast.size*1.2,coast.size,coast.height);
+    assert.ok(Math.abs(sampled-expected)<0.00002);
+  }
+});
+
+test('rounded passenger decks leave corner airspace flyable and keep deck contacts solid',()=> {
+  const box={min:new Vector3(-16,-1,-100),max:new Vector3(16,1,100),radius:8};
+  assert.equal(vesselBoxContains(box,new Vector3(15.8,0,99.8)),false);
+  assert.equal(vesselBoxContains(box,new Vector3(15.8,0,90)),true);
+  assert.equal(vesselBoxContains(box,new Vector3(0,0,99.8)),true);
+  assert.equal(vesselBoxContains(box,new Vector3(0,1.3,0)),false);
+  const geometry=deckGeometry(200,32,2,8);geometry.computeBoundingBox();
+  assert.ok(geometry.boundingBox!.min.distanceTo(box.min)<1e-5);
+  assert.ok(geometry.boundingBox!.max.distanceTo(box.max)<1e-5);
+  assert.ok(Array.from(geometry.attributes.position.array).every(Number.isFinite));geometry.dispose();
+});
 
 test('terrain contact height follows the rendered triangle grid continuously',()=> {
   const size=260,height=130,step=size*2.4/192;
@@ -57,7 +129,7 @@ test('spectral waves evolve, remain periodic within each cascade and produce fin
   const sea=new SpectralSea(),first=sea.heightAt(17,39);
   for(const c of sea.cascades) {
     assert.ok(Math.abs(c.sample(13,19)-c.sample(13+c.length,19-c.length))<1e-6);
-    assert.ok(c.displacement.every(Number.isFinite));assert.ok(c.normal.every(Number.isFinite));
+    assert.ok(c.displacement.every(Number.isFinite));assert.ok(c.tangentX.every(Number.isFinite));assert.ok(c.tangentZ.every(Number.isFinite));
     const rms=Math.sqrt(c.displacement.reduce((s,v,i)=>s+(i%4===1?v*v:0),0)/(c.size*c.size));assert.ok(rms>0.02&&rms<2);
   }
   sea.update(9);assert.notEqual(sea.heightAt(17,39),first);

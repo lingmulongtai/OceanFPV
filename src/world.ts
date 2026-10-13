@@ -6,10 +6,11 @@ import { Ocean } from './ocean';
 import { type SeaState } from './sea';
 import { GATES } from './race';
 import { closedHullGeometry } from './hull';
-import { buildCruiseShip } from './cruise';
+import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { vesselPose } from './navigation';
 import { loadSurfaces, type SurfaceGroup } from './surfaces';
-import { terrainSurfaceHeight } from './terrain';
+import { terrainSurfaceHeight, TERRAIN_SEGMENTS } from './terrain';
+import { COASTS } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
@@ -87,7 +88,7 @@ export class World {
     this.setLight('golden');
     this.ocean = new Ocean(this.sun); this.scene.add(this.ocean.mesh);
     this.buildShip(); this.buildDrone(); this.buildGates();
-    this.buildIsland(-580,-420,260,130); this.buildIsland(610,-800,320,190); this.buildIsland(-850,420,190,85);
+    for(const coast of COASTS)this.buildIsland(coast.x,coast.z,coast.size,coast.height);
     this.buildLighthouse(); this.buildYacht();
     this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:this.cruise.paint,colour:false},{asset:'wood_floor_deck',resolution:'1k',materials:[this.cruise.teak],colour:true},{asset:'rocky_terrain',resolution:'2k',materials:[this.rockMaterial],colour:true});
     this.scene.fog = new T.FogExp2(0x9facac,0.00019);
@@ -257,7 +258,7 @@ export class World {
   }
   private buildIsland(x: number,z: number,size: number,height: number) {
     this.islands.push({x,z,size,height});
-    const geo=new T.PlaneGeometry(size*2.4,size*2.4,192,192);geo.rotateX(-Math.PI/2);
+    const geo=new T.PlaneGeometry(size*2.4,size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geo.rotateX(-Math.PI/2);
     const pos=geo.attributes.position;const colors:number[]=[];
     for(let i=0;i<pos.count;i++) {
       const px=pos.getX(i),pz=pos.getZ(i);const y=this.terrain(px,pz,size,height);pos.setY(i,y);
@@ -352,7 +353,7 @@ export class World {
       const u=(passenger.z+130)/260,w=17*(u>0.78?T.MathUtils.lerp(Math.pow(Math.max(Math.sin(Math.PI*u),0.001),0.42),0.72,T.MathUtils.smoothstep(u,0.78,1)):Math.pow(Math.max(Math.sin(Math.PI*u),0.001),0.42));
       if(Math.abs(passenger.x)<w+0.2&&passenger.y<9.2+2.12*Math.pow(1-u,4))return '客船の船体・甲板に接触しました';
     }
-    for(const c of this.cruise.boxes)if(passenger.x>c.min.x-0.2&&passenger.x<c.max.x+0.2&&passenger.y>c.min.y-0.2&&passenger.y<c.max.y+0.2&&passenger.z>c.min.z-0.2&&passenger.z<c.max.z+0.2)return '客船の構造物に接触しました';
+    for(const c of this.cruise.boxes)if(vesselBoxContains(c,passenger))return '客船の構造物に接触しました';
     for(const island of this.islands) {
       const h=this.terrain(p.x-island.x,p.z-island.z,island.size,island.height);
       if(p.y<h+0.25) return '島に接触しました';

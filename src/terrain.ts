@@ -3,6 +3,7 @@ function noise(x:number,z:number) {
   const ix=Math.floor(x),iz=Math.floor(z),u=x-ix,v=z-iz,fx=u*u*(3-2*u),fz=v*v*(3-2*v);
   return (hash(ix,iz)*(1-fx)+hash(ix+1,iz)*fx)*(1-fz)+(hash(ix,iz+1)*(1-fx)+hash(ix+1,iz+1)*fx)*fz;
 }
+export const TERRAIN_SEGMENTS=192;
 export function terrainHeight(x:number,z:number,size:number,height:number) {
   const coast=1+(noise(x*0.013+3,z*0.013-7)-0.5)*0.35;
   const r=Math.hypot(x,z*1.06)/size*coast;
@@ -14,8 +15,8 @@ export function terrainHeight(x:number,z:number,size:number,height:number) {
 }
 /** The same diagonal interpolation as the 192×192 rendered terrain grid. */
 export function terrainSurfaceHeight(x:number,z:number,size:number,height:number) {
-  const extent=size*1.2,step=extent*2/192;if(Math.abs(x)>extent||Math.abs(z)>extent)return -9;
-  const gx=(x+extent)/step,gz=(z+extent)/step,ix=Math.min(191,Math.floor(gx)),iz=Math.min(191,Math.floor(gz)),u=gx-ix,v=gz-iz;
+  const extent=size*1.2,step=extent*2/TERRAIN_SEGMENTS;if(Math.abs(x)>extent||Math.abs(z)>extent)return -9;
+  const gx=(x+extent)/step,gz=(z+extent)/step,ix=Math.min(TERRAIN_SEGMENTS-1,Math.floor(gx)),iz=Math.min(TERRAIN_SEGMENTS-1,Math.floor(gz)),u=gx-ix,v=gz-iz;
   const px=-extent+ix*step,pz=-extent+iz*step,a=terrainHeight(px,pz,size,height),b=terrainHeight(px,pz+step,size,height),d=terrainHeight(px+step,pz,size,height);
   if(u+v<=1)return a+(b-a)*v+(d-a)*u;
   const c=terrainHeight(px+step,pz+step,size,height);return c+(b-c)*(1-u)+(d-c)*(1-v);
