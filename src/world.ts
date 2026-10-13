@@ -313,6 +313,7 @@ export class World {
   }
   private buildYacht() {
     const model=buildMotorYacht();this.yacht.add(model.root);this.yachtBoxes=model.boxes;
+    this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:model.paint,colour:false,roughness:1},{asset:'wood_floor_deck',resolution:'1k',materials:[model.teak],colour:true});
   }
   update(time: number,camera: T.Vector3,state: SeaState,dronePosition:T.Vector3,orientation:T.Quaternion,motor:number) {
     this.ocean.update(time,camera,state);
