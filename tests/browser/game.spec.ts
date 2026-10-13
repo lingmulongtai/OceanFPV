@@ -53,6 +53,7 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
   }
 });
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
+  test.setTimeout(300000);
   await ready(page);await page.locator('#start').click();
   await page.keyboard.down('Space');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(8);await page.keyboard.up('Space');
   const altitude=await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y);

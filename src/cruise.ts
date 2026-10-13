@@ -17,9 +17,9 @@ export function deckGeometry(length:number,beam:number,height:number,radius=6) {
   const geometry=new T.ExtrudeGeometry(deckOutline(length,beam,radius),{depth:height,bevelEnabled:false,curveSegments:12});
   geometry.rotateX(Math.PI/2);geometry.translate(0,height/2,0);return geometry;
 }
-function windowRibbon(length:number,beam:number,height:number,radius=6) {
+export function windowRibbon(length:number,beam:number,height:number,radius=6) {
   const points=deckOutline(length,beam,radius).getPoints(12),positions:number[]=[],uvs:number[]=[],indices:number[]=[];
-  for(let i=0;i<points.length;i++) {const p=points[i];positions.push(p.x,-height/2,p.y,p.x,height/2,p.y);uvs.push(i/points.length,0,i/points.length,1);if(i){const a=(i-1)*2,b=i*2;indices.push(a,b,a+1,a+1,b,b+1);}}
+  for(let i=0;i<points.length;i++) {const p=points[i];positions.push(p.x,-height/2,p.y,p.x,height/2,p.y);uvs.push(i/points.length,0,i/points.length,1);if(i){const a=(i-1)*2,b=i*2;indices.push(a,a+1,b,a+1,b+1,b);}}
   const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
 }
 export function vesselBoxContains(box:VesselBox,p:T.Vector3,padding=0.2) {
@@ -72,7 +72,8 @@ export function buildCruiseShip() {
   const hullSource=closedHullGeometry(260,34,9,7,true),hull=new T.Mesh(metricPaintGeometry(hullSource),hullMat);hullSource.dispose();hull.castShadow=hull.receiveShadow=true;root.add(hull);
   // Tall sheer hull, recessed balcony walls and overhanging deck slabs.
   for(let deck=0;deck<8;deck++) {
-    const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3;
+    const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3,floor=y-1.27;
+    if(deck===0)deckPlate(length+3,32.6,0.28,floor-0.14,z,8);
     deckPlate(length,27.5,2.56,y,z);
     deckPlate(length+3,32.6,0.28,y+1.44,z,8);
     add(windowRibbon(length+0.14,27.64,1.72,6.07),[0,y+0.02,z],glass);
@@ -82,12 +83,18 @@ export function buildCruiseShip() {
     const start=z-length/2+8,end=z+length/2-8;
     for(const side of [-1,1]) {
       for(let cabin=start;cabin+3.5<=end;cabin+=3.5) {
-        box([0.1,1.84,0.09],[side*13.85,y,cabin],white);
-        box([2.1,1.84,0.075],[side*14.85,y,cabin],white);
-        box([0.055,0.96,3.32],[side*16.05,y-0.16,cabin+1.72],balconyGlass);
-        rod([side*16.18,y+0.44,cabin],[side*16.18,y+0.44,cabin+3.5],0.035);
+        box([0.1,2.57,0.09],[side*13.85,floor+1.285,cabin],white);
+        box([2.1,2.57,0.075],[side*14.85,floor+1.285,cabin],white);
+        // Raised jambs, sill and sliding-panel mullion give each cabin depth.
+        for(const edge of [0.22,3.28])box([0.24,1.88,0.075],[side*13.94,y+0.02,cabin+edge],white);
+        for(const edge of [-0.875,0.915])box([0.24,0.09,3.135],[side*13.94,y+edge,cabin+1.75],white);
+        box([0.15,1.72,0.045],[side*13.94,y+0.02,cabin+1.65],chrome);
+        rod([side*13.895,y-0.24,cabin+1.52],[side*13.895,y-0.02,cabin+1.52],0.018,chrome);
+        for(const lift of [-0.24,-0.02])rod([side*13.815,y+lift,cabin+1.52],[side*13.895,y+lift,cabin+1.52],0.012,chrome);
+        box([0.055,1.02,3.32],[side*16.05,floor+0.51,cabin+1.72],balconyGlass);
+        rod([side*16.18,floor+1.05,cabin],[side*16.18,floor+1.05,cabin+3.5],0.035);
         // Balcony chairs and table are actual geometry at FPV distance.
-        if(deck<5) {box([0.5,0.06,0.5],[side*14.9,y-0.58,cabin+0.95],teak);rod([side*14.9,y-1,cabin+0.95],[side*14.9,y-0.58,cabin+0.95],0.04);}
+        if(deck<5) {box([0.5,0.06,0.5],[side*14.9,floor+0.69,cabin+0.95],teak);rod([side*14.9,floor,cabin+0.95],[side*14.9,floor+0.66,cabin+0.95],0.04);}
       }
     }
   }
