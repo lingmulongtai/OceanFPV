@@ -72,6 +72,38 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   await page.locator('[data-close="settings-dialog"]').last().click();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(true);
 });
+test('fixed dialog views stop GPU draws and redraw changed settings',async({page})=> {
+  test.setTimeout(300000);
+  await page.addInitScript(()=> {
+    (window as any).__glDraws=0;
+    const prototype=WebGL2RenderingContext.prototype as any;
+    for(const name of ['drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced']) {
+      const draw=prototype[name];prototype[name]=function(...args:any[]){(window as any).__glDraws++;return draw.apply(this,args);};
+    }
+  });
+  const snapshot=()=>page.evaluate(async()=> {
+    await new Promise<void>(finish=>{const step=(n:number)=>n?requestAnimationFrame(()=>step(n-1)):finish();step(3);});
+    const app=(window as any).__OCEANFPV__;
+    return {draws:(window as any).__glDraws,time:app.getState().time,fov:app.camera.fov,quality:app.world.quality,reflection:app.world.ocean.mesh.getRenderTarget().width};
+  });
+  await ready(page);await page.locator('#open-help').click();
+  const help=await snapshot();expect(await snapshot()).toEqual(help);
+  await page.locator('[data-close="help-dialog"]').last().click();
+  const moving=await snapshot();expect(moving.time).toBeGreaterThan(help.time);expect(moving.draws).toBeGreaterThan(help.draws);
+  await page.locator('#start').click();await page.locator('#open-settings').click();
+  const stopped=await snapshot();expect(await snapshot()).toEqual(stopped);
+  await page.locator('#fov').fill('65');await page.locator('#fov').dispatchEvent('input');
+  const changed=await snapshot();expect(changed.time).toBe(stopped.time);expect(changed.fov).toBe(65);expect(changed.draws).toBeGreaterThan(stopped.draws);expect(await snapshot()).toEqual(changed);
+  if(process.env.OCEANFPV_NATIVE_GPU==='1') {
+    await page.locator('#quality').selectOption('high');
+    const high=await snapshot();expect(high.time).toBe(stopped.time);expect(high.draws).toBeGreaterThan(changed.draws);expect(high.quality).toBe('high');expect(high.reflection).toBe(1536);expect(await snapshot()).toEqual(high);
+    await page.locator('#quality').selectOption('balanced');const balanced=await snapshot();expect(balanced.quality).toBe('balanced');expect(balanced.reflection).toBe(512);expect(balanced.time).toBe(stopped.time);
+  }
+  await page.locator('[data-close="settings-dialog"]').last().click();
+  const resumed=await snapshot();expect(resumed.time).toBeGreaterThan(stopped.time);expect(resumed.draws).toBeGreaterThan(changed.draws);
+  await page.keyboard.press('Escape');const paused=await snapshot();expect(await snapshot()).toEqual(paused);
+});
+
 test('lost WebGL context closes modal layers and leaves recovery reachable',async({page})=> {
   await ready(page);await page.locator('#start').click();await page.keyboard.press('Escape');
   await expect(page.locator('#pause-dialog')).toBeVisible();
@@ -92,14 +124,19 @@ test('race registers actual ordered gate crossing and saves a completed run', as
   await page.locator('#race-mode').click();await page.locator('#start').click();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().time)).toBeLessThan(1);
   for(let i=0;i<18;i++) {
-    await page.evaluate((index)=> {
+    const crossed=await page.evaluate(async(index)=> {
       const app=(window as any).__OCEANFPV__,g=app.world.gateMeshes[index%6];
       // Use the mesh orientation to put flight one step before the real plane.
       const normal=app.flight.position.clone().set(0,0,1).applyQuaternion(g.quaternion);
       app.flight.position.copy(g.position).addScaledVector(normal,-0.08);
       app.flight.velocity.copy(normal).multiplyScalar(24);app.flight.orientation.identity();
+      const start=performance.now(),progress=()=>app.race.laps.length*6+app.race.next;
+      // Let real animation/physics frames cross the plane without a protocol poll per frame.
+      do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+      while(progress()<index+1&&performance.now()-start<20000);
+      return {progress:progress(),waited:performance.now()-start};
     },i);
-    if(i<17) await expect.poll(async()=>page.evaluate(()=> (window as any).__OCEANFPV__.race.laps.length*6+(window as any).__OCEANFPV__.race.next)).toBe(i+1);
+    expect(crossed.progress).toBe(i+1);expect(crossed.waited).toBeLessThanOrEqual(20000);
   }
   await expect(page.locator('#pause-title')).toHaveText('コース完走！');
   await expect(page.locator('#results')).toContainText('TOTAL');
