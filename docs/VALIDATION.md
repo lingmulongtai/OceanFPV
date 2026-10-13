@@ -2,7 +2,13 @@
 
 Date: 2026-10-13 (Asia/Tokyo). This records the new browser game. The original `OceanLab/VALIDATION.md` describes a separate Godot application and is not evidence that this game passed.
 
-## Completed locally
+## Marine follow-up
+
+The 2026-10-13 follow-up passed **26/26 unit tests** and the strict production build. Added coverage checks curved-deck airspace versus solid contacts, bow planking against the closed hull's actual station vertices, packed coastal depths against rendered terrain triangles, displaced wave tangents at all sea strengths, and stronger whitecaps plus deterministic foam reset on preset changes/time rewind. The final browser suite and publication are checked separately before this revision is deployed.
+
+HIGH comparison images at 1100×740 verify curved passenger-deck ends, wraparound windows and translucent balcony glazing, shoreline wash, and the updated ocean normals. These use a paused diagnostic camera and are WebGL renders, not human flight or real-device performance acceptance. The rendering and hardware limits below still apply.
+
+## Earlier visual-release verification
 
 - ZIP extracted without editing its source. SHA-256 comparison against the ZIP's file streams passed for all extracted files. Source review: `SOURCE_REVIEW.md`.
 - `npm test`: **21/21** tests passed. Hover stabilization, pitch/roll directions, long-running Acro quaternion normalization, gravity after disarm, rate bounds, Xbox channels, radio throttle endpoints, missing throttle fail-closed, asymmetric calibration, directional gate crossing, full three-lap sequence, finite sea sampling, held reset button re-poll, selected-device replacement and keyboard fallback when pointer lock is unavailable. New cases verify a known 2D IFFT impulse/cosine, spectral-field evolution/periodicity/finite contacts, watertight hull end caps, continuous vessel-route velocities/headings, coastline continuity and contact heights that match the rendered terrain triangles.
