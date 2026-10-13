@@ -22,6 +22,8 @@ The subsequent screen-footprint filtering revision passed **29/29 unit tests** a
 
 These checks cover static WebGL comparisons and the fallback path; they do not establish temporal anti-aliasing, real GPU performance or physical-controller acceptance. Foam texture filtering and curved historical vessel wakes remain further work. Full browser CI and publication are checked independently before deployment.
 
+Horizon PR [run 38385324621](https://github.com/lingmulongtai/OceanFPV/actions/runs/38385324621) passed eight browser cases. Radio calibration reached its 180-second whole-test deadline after calibration, the high-throttle arming rejection, throttle-zero detection and flight start; its failure screenshot already shows RADIO/ARMED with the intro hidden. That case now has a 300-second software-GPU budget. Its input values, safety assertions, viewport and product rendering are unchanged.
+
 ## Earlier visual-release verification
 
 - ZIP extracted without editing its source. SHA-256 comparison against the ZIP's file streams passed for all extracted files. Source review: `SOURCE_REVIEW.md`.
