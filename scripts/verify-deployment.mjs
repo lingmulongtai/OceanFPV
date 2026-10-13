@@ -7,8 +7,10 @@ if(!url || !/^https?:\/\//.test(url)) throw new Error('Usage: node scripts/verif
 const quality=process.argv.find(a=>a.startsWith('--quality='))?.split('=')[1]??'balanced';
 if(!['balanced','high','ultra'].includes(quality))throw new Error('Quality must be balanced, high or ultra');
 const visualOnly=process.argv.includes('--visual-only');
+const nativeGpu=process.argv.includes('--native-gpu');
+if(nativeGpu&&process.platform!=='win32')throw new Error('Native Direct3D11 verification requires Windows');
 const output=path.resolve('artifacts');await mkdir(output,{recursive:true});
-const browser=await chromium.launch({headless:true,args:['--enable-webgl','--ignore-gpu-blocklist','--enable-unsafe-swiftshader']});
+const browser=await chromium.launch({headless:true,args:['--enable-webgl','--ignore-gpu-blocklist',nativeGpu?'--use-angle=d3d11':'--enable-unsafe-swiftshader']});
 try {
   const page=await browser.newPage({viewport:{width:960,height:640},deviceScaleFactor:quality==='high'?1.5:1}), errors=[], assets=[];
   page.setDefaultTimeout(120000);
@@ -45,6 +47,7 @@ try {
     return ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable';
   });
   const drawing=await page.locator('#scene').evaluate(c=>({width:c.width,height:c.height,cssWidth:c.clientWidth,cssHeight:c.clientHeight}));
+  if(nativeGpu&&(/SwiftShader|Microsoft Basic|unavailable/i.test(gpu)||!gpu.includes('Direct3D11')))throw new Error(`Native GPU verification unavailable: ${gpu}`);
   const ratio=quality==='ultra'?2:quality==='high'?1.5:1;
   if(drawing.width!==Math.round(drawing.cssWidth*ratio)||drawing.height!==Math.round(drawing.cssHeight*ratio))throw new Error('Quality framebuffer size mismatch');
   if(assets.some(a=>a.status!==200)||!assets.some(a=>a.url.endsWith('.hdr'))||!assets.some(a=>a.url.endsWith('island_tree_02.bin')))throw new Error('Photographic asset delivery incomplete');

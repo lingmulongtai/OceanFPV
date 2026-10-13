@@ -3,6 +3,7 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
 import { SEA_SCALE, type SeaState } from './sea';
 import { SpectralSea } from './spectrum';
 import { bathymetryData, BATHY_SIZE, COASTS } from './bathymetry';
+import { WAKE_SAMPLES, WAKE_STEP } from './navigation';
 
 function radialGeometry(quality='high') {
   const segments=quality==='ultra'?512:quality==='high'?384:192,rings=quality==='ultra'?360:quality==='high'?280:170;
@@ -55,6 +56,7 @@ export class Ocean {
       dusk:{value:0.4},foamEnabled:{value:true},vessels:{value:Array.from({length:3},()=>new T.Vector4())},headings:{value:[0,0,0]},vesselWidths:{value:[4.4,17,4.5]},vesselSpeeds:{value:[0,0,0]},
       chopScale:{value:this.simulation.horizontalScale},
       slopeVariance:{value:new T.Vector3()},
+      wakePoints:{value:Array.from({length:3*WAKE_SAMPLES},()=>new T.Vector4())},wakeBounds:{value:Array.from({length:3},()=>new T.Vector4())},
       reflectionSize:{value:1536},
       islands:{value:[...COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.height)),new T.Vector4(145,-135,36,27)]},
     });
@@ -80,6 +82,7 @@ export class Ocean {
       uniform sampler2D bathymetry;
       uniform vec3 eye,sunDirection,sunColor,slopeVariance;uniform float time,dusk,reflectionSize;uniform bool foamEnabled;
       uniform vec4 vessels[3],islands[4];uniform float headings[3],vesselWidths[3],vesselSpeeds[3];
+      uniform vec4 wakePoints[${3*WAKE_SAMPLES}],wakeBounds[3];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
       float hash(vec2 p) {return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
       float noise(vec2 p) {vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.0),f.x),f.y);}
@@ -114,9 +117,22 @@ export class Ocean {
             if(abs(local.x)<width*shape*0.98)discard;
           }
           float safeAft=max(aft,0.0);
-          float trail=step(0.0,aft)*exp(-safeAft/300.0)*smoothstep(0.5,3.0,speed),kelvin=abs(local.x)-width-safeAft*0.354,crest=exp(-kelvin*kelvin/(3.0+safeAft*0.1));
-          wakeFoam+=trail*(exp(-local.x*local.x/max(width*width+safeAft*1.1,0.1))*0.63+crest*0.72)*smoothstep(0.18,0.75,n);
+          float launched=1.0-smoothstep(max(time*speed-2.0,0.0),max(time*speed,0.01),safeAft);
+          float trail=step(0.0,aft)*exp(-safeAft/80.0)*smoothstep(0.5,3.0,speed)*launched,kelvin=abs(local.x)-width-safeAft*0.354,crest=exp(-kelvin*kelvin/(3.0+safeAft*0.1));
+          wakeFoam+=trail*crest*0.72*smoothstep(0.18,0.75,n);
           wakeWave+=trail*crest*sin(kelvin*1.7-aft*0.14-time*1.8)*0.35;
+          if(all(greaterThanEqual(p,wakeBounds[i].xy))&&all(lessThanEqual(p,wakeBounds[i].zw))) {
+            float historical=0.0;
+            for(int j=0;j<${WAKE_SAMPLES-1};j++) {
+              vec4 a=wakePoints[i*${WAKE_SAMPLES}+j],b=wakePoints[i*${WAKE_SAMPLES}+j+1];vec2 segment=b.xy-a.xy;
+              float length2=dot(segment,segment);if(length2<0.0001)continue;
+              float along=clamp(dot(p-a.xy,segment)/length2,0.0,1.0),age=mix(a.z,b.z,along),emissionSpeed=mix(a.w,b.w,along);
+              vec2 across=p-mix(a.xy,b.xy,along);float travelled=age*emissionSpeed;
+              float tail=1.0-smoothstep(${(WAKE_SAMPLES-3)*WAKE_STEP}.0,${(WAKE_SAMPLES-1)*WAKE_STEP}.0,age);
+              historical=max(historical,exp(-dot(across,across)/max(width*width+travelled*1.1,0.1))*exp(-age/48.0)*tail*smoothstep(0.5,3.0,emissionSpeed));
+            }
+            wakeFoam+=historical*0.63*smoothstep(0.18,0.75,n);
+          }
           float edge=exp(-pow((abs(local.x)-width)/1.8,2.0))*(1.0-smoothstep(length*0.44,length*0.53,abs(local.y))),bowFoam=exp(-bow*bow/40.0-local.x*local.x/(width*width));
           wakeFoam+=(edge*0.22+bowFoam*0.75)*smoothstep(0.2,0.65,n)*smoothstep(0.2,3.0,speed);
         }

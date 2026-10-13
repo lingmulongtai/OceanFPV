@@ -11,6 +11,11 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
+  if(process.env.OCEANFPV_NATIVE_GPU==='1') {
+    const gpu=await page.evaluate(()=> {const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');return ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable';});
+    expect(gpu).not.toMatch(/SwiftShader|Microsoft Basic|unavailable/i);expect(gpu).toContain('Direct3D11');
+    console.log(`Native renderer: ${gpu}`);
+  }
   await expect(page.locator('#unsupported')).toBeHidden();
   const render=await page.evaluate(()=> (window as any).__OCEANFPV__.getState());
   expect(render.triangles).toBeGreaterThan(30000);
@@ -28,14 +33,24 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
   await expect(page.locator('#pause-dialog')).toBeVisible();
   const app=await page.evaluate(()=> {const a=(window as any).__OCEANFPV__,local=a.world.ship.worldToLocal(a.flight.position.clone());return {local:local.toArray(),time:a.getState().time};});
   expect(Math.abs(app.local[0])).toBeLessThan(1);expect(Math.abs(app.local[2]-38)).toBeLessThan(2);
-  const stopped=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());await page.waitForTimeout(300);
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray())).toEqual(stopped);
+  const stopped=await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};});await page.waitForTimeout(300);
+  expect(await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};})).toEqual(stopped);
   const mismatch=await page.evaluate(()=> {
     const a=(window as any).__OCEANFPV__,t=a.getState().time,before=a.world.launchPose(t).position;
     a.world.ocean.advance(t+0.05,'breeze');a.world.advanceVessels(t+0.05);
     const after=a.world.launchPose(t+0.05);return after.position.clone().sub(before).divideScalar(0.05).distanceTo(after.velocity);
   });
   expect(mismatch).toBeLessThan(1e-6);
+  const reset=await page.evaluate(()=> {
+    const w=(window as any).__OCEANFPV__.world;w.advanceVessels(100);
+    const old=w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray());w.advanceVessels(0);
+    return {old,points:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};
+  });
+  expect(reset.old).toHaveLength(39);expect(reset.old.some((p:number[])=>p[2]>0)).toBe(true);
+  for(let i=0;i<3;i++) {
+    const points=reset.points.slice(i*13,(i+1)*13);
+    expect(points.every((p:number[])=>p[2]===0&&p[0]===points[0][0]&&p[1]===points[0][1])).toBe(true);
+  }
 });
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
   await ready(page);await page.locator('#start').click();

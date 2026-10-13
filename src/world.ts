@@ -7,7 +7,7 @@ import { type SeaState } from './sea';
 import { GATES } from './race';
 import { closedHullGeometry } from './hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
-import { vesselPose } from './navigation';
+import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
 import { blendGroundCover, loadSurfaces, type SurfaceGroup } from './surfaces';
 import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS } from './terrain';
 import { COASTS } from './bathymetry';
@@ -336,6 +336,9 @@ export class World {
       root.position.set(p.x,h,p.z);root.rotation.set((front-back)/(half*2)*0.55,p.heading,0,'YXZ');root.updateMatrixWorld(true);
       this.ocean.material.uniforms.vessels.value[i].set(p.x,0,p.z,length);this.ocean.material.uniforms.headings.value[i]=p.heading;
       this.ocean.material.uniforms.vesselWidths.value[i]=width;this.ocean.material.uniforms.vesselSpeeds.value[i]=p.speed;
+      const trail=vesselWakeTrail(kind,time,length),bounds=new T.Box2(),padding=3*Math.sqrt(width*width+trail.at(-1)!.age*Math.max(...trail.map(point=>point.speed))*1.1);
+      trail.forEach((point,j)=> {this.ocean.material.uniforms.wakePoints.value[i*WAKE_SAMPLES+j].set(point.x,point.z,point.age,point.speed);bounds.expandByPoint(new T.Vector2(point.x,point.z));});
+      bounds.expandByScalar(padding);this.ocean.material.uniforms.wakeBounds.value[i].set(bounds.min.x,bounds.min.y,bounds.max.x,bounds.max.y);
     }
     this.launchVelocity=dt>0&&dt<0.2?this.ship.localToWorld(new T.Vector3(0,5.4,38)).sub(oldLaunch).divideScalar(dt):null;this.vesselTime=time;
   }

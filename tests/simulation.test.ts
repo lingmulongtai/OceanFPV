@@ -8,7 +8,7 @@ import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
 import { closedHullGeometry, foredeckGeometry, hullNameGeometry, upperHullSidePose } from '../src/hull';
 import { deckGeometry, vesselBoxContains } from '../src/cruise';
-import { vesselPose } from '../src/navigation';
+import { vesselPose, vesselWakeTrail, WAKE_SAMPLES, WAKE_STEP } from '../src/navigation';
 import { coastalTreeSites, terrainHeight, terrainSurfaceHeight, TERRAIN_SEGMENTS } from '../src/terrain';
 import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
 
@@ -137,6 +137,23 @@ test('terrain sampling stays finite and continuous through the coastline',()=> {
     const y=terrainHeight(x,z,260,130);assert.ok(Number.isFinite(y)&&y>=-9&&y<210);
     assert.ok(Math.abs(terrainHeight(x+0.001,z,260,130)-y)<0.02);
   }
+});
+
+test('stern trails follow past ship transforms and never predate launch',()=> {
+  for(const [kind,length] of [['explorer',92],['cruise',260],['yacht',28]] as const)for(const time of [0,3,8,27,190]) {
+    const trail=vesselWakeTrail(kind,time,length);assert.equal(trail.length,WAKE_SAMPLES);
+    for(const point of trail) {
+      assert.ok(point.age>=0&&point.age<=time&&point.age<=WAKE_STEP*(WAKE_SAMPLES-1));
+      const pose=vesselPose(kind,time-point.age),stern=new Vector3(0,0,length/2).applyAxisAngle(new Vector3(0,1,0),pose.heading).add(new Vector3(pose.x,0,pose.z));
+      assert.ok(Math.hypot(point.x-stern.x,point.z-stern.z)<1e-9);assert.ok(point.speed>1);
+    }
+    assert.deepEqual(trail,vesselWakeTrail(kind,time,length));
+  }
+  const turned=vesselWakeTrail('cruise',120,260),current=vesselPose('cruise',120),oldest=turned.at(-1)!;
+  const lateral=Math.cos(current.heading)*(oldest.x-turned[0].x)-Math.sin(current.heading)*(oldest.z-turned[0].z);
+  assert.ok(Math.abs(lateral)>50,'old stern positions must leave the current straight heading');
+  vesselWakeTrail('cruise',800,260);
+  const reset=vesselWakeTrail('cruise',0,260);assert.ok(reset.every(p=>p.age===0&&p.x===reset[0].x&&p.z===reset[0].z));
 });
 
 test('vessel routes move continuously and the bow follows the travel direction',()=> {
