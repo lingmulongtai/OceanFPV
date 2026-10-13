@@ -43,6 +43,8 @@ export class CoastalForest {
     if(footSamples)foot.divideScalar(footSamples);else bounds.getCenter(foot);
     this.span=2*Math.hypot(Math.max(Math.abs(bounds.min.x-foot.x),Math.abs(bounds.max.x-foot.x)),Math.max(Math.abs(bounds.min.z-foot.z),Math.abs(bounds.max.z-foot.z)))*factor*1.12;
     const bakeScene=new T.Scene(),templates:{geometry:T.BufferGeometry;material:T.MeshStandardMaterial}[]=[];
+    bakeScene.add(new T.HemisphereLight(0xd2e7eb,0x364532,1.8));
+    const bakeLight=new T.DirectionalLight(0xfff4df,0.9);bakeLight.position.set(-8,18,9);bakeScene.add(bakeLight);
     let triangleCount=0;
     source.traverse(object=> {
       if(!(object instanceof T.Mesh))return;
@@ -50,8 +52,8 @@ export class CoastalForest {
       const material=(object.material as T.MeshStandardMaterial).clone();if(!material.map)throw new Error('Incomplete tree textures');material.alphaTest=0.35;material.transparent=false;material.depthWrite=true;
       for(const property of Object.values(material))if(property instanceof T.Texture)property.anisotropy=Math.min(16,renderer.capabilities.getMaxAnisotropy());
       triangleCount+=(geometry.index?.count??geometry.attributes.position.count)/3;templates.push({geometry,material});
-      const unlit=new T.MeshBasicMaterial({map:material.map,color:material.color,alphaMap:material.alphaMap,alphaTest:material.alphaTest,side:T.DoubleSide,vertexColors:material.vertexColors});
-      bakeScene.add(new T.Mesh(geometry,unlit));
+      const lit=material.clone();lit.side=T.DoubleSide;lit.metalness=0;lit.roughness=Math.max(0.85,lit.roughness);
+      bakeScene.add(new T.Mesh(geometry,lit));
     });
     this.sourceTriangles=triangleCount;
     const tile=512;this.atlas=new T.WebGLRenderTarget(tile*4,tile*2,{depthBuffer:true});this.atlas.texture.colorSpace=T.SRGBColorSpace;
