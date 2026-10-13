@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { closedHullGeometry, foredeckGeometry, hullDeckHeight, hullHalfWidth, hullNameGeometry, upperHullSidePose } from './hull';
 import { metricPaintGeometry } from './paint';
+import { bakeCabinOcclusion,roomOcclusionUV,type RoomSurface } from './occlusion';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
 export function deckOutline(length:number,beam:number,radius=6) {
@@ -48,14 +49,17 @@ export function buildCruiseShip() {
   const quilts=[0x557d83,0x8b8579,0x8e6551].map(color=>new T.MeshPhysicalMaterial({color,roughness:0.95,sheen:0.7,sheenColor:color,sheenRoughness:0.85}));
   const curtain=new T.MeshPhysicalMaterial({color:0xb7ad96,roughness:0.94,sheen:0.7,sheenColor:0xd4c8af,sheenRoughness:0.9,side:T.DoubleSide});
   const boxes:VesselBox[]=[],buckets=new Map<T.Material,T.BufferGeometry[]>();
-  const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1))=> {
+  const blockers:T.BufferGeometry[]=[];let capture=false,aoFloor=0,aoCabin=0,aoSide=1;
+  const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1),surface?:RoomSurface)=> {
     g.applyMatrix4(new T.Matrix4().compose(new T.Vector3(...p),new T.Quaternion().setFromEuler(rotation),scale));
     if(m===teak){const position=g.attributes.position,uv=g.attributes.uv;for(let i=0;i<position.count;i++)uv.setXY(i,position.getX(i)/1.8,position.getZ(i)/1.8);}
     if(m===white){const projected=metricPaintGeometry(g);g.dispose();g=projected;}
+    if(m===white||m===teak)roomOcclusionUV(g,aoFloor,aoCabin,aoSide,surface);
+    if(capture&&m!==glass&&m!==cabinGlass&&m!==balconyGlass)blockers.push(g.clone());
     if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(g.index?g.toNonIndexed():g);
   };
-  const box=(s:number[],p:number[],m=white,solid=false,round=0)=> {
-    add(round?new RoundedBoxGeometry(s[0],s[1],s[2],2,round):new T.BoxGeometry(s[0],s[1],s[2]),p,m);
+  const box=(s:number[],p:number[],m=white,solid=false,round=0,surface?:RoomSurface)=> {
+    add(round?new RoundedBoxGeometry(s[0],s[1],s[2],2,round):new T.BoxGeometry(s[0],s[1],s[2]),p,m,new T.Euler(),new T.Vector3(1,1,1),surface);
     if(solid)boxes.push({min:new T.Vector3(p[0]-s[0]/2,p[1]-s[1]/2,p[2]-s[2]/2),max:new T.Vector3(p[0]+s[0]/2,p[1]+s[1]/2,p[2]+s[2]/2)});
   };
   const deckPlate=(length:number,beam:number,height:number,y:number,z:number,radius=6)=> {
@@ -67,6 +71,7 @@ export function buildCruiseShip() {
     const q=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),end.clone().sub(start).normalize());
     g.applyMatrix4(new T.Matrix4().compose(start.add(end).multiplyScalar(0.5),q,new T.Vector3(1,1,1)));
     const projected=m===white?metricPaintGeometry(g):g.toNonIndexed();if(m===white)g.dispose();
+    if(m===white||m===teak)roomOcclusionUV(projected);if(capture)blockers.push(projected.clone());
     if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(projected);
   };
   const hullMat=white.clone();hullMat.side=T.DoubleSide;
@@ -78,25 +83,33 @@ export function buildCruiseShip() {
   // Tall sheer hull, recessed balcony walls and overhanging deck slabs.
   for(let deck=0;deck<8;deck++) {
     const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3,floor=y-1.27;
+    capture=deck===0;
     if(deck===0)deckPlate(length+3,32.6,0.28,floor-0.14,z,8);
     deckPlate(length,15.2,2.56,y,z);
     // Keep the closed external glazing envelope solid to drone contacts.
     boxes.at(-1)!.min.x=-13.75;boxes.at(-1)!.max.x=13.75;
     deckPlate(length+3,32.6,0.28,y+1.44,z,8);
+    capture=false;
     add(windowRibbon(length+0.14,27.64,1.72,6.07,true),[0,y+0.02,z],glass);
     for(const p of deckOutline(length+0.2,27.7,6.1).getPoints(4)) {
       if(Math.abs(p.y)>length/2-7)rod([p.x,y-0.85,z+p.y],[p.x,y+0.9,z+p.y],0.045,white);
     }
     const start=z-length/2+8,end=z+length/2-8;
     for(const side of [-1,1]) {
+      capture=deck===0&&side===1;
       box([0.1,0.43,length-12],[side*13.77,floor+0.215,z],white);
       box([0.1,0.4,length-12],[side*13.77,y+1.08,z],white);
       const flatStart=z-length/2+6,flatEnd=z+length/2-6,lastEdge=start+Math.floor((end-start)/3.5)*3.5;
+      aoFloor=floor;aoCabin=lastEdge;aoSide=side;
       for(const [a,b]of [[flatStart,start-0.22],[lastEdge-0.22,flatEnd]])box([0.1,2.56,b-a],[side*13.77,y,(a+b)/2],white);
-      box([6.22,2.56,0.08],[side*10.71,y,lastEdge],white);
+      box([6.22,2.56,0.08],[side*10.71,y,lastEdge],white,false,0,'partition');
       for(let cabin=start;cabin+3.5<=end;cabin+=3.5) {
-        box([6.22,2.56,0.08],[side*10.71,y,cabin],white);
-        box([6.22,0.06,3.42],[side*10.71,floor+0.03,cabin+1.75],teak);
+        aoFloor=floor;aoCabin=cabin;aoSide=side;capture=deck===0&&side===1&&cabin<=start+3.5;
+        box([6.22,2.56,0.08],[side*10.71,y,cabin],white,false,0,'partition');
+        box([6.22,0.06,3.42],[side*10.71,floor+0.03,cabin+1.75],teak,false,0,'floor');
+        box([0.02,2.49,3.42],[side*7.61,floor+1.305,cabin+1.75],white,false,0,'back');
+        box([6.22,0.02,3.42],[side*10.71,floor+2.56,cabin+1.75],white,false,0,'ceiling');
+        box([2.4,0.02,3.42],[side*14.96,floor+2.56,cabin+1.75],white,false,0,'balcony');
         box([1.95,0.26,1.3],[side*8.695,floor+0.19,cabin+0.97],teak);
         box([0.12,0.95,1.55],[side*7.65,floor+0.535,cabin+0.97],teak);
         box([1.98,0.22,1.36],[side*8.695,floor+0.43,cabin+0.97],linen,false,0.09);
@@ -122,7 +135,7 @@ export function buildCruiseShip() {
           add(folds,[side*13.70,floor+1.28,centre],curtain,new T.Euler(0,side*Math.PI/2,0));
         }
         rod([side*13.705,floor+2.51,cabin+0.22],[side*13.705,floor+2.51,cabin+3.28],0.02,chrome);
-        box([0.1,1.72,0.44],[side*13.77,y+0.02,cabin],white);
+        box([0.1,1.72,0.44],[side*13.77,y+0.02,cabin],white,false,0,'front');
         add(new T.PlaneGeometry(3.06,1.72),[side*13.82,y+0.02,cabin+1.75],cabinGlass,new T.Euler(0,side*Math.PI/2,0));
         box([0.1,2.57,0.09],[side*13.85,floor+1.285,cabin],white);
         box([2.1,2.57,0.075],[side*14.85,floor+1.285,cabin],white);
@@ -137,6 +150,7 @@ export function buildCruiseShip() {
         // Balcony chairs and table are actual geometry at FPV distance.
         if(deck<5) {box([0.5,0.06,0.5],[side*14.9,floor+0.69,cabin+0.95],teak);rod([side*14.9,floor,cabin+0.95],[side*14.9,floor+0.66,cabin+0.95],0.04);}
       }
+      capture=false;
     }
   }
   // Continuous bow bridge with individual mullions and a cantilevered roof.
@@ -195,9 +209,10 @@ export function buildCruiseShip() {
     rod(top.point.addScaledVector(top.normal,0.12).toArray(),bottom.point.addScaledVector(bottom.normal,0.12).toArray(),0.1,chrome);
   }
   for(const x of [-5,5])for(const z of [-113,116]) {const y=hullDeckHeight((z+130)/260,260,9)+0.15;add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,y+0.45,z],chrome);box([1.9,0.12,1.2],[x,y,z],navy);}
+  const bakeStarted=performance.now(),ao=bakeCabinOcclusion(blockers,9.33,-87),occlusionBakeMs=performance.now()-bakeStarted;blockers.forEach(g=>g.dispose());white.aoMap=teak.aoMap=ao;white.aoMapIntensity=teak.aoMapIntensity=0.75;
   for(const [m,geometries]of buckets) {const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=m!==cabinGlass;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());}
   const labelCanvas=document.createElement('canvas');labelCanvas.width=1024;labelCanvas.height=128;const ctx=labelCanvas.getContext('2d')!;ctx.fillStyle='#d8dfe0';ctx.font='600 68px Arial';ctx.textAlign='center';ctx.fillText('OCEAN  MERIDIAN',512,87);
   const label=new T.CanvasTexture(labelCanvas);label.colorSpace=T.SRGBColorSpace;
   for(const side of [-1,1])root.add(new T.Mesh(hullNameGeometry(side),new T.MeshStandardMaterial({map:label,transparent:true,depthWrite:false,roughness:0.5})));
-  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass};
+  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs};
 }
