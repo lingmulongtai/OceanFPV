@@ -44,6 +44,8 @@ export function buildCruiseShip() {
   const chrome=new T.MeshStandardMaterial({color:0xc1cdd0,metalness:0.82,roughness:0.28});
   const black=new T.MeshStandardMaterial({color:0x182329,roughness:0.75});
   const pool=new T.MeshPhysicalMaterial({color:0x36b9c7,roughness:0.08,metalness:0.12,clearcoat:1});
+  const linen=new T.MeshPhysicalMaterial({color:0xe4e0d5,roughness:0.94,sheen:0.8,sheenColor:0xeee9de,sheenRoughness:0.8});
+  const quilts=[0x557d83,0x8b8579,0x8e6551].map(color=>new T.MeshPhysicalMaterial({color,roughness:0.95,sheen:0.7,sheenColor:color,sheenRoughness:0.85}));
   const boxes:VesselBox[]=[],buckets=new Map<T.Material,T.BufferGeometry[]>();
   const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1))=> {
     g.applyMatrix4(new T.Matrix4().compose(new T.Vector3(...p),new T.Quaternion().setFromEuler(rotation),scale));
@@ -94,6 +96,13 @@ export function buildCruiseShip() {
       for(let cabin=start;cabin+3.5<=end;cabin+=3.5) {
         box([2.62,2.56,0.08],[side*12.51,y,cabin],white);
         box([2.62,0.06,3.42],[side*12.51,floor+0.03,cabin+1.75],teak);
+        box([1.95,0.26,1.3],[side*12.295,floor+0.19,cabin+0.97],teak);
+        box([0.12,0.95,1.55],[side*11.25,floor+0.535,cabin+0.97],teak);
+        box([1.98,0.22,1.36],[side*12.295,floor+0.43,cabin+0.97],linen,false,0.09);
+        for(const offset of [0.65,1.3])box([0.34,0.12,0.54],[side*11.52,floor+0.6,cabin+offset],linen,false,0.045);
+        const fabric=quilts[(deck+Math.round((cabin-start)/3.5))%quilts.length];
+        box([1.15,0.035,1.38],[side*12.65,floor+0.555,cabin+0.97],fabric);
+        box([0.55,0.6,0.48],[side*11.475,floor+0.36,cabin+1.98],teak);
         box([0.1,1.72,0.44],[side*13.77,y+0.02,cabin],white);
         add(new T.PlaneGeometry(3.06,1.72),[side*13.82,y+0.02,cabin+1.75],cabinGlass,new T.Euler(0,side*Math.PI/2,0));
         box([0.1,2.57,0.09],[side*13.85,floor+1.285,cabin],white);
