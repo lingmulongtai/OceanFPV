@@ -36,6 +36,12 @@ Mip-filtered atlas RGB is normalized by its alpha coverage. A small WebGL2 probe
 
 The final coastal source also passed the unchanged scene-render, moving-vessel/material-fallback and settings/accessibility/mobile-layout browser cases in a separate native Direct3D11 Chromium configuration (**3/3**, 22.2 seconds). The preceding software-GPU configuration passed scene rendering and moving-vessel fallback (**2/2**, 4.2 minutes) before the final environment-lighting correction. These are distinct checks; the full nine-case CI suite remains required for publication.
 
+## Historical vessel wake follow-up
+
+The wake revision passed **31/31 unit tests**, the strict build and the scene/moving-vessel browser cases on native Direct3D11 Chromium (**2/2**, 14.6 seconds). Independent Three.js stern transforms check history positions at startup, partial intervals and established routes, including a cruise turn whose old stern is over 50 m off the current straight heading. Browser assertions verify that pause fixes the uploaded wake points and that 100→0 time rewind removes all historical ages. The original launch-velocity and material-fallback assertions remain.
+
+Actual RTX 4050 ULTRA before/after frames at the same diagnostic camera and wave time 120 s show the propulsion foam following the curved stern path. The linked shader uploaded 39 wake points without adding texture samplers; the device reported 1024 fragment uniform vectors. A 120-frame sample of this paused comparison view was 16.7 ms median and 16.8 ms p95 after the change, without page/console errors. This is a short view-specific sample, not an interactive sustained flight or other-device benchmark. Source route history is deterministic and does not depend on wall-clock time. Full nine-case CI and deployment remain separate requirements.
+
 ## Earlier visual-release verification
 
 - ZIP extracted without editing its source. SHA-256 comparison against the ZIP's file streams passed for all extracted files. Source review: `SOURCE_REVIEW.md`.
