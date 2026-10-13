@@ -90,7 +90,11 @@ export class Ocean {
       uniform vec4 vessels[3],islands[4];uniform float headings[3],vesselWidths[3],vesselSpeeds[3];
       uniform vec4 wakePoints[${3*WAKE_SAMPLES}],wakeBounds[3];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
-      float hash(vec2 p) {return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+      float hash(vec2 p) {
+        uint h=uint(int(p.x))*0x9e3779b9u^uint(int(p.y))*0x85ebca6bu;
+        h=(h^(h>>16u))*0x85ebca6bu;h=(h^(h>>13u))*0xc2b2ae35u;h^=h>>16u;
+        return float(h>>8u)/16777216.0;
+      }
       float noise(vec2 p) {vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.0),f.x),f.y);}
       float foamNoise(vec2 p) {return noise(p)*0.55+noise(p*2.17+8.6)*0.3+noise(p*4.79)*0.15;}
       vec3 shortWave(vec2 p,float footprint,float wavelength,float angle,float steepness,float phase) {
@@ -122,10 +126,17 @@ export class Ocean {
         // Transfer subpixel wave slopes into the BRDF before the hull discard.
         vec3 resolved=1.0-smoothstep(vec3(9.0,1.0,0.1125),vec3(18.0,2.0,0.225),vec3(footprint));
         vec3 normal=normalAt(waveCoordinate,resolved);
-        vec3 ripple=ripplesAt(p,max(length(dFdx(p)),length(dFdy(p))));
+        float waterFootprint=max(length(dFdx(p)),length(dFdy(p)));
+        vec3 ripple=ripplesAt(p,waterFootprint);
         normal=normalize(vec3(normal.x-ripple.x*normal.y,normal.y,normal.z-ripple.y*normal.y));
         vec3 normalFootprint=fwidth(normal);
         float unresolvedVariance=0.5*dot(slopeVariance,vec3(1.0)-resolved*resolved)+ripple.z;
+        // Resolve porous shoreline foam before hull discard; average subpixel pores.
+        vec3 grain=vec3(noise(p*24.0),noise(p*52.08+8.6),noise(p*114.96));
+        vec3 grainResolved=1.0-smoothstep(vec3(0.25),vec3(0.5),waterFootprint*vec3(24.0,52.08,114.96));
+        float foamGrain=dot(grain,vec3(0.55,0.3,0.15)),filteredGrain=dot(mix(vec3(0.5),grain,grainResolved),vec3(0.55,0.3,0.15));
+        float grainEdge=max(0.02,0.5*fwidth(foamGrain));
+        float shoreDetail=mix(0.5,smoothstep(0.5-grainEdge,0.5+grainEdge,filteredGrain),grainResolved.x);
         vec2 mirrorUV=mirrorCoord.xy/max(mirrorCoord.w,0.001);
         bool hullCutout=false;
         float wakeFoam=0.0,wakeWave=0.0,n=foamNoise(p*0.53+vec2(time*0.12,-time*0.09));
@@ -175,6 +186,7 @@ export class Ocean {
           float wash=0.65+0.35*sin(time*1.2+bottomHeight*1.8);
           shoreFoam=max(shoreFoam,(1.0-smoothstep(0.4,3.2,depth))*wash*smoothstep(0.23,0.65,n));
         }
+        shoreFoam*=shoreDetail;
         vec3 absorption=mix(vec3(0.006,0.045,0.082),vec3(0.016,0.17,0.145),shallow);
         float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);absorption+=vec3(0.018,0.11,0.078)*crestLight;
         vec3 halfV=normalize(view+sunDirection);
@@ -183,7 +195,7 @@ export class Ocean {
         float distribution=a2/(3.14159*den*den+0.000001),masking=2.0*nv/(nv+sqrt(a2+(1.0-a2)*nv*nv));masking*=2.0*nl/(nl+sqrt(a2+(1.0-a2)*nl*nl));
         vec3 glint=sunColor*distribution*masking*fresnel*0.19/max(4.0*nv,0.1);
         float breaking=smoothstep(0.12,0.8,displacementAt(waveCoordinate).w)*smoothstep(0.42,0.76,n),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
-        vec3 foamColor=mix(vec3(0.78,0.86,0.84),vec3(0.82,0.78,0.66),dusk)*(0.76+noise(p*7.3)*0.3);
+        vec3 foamColor=mix(vec3(0.78,0.86,0.84),vec3(0.82,0.78,0.66),dusk)*(0.76+filteredGrain*0.3);
         vec3 color=mix(absorption*(1.0-fresnel)+reflected*fresnel+min(glint,vec3(9.0)),foamColor,foam);
         float haze=1.0-exp(-distanceToEye*0.0001);color=mix(color,mix(vec3(0.45,0.62,0.72),vec3(0.62,0.45,0.32),dusk),haze);
         gl_FragColor=vec4(color,1.0);
