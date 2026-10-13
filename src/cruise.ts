@@ -100,10 +100,14 @@ export function buildCruiseShip() {
     if(station<15){const next=(station+1)/128,nx=side*(hullHalfWidth(next,34)-0.3),ny=hullDeckHeight(next,260,9),nz=(next-0.5)*260;for(const lift of [0.55,1.05])rod([x,y+lift,z],[nx,ny+lift,nz],0.03);}
   }
   box([26,0.16,24],[0,9.2,112],teak);
-  box([28,0.18,74],[0,34.1,18],teak,true);
+  const upperRoof=10.6+7*2.85+1.58,sunDeck=upperRoof+0.09;
+  box([28,0.18,74],[0,sunDeck,18],teak,true);
   for(const z of [7,37]) {
-    box([9,0.5,17],[0,34.45,z],white);box([7.7,0.1,15.7],[0,34.75,z],pool);
-    for(const side of [-1,1])for(let offset=-5;offset<=5;offset+=2.5) {box([0.65,0.17,1.7],[side*6.4,34.35,z+offset],teak);box([0.65,0.7,0.15],[side*6.4,34.7,z+offset+0.78],white);}
+    box([9,0.5,17],[0,sunDeck+0.35,z],white);box([7.7,0.1,15.7],[0,sunDeck+0.65,z],pool);
+    for(const side of [-1,1])for(let offset=-5;offset<=5;offset+=2.5) {
+      box([0.65,0.17,1.7],[side*6.4,sunDeck+0.25,z+offset],teak);box([0.65,0.7,0.15],[side*6.4,sunDeck+0.6,z+offset+0.78],white);
+      for(const dx of [-0.22,0.22])for(const dz of [-0.55,0.55])rod([side*6.4+dx,sunDeck+0.09,z+offset+dz],[side*6.4+dx,sunDeck+0.165,z+offset+dz],0.025);
+    }
   }
   for(let tier=0;tier<3;tier++) {box([30-tier*3,0.2,9],[0,12+tier*5.7,106-tier*7],teak);for(const side of [-1,1])rod([side*(14-tier*1.5),13+tier*5.7,102-tier*7],[side*(14-tier*1.5),13+tier*5.7,110-tier*7]);}
   // Eighteen enclosed orange lifeboats, davits and survival equipment.
@@ -119,9 +123,9 @@ export function buildCruiseShip() {
   for(const z of [-47,-20]) {add(new T.SphereGeometry(2.6,32,20),[0,38.2,z],white);add(new T.CylinderGeometry(1.8,2.1,2,24),[0,35.6,z],white);}
   rod([0,34,-59],[0,47,-59],0.22,white);rod([-7,42,-59],[7,42,-59],0.09,chrome);
   for(let x=-4;x<=4;x+=2)rod([x,42,-59],[x,44,-59],0.035);
-  for(const side of [-1,1])for(const [y,start,end,width]of [[35,-53,80,14],[10,101,123,13]]) {
+  for(const side of [-1,1])for(const [base,y,start,end,width]of [[upperRoof,upperRoof+1.05,-53,80,14],[9,10,101,123,13]]) {
     rod([side*width,y,start],[side*width,y,end]);rod([side*width,y-0.5,start],[side*width,y-0.5,end],0.025);
-    for(let z=start;z<=end;z+=2.2)rod([side*width,y-1,z],[side*width,y,z]);
+    for(let z=start;z<=end;z+=2.2)rod([side*width,base,z],[side*width,y,z]);
   }
   // Hull portholes, seam bands, anchor recesses and bow mooring machinery.
   for(const side of [-1,1])for(let z=-85;z<99;z+=3.4) {
