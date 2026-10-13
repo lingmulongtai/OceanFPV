@@ -28,14 +28,24 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
   await expect(page.locator('#pause-dialog')).toBeVisible();
   const app=await page.evaluate(()=> {const a=(window as any).__OCEANFPV__,local=a.world.ship.worldToLocal(a.flight.position.clone());return {local:local.toArray(),time:a.getState().time};});
   expect(Math.abs(app.local[0])).toBeLessThan(1);expect(Math.abs(app.local[2]-38)).toBeLessThan(2);
-  const stopped=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());await page.waitForTimeout(300);
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray())).toEqual(stopped);
+  const stopped=await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};});await page.waitForTimeout(300);
+  expect(await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};})).toEqual(stopped);
   const mismatch=await page.evaluate(()=> {
     const a=(window as any).__OCEANFPV__,t=a.getState().time,before=a.world.launchPose(t).position;
     a.world.ocean.advance(t+0.05,'breeze');a.world.advanceVessels(t+0.05);
     const after=a.world.launchPose(t+0.05);return after.position.clone().sub(before).divideScalar(0.05).distanceTo(after.velocity);
   });
   expect(mismatch).toBeLessThan(1e-6);
+  const reset=await page.evaluate(()=> {
+    const w=(window as any).__OCEANFPV__.world;w.advanceVessels(100);
+    const old=w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray());w.advanceVessels(0);
+    return {old,points:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};
+  });
+  expect(reset.old).toHaveLength(39);expect(reset.old.some((p:number[])=>p[2]>0)).toBe(true);
+  for(let i=0;i<3;i++) {
+    const points=reset.points.slice(i*13,(i+1)*13);
+    expect(points.every((p:number[])=>p[2]===0&&p[0]===points[0][0]&&p[1]===points[0][1])).toBe(true);
+  }
 });
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
   await ready(page);await page.locator('#start').click();
