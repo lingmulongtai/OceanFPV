@@ -88,5 +88,32 @@
     "sha256": "3061c00a16ecae748e84fd6c44c04804f539c118bb66325db858bad87b11bf88",
     "file": "kloofendal_48d_partly_cloudy_puresky_4k.hdr",
     "md5": "816340c969d2e60d659051d13ac3c4dc"
+  },
+  {
+    "bytes": 2624635,
+    "sha256": "1a2ddfa4652adbe00447b940c40019d46f4b88245bc1b341cdf622c2110b7bc5",
+    "file": "aerial_grass_rock_diff_2k.jpg",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/aerial_grass_rock/aerial_grass_rock_diff_2k.jpg",
+    "md5": "024018554c0002620127749d1f585f3d",
+    "asset": "aerial_grass_rock",
+    "license": "CC0-1.0"
+  },
+  {
+    "bytes": 3799025,
+    "sha256": "c6aa14b042ce243f93a6ca807f46a085711c23ad316b104578e92df7770ee285",
+    "file": "aerial_grass_rock_nor_gl_2k.jpg",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/aerial_grass_rock/aerial_grass_rock_nor_gl_2k.jpg",
+    "md5": "0c5423ce365169df7c242933b5137696",
+    "asset": "aerial_grass_rock",
+    "license": "CC0-1.0"
+  },
+  {
+    "bytes": 1495844,
+    "sha256": "fc0fff40e3378f2f54d225db6e3e566a8563bb2c143eef0f09b543c9d4698776",
+    "file": "aerial_grass_rock_rough_2k.jpg",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/aerial_grass_rock/aerial_grass_rock_rough_2k.jpg",
+    "md5": "8d181000237d420a73f99dfc260dab17",
+    "asset": "aerial_grass_rock",
+    "license": "CC0-1.0"
   }
 ]
