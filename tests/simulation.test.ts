@@ -7,8 +7,21 @@ import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
 import { closedHullGeometry } from '../src/hull';
+import { deckGeometry, vesselBoxContains } from '../src/cruise';
 import { vesselPose } from '../src/navigation';
 import { terrainHeight, terrainSurfaceHeight } from '../src/terrain';
+
+test('rounded passenger decks leave corner airspace flyable and keep deck contacts solid',()=> {
+  const box={min:new Vector3(-16,-1,-100),max:new Vector3(16,1,100),radius:8};
+  assert.equal(vesselBoxContains(box,new Vector3(15.8,0,99.8)),false);
+  assert.equal(vesselBoxContains(box,new Vector3(15.8,0,90)),true);
+  assert.equal(vesselBoxContains(box,new Vector3(0,0,99.8)),true);
+  assert.equal(vesselBoxContains(box,new Vector3(0,1.3,0)),false);
+  const geometry=deckGeometry(200,32,2,8);geometry.computeBoundingBox();
+  assert.ok(geometry.boundingBox!.min.distanceTo(box.min)<1e-5);
+  assert.ok(geometry.boundingBox!.max.distanceTo(box.max)<1e-5);
+  assert.ok(Array.from(geometry.attributes.position.array).every(Number.isFinite));geometry.dispose();
+});
 
 test('terrain contact height follows the rendered triangle grid continuously',()=> {
   const size=260,height=130,step=size*2.4/192;

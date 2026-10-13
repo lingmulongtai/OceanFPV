@@ -3,7 +3,28 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { closedHullGeometry } from './hull';
 
-export type VesselBox={min:T.Vector3;max:T.Vector3};
+export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
+export function deckOutline(length:number,beam:number,radius=6) {
+  const w=beam/2,l=length/2,r=Math.min(radius,w,l),shape=new T.Shape();
+  shape.moveTo(-w+r,-l);shape.lineTo(w-r,-l);shape.absarc(w-r,-l+r,r,-Math.PI/2,0,false);
+  shape.lineTo(w,l-r);shape.absarc(w-r,l-r,r,0,Math.PI/2,false);
+  shape.lineTo(-w+r,l);shape.absarc(-w+r,l-r,r,Math.PI/2,Math.PI,false);
+  shape.lineTo(-w,-l+r);shape.absarc(-w+r,-l+r,r,Math.PI,Math.PI*1.5,false);
+  return shape;
+}
+export function deckGeometry(length:number,beam:number,height:number,radius=6) {
+  const geometry=new T.ExtrudeGeometry(deckOutline(length,beam,radius),{depth:height,bevelEnabled:false,curveSegments:12});
+  geometry.rotateX(Math.PI/2);geometry.translate(0,height/2,0);return geometry;
+}
+export function vesselBoxContains(box:VesselBox,p:T.Vector3,padding=0.2) {
+  if(p.y<=box.min.y-padding||p.y>=box.max.y+padding)return false;
+  const halfX=(box.max.x-box.min.x)/2+padding,halfZ=(box.max.z-box.min.z)/2+padding;
+  const x=Math.abs(p.x-(box.min.x+box.max.x)/2),z=Math.abs(p.z-(box.min.z+box.max.z)/2),r=box.radius??0;
+  if(x>=halfX||z>=halfZ)return false;
+  if(!r)return true;
+  const radius=r+padding;
+  return Math.hypot(Math.max(0,x-(halfX-radius)),Math.max(0,z-(halfZ-radius)))<radius;
+}
 export function buildCruiseShip() {
   const root=new T.Group();root.name='Ocean Meridian · 260 m';
   const white=new T.MeshStandardMaterial({color:0xf2f0e5,roughness:0.38,metalness:0.12});
@@ -24,6 +45,10 @@ export function buildCruiseShip() {
     add(round?new RoundedBoxGeometry(s[0],s[1],s[2],2,round):new T.BoxGeometry(s[0],s[1],s[2]),p,m);
     if(solid)boxes.push({min:new T.Vector3(p[0]-s[0]/2,p[1]-s[1]/2,p[2]-s[2]/2),max:new T.Vector3(p[0]+s[0]/2,p[1]+s[1]/2,p[2]+s[2]/2)});
   };
+  const deckPlate=(length:number,beam:number,height:number,y:number,z:number,radius=6)=> {
+    add(deckGeometry(length,beam,height,radius),[0,y,z],white);
+    boxes.push({min:new T.Vector3(-beam/2,y-height/2,z-length/2),max:new T.Vector3(beam/2,y+height/2,z+length/2),radius});
+  };
   const rod=(a:number[],b:number[],r=0.04,m=chrome)=> {
     const start=new T.Vector3(...a),end=new T.Vector3(...b),g=new T.CylinderGeometry(r,r,start.distanceTo(end),8);
     const q=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),end.clone().sub(start).normalize());
@@ -38,11 +63,11 @@ export function buildCruiseShip() {
   // Tall sheer hull, recessed balcony walls and overhanging deck slabs.
   for(let deck=0;deck<8;deck++) {
     const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3;
-    box([27.5,2.56,length],[0,y,z],white,true,0.1);
-    box([32.6,0.28,length+3],[0,y+1.44,z],white,true);
-    const start=z-length/2+2,end=z+length/2-2;
+    deckPlate(length,27.5,2.56,y,z);
+    deckPlate(length+3,32.6,0.28,y+1.44,z,8);
+    const start=z-length/2+8,end=z+length/2-8;
     for(const side of [-1,1]) {
-      box([0.09,1.62,length-4],[side*13.8,y+0.02,z],glass);
+      box([0.09,1.62,length-16],[side*13.8,y+0.02,z],glass);
       for(let cabin=start;cabin<end;cabin+=3.5) {
         box([2.1,1.84,0.075],[side*14.85,y,cabin],white);
         box([0.055,0.96,3.32],[side*16.05,y-0.16,cabin+1.72],glass);
