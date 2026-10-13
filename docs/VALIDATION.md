@@ -1,6 +1,6 @@
 # OceanFPV validation
 
-Date: 2026-10-13 (Asia/Tokyo). This records the new browser game. The original `OceanLab/VALIDATION.md` describes a separate Godot application and is not evidence that this game passed.
+Date: 2026-10-14 (Asia/Tokyo). This records the new browser game. The original `OceanLab/VALIDATION.md` describes a separate Godot application and is not evidence that this game passed.
 
 ## Marine follow-up
 
@@ -75,6 +75,14 @@ A separate same-camera60-frame probe measured two actual reflector updates per f
 The preceding paint/highlight release passed CI38402021527 and main38409098953; public bytes matched at2026-10-13T14:21:26.824Z. The metric-paint release passed CI38409143529 and main38413102510; public bytes matched at2026-10-13T14:38:53.617Z. Both separately passed native public keyboard climb, light switching, pause/resume/reset and real pointer lock/mouse-stick verification, with25 photo/model HTTP200 responses and no errors.
 
 Balcony CI38412062798 passed eight cases but hit the keyboard case's180s overall deadline. Its trace reached collision/reset, ACRO selection, modal dismissal and the final armed-state query; the snapshot shows ACRO/ARMED at1FPS. That case now has300s and the workflow35min, preserving assertions, viewport and product quality. The native keyboard/build check passed after the harness change; a full CI retry is distinct and required.
+
+## Software-GPU cabin follow-up
+
+Cabin CI [38419039946](https://github.com/lingmulongtai/OceanFPV/actions/runs/38419039946) passed units/build but timed out eight browser cases before most functional assertions. Its race trace shows time0.36→0.42→0.48→0.54 with roughly12s per page evaluation, no shader/page errors, and repeated GPU-readback stall warnings. Continuous trace screenshots are now disabled; DOM snapshots and failure screenshots remain, and the actual GL backend is logged. Local SwiftShader scene verification still timed out with this change alone and with transmissionResolutionScale0.5. The subsequent race runs were stopped once scene failure established that those candidates remained unsuitable; neither run is counted as a pass.
+
+The final BALANCED alpha-glass path passed the actual scene and complete18-crossing race cases on Vulkan SwiftShader (**2/2**,4.0m), at the existing viewport, assertions and time budgets. Units **35/35** and strict build passed. A native RTX4050 Direct3D11 probe switched BALANCED→HIGH→ULTRA→BALANCED and rendered every mode without page/console errors. Physical transmission/depth writes returned correctly in HIGH/ULTRA; ULTRA used a1920×1280 drawing buffer in a960×640 viewport. These are functional/draw checks, not sustained FPS measurements. Full CI/public deployment remain required.
+
+All9 browser cases subsequently passed on native RTX4050 Direct3D11 in3.2m with source fixed throughout, covering keyboard flight, virtual Xbox/radio, complete race scoring, material fallback, pause, reset, settings/mobile layout and context loss. The BALANCED optical approximation is an explicit quality tradeoff; physical controllers and other hardware remain unverified.
 
 ## Earlier visual-release verification
 
