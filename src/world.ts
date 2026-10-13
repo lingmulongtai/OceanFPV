@@ -13,6 +13,7 @@ import { blendGroundCover, wetCoastalSurface, loadSurfaces, type SurfaceGroup } 
 import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS } from './terrain';
 import { COASTS } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
+import { CoastalRocks, coastalRockSites, type RockPatch } from './rocks';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
 type Collider = { min: T.Vector3; max: T.Vector3 };
@@ -68,7 +69,10 @@ export class World {
   private rockMaterial=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});
   private shorelineWash={value:SEA_SCALE.breeze};
   private treeSites:TreeSite[]=[];
+  private rockPatches:RockPatch[]=[];
+  private fallbackRockObstacles:{x:number;z:number;y:number;radius:number;height:number}[]=[];
   forest:CoastalForest|null=null;
+  rocks:CoastalRocks|null=null;
   quality='high';
 
   constructor() {
@@ -101,12 +105,17 @@ export class World {
     this.scene.fog = new T.FogExp2(0x9facac,0.00019);
   }
   async loadSurfaceTextures(renderer:T.WebGLRenderer,lightingReady:Promise<unknown>) {
-    const [missing,forest]=await Promise.all([loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy()),CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady)]);
+    const [missing,forest,rocks]=await Promise.all([loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy()),CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady),CoastalRocks.load(renderer,this.rockPatches,this.shorelineWash)]);
     this.groundMaterials.forEach(material=>material.needsUpdate=true);
     if(forest) {
       this.forest=forest;this.scene.add(forest.group);
       for(const site of this.treeSites)for(const mesh of site.fallback){this.scene.remove(mesh);mesh.geometry.dispose();(mesh.material as T.Material).dispose();}
     }else missing.push('coastal tree');
+    if(rocks) {
+      this.rocks=rocks;this.scene.add(rocks.group);
+      for(const patch of this.rockPatches){this.scene.remove(patch.fallback);patch.fallback.geometry.dispose();}
+      this.fallbackRockObstacles=[];
+    }else missing.push('coastal rock');
     return missing;
   }
   setLight(preset: LightPreset) {
@@ -296,8 +305,9 @@ export class World {
     const rocks=new T.InstancedMesh(new T.IcosahedronGeometry(1,2),this.rockMaterial,90);
     for(let i=0;i<90;i++) {const angle=i*2.399,r=size*(0.68+(i%9)*0.027),tx=Math.cos(angle)*r,tz=Math.sin(angle)*r,y=this.terrain(tx,tz,size,height),s=2+(i%7)*0.6;
       rocks.setMatrixAt(i,new T.Matrix4().compose(new T.Vector3(x+tx,y+s*0.25,z+tz),new T.Quaternion().setFromEuler(new T.Euler(angle,angle*0.7,angle*0.3)),new T.Vector3(s*1.6,s*0.8,s)));
-      this.naturalObstacles.push({x:x+tx,z:z+tz,y:y-s*0.1,radius:s*1.3,height:s*1.1});}
+      this.fallbackRockObstacles.push({x:x+tx,z:z+tz,y:y-s*0.1,radius:s*1.3,height:s*1.1});}
     rocks.castShadow=rocks.receiveShadow=true;this.scene.add(rocks);
+    const coast={x,z,size,height};this.rockPatches.push({sites:coastalRockSites(coast),coast,fallback:rocks});
   }
   private terrain(x:number,z:number,size:number,height:number) {
     return terrainSurfaceHeight(x,z,size,height);
@@ -369,6 +379,8 @@ export class World {
       if(p.y<h+0.25) return '島に接触しました';
     }
     for(const obstacle of this.naturalObstacles)if(p.y>obstacle.y&&p.y<obstacle.y+obstacle.height&&Math.hypot(p.x-obstacle.x,p.z-obstacle.z)<obstacle.radius)return '木・岩に接触しました';
+    for(const obstacle of this.fallbackRockObstacles)if(p.y>obstacle.y&&p.y<obstacle.y+obstacle.height&&Math.hypot(p.x-obstacle.x,p.z-obstacle.z)<obstacle.radius)return '木・岩に接触しました';
+    if(this.rocks?.contains(p))return '岩に接触しました';
     if(Math.hypot(p.x-145,p.z+135)<3.5&&p.y<39) return '灯台に接触しました';
     if(Math.pow((p.x-145)/36,2)+Math.pow((p.z+135)/27,2)<1&&p.y<11) return '岩礁に接触しました';
     const yacht=this.yacht.worldToLocal(p.clone());

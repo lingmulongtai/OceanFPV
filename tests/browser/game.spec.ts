@@ -21,12 +21,15 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(render.triangles).toBeGreaterThan(30000);
   const forest=await page.evaluate(()=> (window as any).__OCEANFPV__.world.forest?.sourceTriangles??0);
   expect(forest).toBeGreaterThan(1000000);
+  const rocks=await page.evaluate(()=> {const rocks=(window as any).__OCEANFPV__.world.rocks;return {triangles:rocks?.shape.geometry.index.count/3,instances:rocks?.group.children.map((mesh:any)=>mesh.count)};});
+  expect(rocks.triangles).toBe(14844);expect(rocks.instances).toEqual([90,90,90]);
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
 });
 test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
   await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);
   await expect(page.locator('#start-note')).toContainText('標準素材');
+  expect(await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {detailed:!!w.rocks,contacts:w.fallbackRockObstacles.length,visible:w.rockPatches.every((patch:any)=>patch.fallback.parent===w.scene)};})).toEqual({detailed:false,contacts:270,visible:true});
   const first=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());
   await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.x)).not.toBe(first[0]);
   await page.locator('#start').click();await page.keyboard.press('Escape');
