@@ -119,7 +119,7 @@ export class Ocean {
           float u=(local.y+length*0.5)/length;
           if(u>0.0&&u<1.0) {
             float shape=pow(max(sin(u*3.14159),0.001),0.42);
-            if(i==1&&u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
+            if(i>0&&u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
             if(abs(local.x)<width*shape*0.98)discard;
           }
           float safeAft=max(aft,0.0);
