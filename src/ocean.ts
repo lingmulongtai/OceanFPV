@@ -93,6 +93,23 @@ export class Ocean {
       float hash(vec2 p) {return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
       float noise(vec2 p) {vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.0),f.x),f.y);}
       float foamNoise(vec2 p) {return noise(p)*0.55+noise(p*2.17+8.6)*0.3+noise(p*4.79)*0.15;}
+      vec3 shortWave(vec2 p,float footprint,float wavelength,float angle,float steepness,float phase) {
+        float k=6.28318530718/wavelength,omega=sqrt(9.81*k+0.000074*k*k*k);
+        vec2 direction=vec2(cos(angle),sin(angle));
+        float resolved=1.0-smoothstep(wavelength*0.25,wavelength*0.5,footprint);
+        return vec3(direction*steepness*cos(dot(p,direction)*k-omega*time+phase)*resolved,0.25*steepness*steepness*(1.0-resolved*resolved));
+      }
+      vec3 ripplesAt(vec2 p,float footprint) {
+        // Sub-centimetre wind waves occupy wavelengths below the FFT's 0.45 m band.
+        vec3 ripple=shortWave(p,footprint,0.31,0.52,0.018,0.4)
+          +shortWave(p,footprint,0.231,0.9,0.020,2.1)
+          +shortWave(p,footprint,0.169,0.18,0.017,4.7)
+          +shortWave(p,footprint,0.123,1.14,0.014,1.3)
+          +shortWave(p,footprint,0.087,0.66,0.009,5.2)
+          +shortWave(p,footprint,0.061,1.02,0.006,3.4);
+        float strength=sqrt(clamp(seaScale/1.15,0.25,2.0));
+        return ripple*vec3(strength,strength,strength*strength);
+      }
       vec4 bottomAt(vec2 uv) {
         vec2 pixel=uv*${BATHY_SIZE-1}.0,base=min(floor(pixel),vec2(${BATHY_SIZE-2}.0)),f=pixel-base,a=(base+0.5)/${BATHY_SIZE}.0;
         vec4 h=texture2D(bathymetry,a),b=texture2D(bathymetry,a+vec2(0,1.0/${BATHY_SIZE}.0)),d=texture2D(bathymetry,a+vec2(1.0/${BATHY_SIZE}.0,0));
@@ -105,13 +122,12 @@ export class Ocean {
         // Transfer subpixel wave slopes into the BRDF before the hull discard.
         vec3 resolved=1.0-smoothstep(vec3(9.0,1.0,0.1125),vec3(18.0,2.0,0.225),vec3(footprint));
         vec3 normal=normalAt(waveCoordinate,resolved);
-        float detailFade=(1.0-smoothstep(40.0,1200.0,distanceToEye))*(1.0-smoothstep(0.08,0.24,footprint)),d=0.035;vec2 flow=p*2.1+vec2(time*0.28,-time*0.17);
-        vec2 micro=vec2(noise(flow+vec2(d,0))-noise(flow-vec2(d,0)),noise(flow+vec2(0,d))-noise(flow-vec2(0,d)))/d;
-        normal=normalize(normal+vec3(micro.x,0.0,micro.y)*0.13*detailFade);
+        vec3 ripple=ripplesAt(p,max(length(dFdx(p)),length(dFdy(p))));
+        normal=normalize(vec3(normal.x-ripple.x*normal.y,normal.y,normal.z-ripple.y*normal.y));
         vec3 normalFootprint=fwidth(normal);
-        float unresolvedVariance=0.5*dot(slopeVariance,vec3(1.0)-resolved*resolved);
+        float unresolvedVariance=0.5*dot(slopeVariance,vec3(1.0)-resolved*resolved)+ripple.z;
         vec2 mirrorUV=mirrorCoord.xy/max(mirrorCoord.w,0.001);
-        float mirrorFootprint=max(length(dFdx(mirrorUV)),length(dFdy(mirrorUV)))*reflectionSize;
+        bool hullCutout=false;
         float wakeFoam=0.0,wakeWave=0.0,n=foamNoise(p*0.53+vec2(time*0.12,-time*0.09));
         for(int i=0;i<3;i++) {
           vec2 rel=p-vessels[i].xz;float c=cos(headings[i]),s=sin(headings[i]);vec2 local=vec2(c*rel.x-s*rel.y,s*rel.x+c*rel.y);
@@ -120,7 +136,7 @@ export class Ocean {
           if(u>0.0&&u<1.0) {
             float shape=pow(max(sin(u*3.14159),0.001),0.42);
             if(i>0&&u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
-            if(abs(local.x)<width*shape*0.98)discard;
+            if(abs(local.x)<width*shape*0.98)hullCutout=true;
           }
           float safeAft=max(aft,0.0);
           float launched=1.0-smoothstep(max(time*speed-2.0,0.0),max(time*speed,0.01),safeAft);
@@ -146,7 +162,9 @@ export class Ocean {
         float nv=max(dot(normal,view),0.015),fresnel=0.0204+0.9796*pow(1.0-nv,5.0);
         float distortion=0.012+0.16/max(distanceToEye,2.0);
         vec2 reflectionUV=mirrorUV+normal.xz*distortion;
+        float mirrorFootprint=max(length(dFdx(reflectionUV)),length(dFdy(reflectionUV)))*reflectionSize;
         float reflectionLOD=log2(max(1.0,max(mirrorFootprint,sqrt(unresolvedVariance)*distortion*reflectionSize)));
+        if(hullCutout)discard;
         vec3 reflected=textureLod(mirrorSampler,clamp(reflectionUV,0.001,0.999),reflectionLOD).rgb;float shallow=0.0,shoreFoam=0.0;
         for(int i=0;i<4;i++) {
           vec2 uv=(p-islands[i].xy)/(islands[i].z*2.4)+0.5;float bottomHeight=-60.0;
