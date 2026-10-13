@@ -8,6 +8,8 @@ The 2026-10-13 follow-up passed **27/27 unit tests** and the strict production b
 
 HIGH comparison images at 1100×740 verify curved passenger-deck ends, wraparound windows and translucent balcony glazing, shoreline wash, and the updated ocean normals. These use a paused diagnostic camera and are WebGL renders, not human flight or real-device performance acceptance. The rendering and hardware limits below still apply.
 
+Marine PR verification [38377022441](https://github.com/lingmulongtai/OceanFPV/actions/runs/38377022441) passed eight browser cases. The race case reached its 180-second deadline after completing all three laps: the failure snapshot already showed the completion dialog, lap totals and saved best time. This case now has a 300-second budget for its 18 rendered gate crossings and final result/storage checks on the software GPU. Assertions, viewport and product rendering are unchanged.
+
 ## Earlier visual-release verification
 
 - ZIP extracted without editing its source. SHA-256 comparison against the ZIP's file streams passed for all extracted files. Source review: `SOURCE_REVIEW.md`.
