@@ -9,3 +9,13 @@ export function vesselPose(kind:VesselKind,time:number) {
   else {x=78+85*(1-Math.cos(a));z=75-100*Math.sin(a);vx=85*omega*Math.sin(a);vz=-100*omega*Math.cos(a);}
   return {x,z,vx,vz,heading:Math.atan2(-vx,-vz),speed:Math.hypot(vx,vz)};
 }
+
+export const WAKE_SAMPLES=13,WAKE_STEP=8;
+/** Water-plane stern positions; repeated start points cannot emit an older wake. */
+export function vesselWakeTrail(kind:VesselKind,time:number,length:number) {
+  const elapsed=Math.max(0,time);
+  return Array.from({length:WAKE_SAMPLES},(_,i)=> {
+    const age=Math.min(i*WAKE_STEP,elapsed),pose=vesselPose(kind,elapsed-age);
+    return {x:pose.x+Math.sin(pose.heading)*length/2,z:pose.z+Math.cos(pose.heading)*length/2,age,speed:pose.speed};
+  });
+}
