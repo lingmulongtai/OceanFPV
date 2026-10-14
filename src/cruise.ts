@@ -5,6 +5,7 @@ import { closedHullGeometry, foredeckGeometry, hullDeckHeight, hullHalfWidth, hu
 import { metricPaintGeometry } from './paint';
 import { bakeCabinOcclusion,roomOcclusionUV,type RoomSurface } from './occlusion';
 import {buildTenderModel,TENDER_MOUNTS} from './tender';
+import {buildSternTerraces} from './stern-terraces';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
 export function deckOutline(length:number,beam:number,radius=6) {
@@ -183,7 +184,7 @@ export function buildCruiseShip() {
       for(const dx of [-0.22,0.22])for(const dz of [-0.55,0.55])rod([side*6.4+dx,sunDeck+0.09,z+offset+dz],[side*6.4+dx,sunDeck+0.165,z+offset+dz],0.025);
     }
   }
-  for(let tier=0;tier<3;tier++) {box([30-tier*3,0.2,9],[0,12+tier*5.7,106-tier*7],teak);for(const side of [-1,1])rod([side*(14-tier*1.5),13+tier*5.7,102-tier*7],[side*(14-tier*1.5),13+tier*5.7,110-tier*7]);}
+  const sternTerraces=buildSternTerraces();for(const part of sternTerraces.parts)add(part.geometry,[0,0,0],part.finish==='paint'?white:part.finish==='teak'?teak:chrome);
   const tender=buildTenderModel(),tenderMaterials={orange,white,glass:cabinGlass,rubber:black,metal:chrome,upholstery:tenderUpholstery},hoists:{line:T.Line3;radius:number}[]=[],nearTender=new T.Vector3();
   const hoist=(a:T.Vector3,b:T.Vector3,radius:number,material:T.MeshStandardMaterial)=>{rod(a.toArray(),b.toArray(),radius,material);hoists.push({line:new T.Line3(a,b),radius});};
   for(const mount of TENDER_MOUNTS) {
@@ -234,5 +235,5 @@ export function buildCruiseShip() {
   const labelCanvas=document.createElement('canvas');labelCanvas.width=1024;labelCanvas.height=128;const ctx=labelCanvas.getContext('2d')!;ctx.fillStyle='#d8dfe0';ctx.font='600 68px Arial';ctx.textAlign='center';ctx.fillText('OCEAN  MERIDIAN',512,87);
   const label=new T.CanvasTexture(labelCanvas);label.colorSpace=T.SRGBColorSpace;
   for(const side of [-1,1])root.add(new T.Mesh(hullNameGeometry(side),new T.MeshStandardMaterial({map:label,transparent:true,depthWrite:false,roughness:0.5})));
-  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,hoistSegments:hoists};
+  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,terraceContains:sternTerraces.contains,hoistSegments:hoists};
 }

@@ -72,6 +72,25 @@ test('detailed cliff water height gradient and attenuation agree on the GPU',asy
   const result=await page.evaluate(()=>{const p=(window as any).__CLIFF_DEPTH_PROBE__;return {gpu:p.gpu,count:p.samples.length,heightError:p.heightError,gradientError:p.gradientError,envelopeError:p.envelopeError};});
   console.log(`Cliff depth probe: ${JSON.stringify(result)}`);expect(result.count).toBe(77);expect(result.heightError).toBeLessThan(.003);expect(result.gradientError).toBeLessThan(.003);expect(result.envelopeError).toBeLessThan(.003);expect(errors).toEqual([]);
 });
+
+test('stern terrace walking surfaces and supports have matching flight contacts',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),model=await import('/src/stern-terraces.ts' as string),samples=[];
+    for(const deck of model.STERN_TERRACES) {
+      const local=new T.Vector3(deck.width/2-.3,deck.y+.8,deck.z+3.6),origin=w.cruise.root.localToWorld(local),direction=new T.Vector3(0,-1,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(w.cruise.root,true)[0];
+      if(!hit)throw new Error('Missing terrace surface');const point=w.cruise.root.worldToLocal(hit.point.clone()),clear=point.clone().add(new T.Vector3(-1,.55,0));
+      const aft=deck.z+deck.depth/2-.14,railOrigin=w.cruise.root.localToWorld(new T.Vector3(0,deck.y+1.25,aft+1)),railDirection=new T.Vector3(0,0,-1).transformDirection(w.cruise.root.matrixWorld),rail=new T.Raycaster(railOrigin,railDirection).intersectObject(w.cruise.root,true)[0];
+      if(!rail)throw new Error('Missing aft guardrail');const railPoint=w.cruise.root.worldToLocal(rail.point.clone());
+      samples.push({teak:hit.object.material===w.cruise.teak,error:Math.abs(point.y-(deck.y+.2)),contact:w.collision(hit.point,a.getState().time,'breeze'),clear:w.collision(w.cruise.root.localToWorld(clear),a.getState().time,'breeze'),railError:Math.abs(railPoint.z-aft-.032),railContact:w.collision(rail.point,a.getState().time,'breeze'),aboveRail:w.collision(w.cruise.root.localToWorld(railPoint.clone().add(new T.Vector3(0,.4,0))),a.getState().time,'breeze')});
+    }
+    const proxies=w.cruise.root.children.filter((mesh:any)=>mesh.isMesh&&mesh.material===w.cruise.teak).map((mesh:any)=>{const proxy=new T.Mesh(mesh.geometry,new T.MeshBasicMaterial({side:T.DoubleSide}));proxy.matrixAutoUpdate=false;proxy.matrixWorld.copy(mesh.matrixWorld);return proxy;});
+    const supports=model.buildSternTerraces().solids.slice(2,4),foundations=supports.map((support:any)=>{const centre=support.getCenter(new T.Vector3()),origin=w.cruise.root.localToWorld(new T.Vector3(centre.x,9.279,centre.z)),direction=new T.Vector3(0,-1,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObjects(proxies)[0];return hit?w.cruise.root.worldToLocal(hit.point.clone()).y:null;});
+    proxies.forEach((mesh:any)=>mesh.material.dispose());return {samples,foundations};
+  });
+  expect(result.samples).toHaveLength(3);for(const sample of result.samples){expect(sample.teak).toBe(true);expect(sample.error).toBeLessThan(.00001);expect(sample.contact).toBeTruthy();expect(sample.clear).toBeNull();expect(sample.railError).toBeLessThan(.00001);expect(sample.railContact).toBeTruthy();expect(sample.aboveRail).toBeNull();}
+  for(const y of result.foundations){expect(y).not.toBeNull();expect(y).toBeGreaterThan(9.1);expect(y).toBeLessThan(9.28);}
+});
 test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
   await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);
   await expect(page.locator('#start-note')).toContainText('標準素材');
@@ -299,13 +318,17 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
   await expect(page.locator('#device-status')).toContainText('THROTTLE 0%');
   await page.locator('[data-close="settings-dialog"]').last().click();await page.locator('#start').click();await expect(page.locator('#intro')).toBeHidden();
 });
-test('settings persist, help is keyboard accessible and mobile panels fit', async ({page})=> {
+test('lighting and sea settings persist across a full reload', async ({page})=> {
   test.setTimeout(300000);
   await ready(page);await page.locator('#open-settings').click();await page.locator('#light').selectOption('day');await page.locator('#sea').selectOption('calm');
   await page.keyboard.press('Escape');await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
   expect(persisted).toEqual({light:'day',sea:'calm'});
-  await page.setViewportSize({width:390,height:844});await page.locator('#open-help').click();await expect(page.locator('#help-dialog')).toBeVisible();
+});
+
+test('mobile help fits the viewport and closes with the keyboard', async ({page})=> {
+  await page.setViewportSize({width:390,height:844});await ready(page);
+  await page.locator('#open-help').click();await expect(page.locator('#help-dialog')).toBeVisible();
   const box=await page.locator('#help-dialog').boundingBox();expect(box!.width).toBeLessThan(390);
   await page.screenshot({path:'test-results/oceanfpv-mobile-help.png'});
   await page.keyboard.press('Escape');await expect(page.locator('#help-dialog')).toBeHidden();
