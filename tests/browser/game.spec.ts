@@ -95,6 +95,20 @@ test('cruise aft hull surfaces have matching flight contacts and clear surroundi
   expect(samples).toHaveLength(24);for(const sample of samples){expect(sample.contact).toContain('船体');expect(sample.clear).toBeNull();if(sample.z<=120)expect(sample.width).toBeGreaterThan(15);}
 });
 
+test('aft lounge windows reveal real room depth and retain closed flight contacts',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),glass=w.cruise.root.children.filter((m:any)=>m.material===w.cruise.glazing),opaque=w.cruise.root.children.filter((m:any)=>m.isMesh&&m.material!==w.cruise.glazing&&!m.material.transparent),samples=[];
+    for(let deck=0;deck<8;deck++){
+      const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3;
+      const origin=w.cruise.root.localToWorld(new T.Vector3(0,y+.02,z+length/2+.7)),direction=new T.Vector3(0,0,-1).transformDirection(w.cruise.root.matrixWorld),ray=new T.Raycaster(origin,direction),pane=ray.intersectObjects(glass)[0],wall=ray.intersectObjects(opaque)[0];if(!pane||!wall)throw new Error(`Missing lounge ${deck}`);
+      const local=w.cruise.root.worldToLocal(pane.point.clone()),air=local.clone().add(new T.Vector3(0,0,.5));samples.push({depth:pane.point.distanceTo(wall.point),zError:Math.abs(local.z-z-length/2-.07),contact:w.collision(pane.point,a.getState().time,'breeze'),clear:w.collision(w.cruise.root.localToWorld(air),a.getState().time,'breeze')});
+    }
+    return samples;
+  });
+  expect(result).toHaveLength(8);for(const sample of result){expect(sample.depth).toBeGreaterThan(6);expect(sample.depth).toBeLessThan(6.1);expect(sample.zError).toBeLessThan(.00002);expect(sample.contact).toContain('構造物');expect(sample.clear).toBeNull();}
+});
+
 test('stern terrace walking surfaces and supports have matching flight contacts',async({page})=> {
   await ready(page);
   const result=await page.evaluate(async()=>{

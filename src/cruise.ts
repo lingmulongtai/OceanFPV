@@ -8,6 +8,7 @@ import {buildTenderModel,TENDER_MOUNTS} from './tender';
 import {buildSternTerraces} from './stern-terraces';
 import {cruiseHullGeometry,cruiseHullSidePose} from './cruise-hull';
 import {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
+import {buildAftLounge} from './aft-lounge';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
 export {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
@@ -80,12 +81,15 @@ export function buildCruiseShip() {
     const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3,floor=y-1.27;
     capture=deck===0;
     if(deck===0)deckPlate(length+3,32.6,0.28,floor-0.14,z,8);
-    deckPlate(length,15.2,2.56,y,z);
+    // Recess the visual core while preserving the original closed flight envelope.
+    add(deckGeometry(length-6,15.2,2.56),[0,y,z-3],white);
+    boxes.push({min:new T.Vector3(-7.6,y-1.28,z-length/2),max:new T.Vector3(7.6,y+1.28,z+length/2),radius:6});
     // Keep the closed external glazing envelope solid to drone contacts.
     boxes.at(-1)!.min.x=-13.75;boxes.at(-1)!.max.x=13.75;
     deckPlate(length+3,32.6,0.28,y+1.44,z,8);
     capture=false;
-    add(windowRibbon(length+0.14,27.64,1.72,6.07,true),[0,y+0.02,z],glass);
+    add(windowRibbon(length+0.14,27.64,1.72,6.07,true,'bow'),[0,y+0.02,z],glass);
+    for(const part of buildAftLounge(length).parts)add(part.geometry,[0,floor,z],part.finish==='glass'?cabinGlass:part.finish==='teak'?teak:white);
     for(const p of deckOutline(length+0.2,27.7,6.1).getPoints(4)) {
       if(Math.abs(p.y)>length/2-7)rod([p.x,y-0.85,z+p.y],[p.x,y+0.9,z+p.y],0.045,white);
     }
