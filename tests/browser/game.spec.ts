@@ -275,6 +275,19 @@ test('terrain projections preserve physical periods and normal direction on the 
   const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum};});
   expect(probe.count).toBe(96);expect(probe.maximum).toBeLessThan(0.002);expect(errors).toEqual([]);
 });
+test('headland bay matches rendered terrain, water depths and flight contacts',async({page})=> {
+  await ready(page);
+  const coast=await page.evaluate(()=> {
+    const app=(window as any).__OCEANFPV__,world=app.world,island=world.islands[0];
+    const mesh=world.scene.children.find((m:any)=>m.geometry?.attributes.groundCover&&m.position.x===island.x&&m.position.z===island.z),p=mesh.geometry.attributes.position;
+    const bottom=world.ocean.material.uniforms.bathymetry.value.image.data;let depthError=0;
+    for(let i=0;i<p.count;i+=137)depthError=Math.max(depthError,Math.abs(p.getY(i)-bottom[i*4]));
+    const Vector=app.flight.position.constructor,bay=new Vector(island.x+island.size*0.38,15,island.z+island.size*0.4),ridge=new Vector(island.x-island.size*0.28,20,island.z-island.size*0.18);
+    return {profile:island.profile,depthError,bayContact:world.collision(bay,app.getState().time,'breeze'),ridgeContact:world.collision(ridge,app.getState().time,'breeze')};
+  });
+  expect(coast.profile).toBe('headland');expect(coast.depthError).toBeLessThan(0.0001);
+  expect(coast.bayContact).toBeNull();expect(coast.ridgeContact).toBe('島に接触しました');
+});
 test('WebGL-unavailable browser gets a clear recovery screen', async ({page})=> {
   await page.addInitScript(()=> {
     const original=HTMLCanvasElement.prototype.getContext;
