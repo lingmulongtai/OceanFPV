@@ -82,7 +82,8 @@ export function buildCruiseShip() {
     capture=deck===0;
     if(deck===0)deckPlate(length+3,32.6,0.28,floor-0.14,z,8);
     // Recess the visual core while preserving the original closed flight envelope.
-    add(deckGeometry(length-6,15.2,2.56),[0,y,z-3],white);
+    // The back wall occupies the final 12 cm; leave 4 cm behind it to avoid coplanar caps.
+    add(deckGeometry(length-6.16,15.2,2.56),[0,y,z-3.08],white);
     boxes.push({min:new T.Vector3(-7.6,y-1.28,z-length/2),max:new T.Vector3(7.6,y+1.28,z+length/2),radius:6});
     // Keep the closed external glazing envelope solid to drone contacts.
     boxes.at(-1)!.min.x=-13.75;boxes.at(-1)!.max.x=13.75;
