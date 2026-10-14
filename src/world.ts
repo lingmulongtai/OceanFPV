@@ -9,12 +9,13 @@ import { closedHullGeometry } from './hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { buildMotorYacht,YACHT_BEAM } from './yacht';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
-import { blendGroundCover, wetCoastalSurface, loadSurfaces, type SurfaceGroup } from './surfaces';
+import { blendGroundCover, blendRockScale, wetCoastalSurface, loadSurfaces, type SurfaceGroup } from './surfaces';
 import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain';
 import { COASTS, type Coast } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
 import { CoastalRocks, coastalRockSites, lighthouseRockPatch, type RockPatch } from './rocks';
 import { LighthouseReef } from './lighthouse-reef';
+import { metricPaintGeometry } from './paint';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
 type Collider = { min: T.Vector3; max: T.Vector3 };
@@ -320,7 +321,10 @@ export class World {
   private buildLighthouse() {
     const root=new T.Group();root.position.set(this.lighthouseReef.x,0,this.lighthouseReef.z);
     const stone=this.rockMaterial;
-    const rock=new T.Mesh(this.lighthouseReef.geometry,stone);root.add(rock);
+    const reefStone=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});blendRockScale(reefStone,stone);wetCoastalSurface(reefStone,this.shorelineWash);
+    this.groundMaterials.push(reefStone);
+    this.surfaceGroups.push({asset:'seaside_rock',resolution:'4k',materials:[reefStone],colour:true});
+    const rock=new T.Mesh(metricPaintGeometry(this.lighthouseReef.geometry,2),reefStone);root.add(rock);
     const tower=new T.Mesh(new T.CylinderGeometry(2.1,3.2,24,24),new T.MeshStandardMaterial({color:0xe0ddd0,roughness:0.7}));tower.position.y=21;root.add(tower);
     for(const y of [13,25]) {const stripe=new T.Mesh(new T.CylinderGeometry(2.8-(y-13)*0.035,2.85-(y-13)*0.035,3,24),new T.MeshStandardMaterial({color:0xa2483d,roughness:0.6}));stripe.position.y=y;root.add(stripe);}
     const glass=new T.Mesh(new T.CylinderGeometry(2.4,2.4,3,16),new T.MeshPhysicalMaterial({color:0x173848,roughness:0.08,metalness:0.4,clearcoat:1}));glass.position.y=34;root.add(glass);

@@ -115,5 +115,32 @@
     "md5": "8d181000237d420a73f99dfc260dab17",
     "asset": "aerial_grass_rock",
     "license": "CC0-1.0"
+  },
+  {
+    "bytes": 14287458,
+    "sha256": "dcdeecd9efcabbe96b2f8f04a659370a7eb3a576526bbeec9a0c161d59af607d",
+    "file": "seaside_rock_diff_4k.jpg",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/seaside_rock/seaside_rock_diff_4k.jpg",
+    "md5": "c4b60a33201c3d4dfd9b94527691e476",
+    "asset": "seaside_rock",
+    "license": "CC0-1.0"
+  },
+  {
+    "bytes": 17564940,
+    "sha256": "82195858363e168fac235c5c369d27896523798f937197b98d9b9780408a2cee",
+    "file": "seaside_rock_nor_gl_4k.jpg",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/seaside_rock/seaside_rock_nor_gl_4k.jpg",
+    "md5": "ed4096ba697a01bc29ccdc4752325f0a",
+    "asset": "seaside_rock",
+    "license": "CC0-1.0"
+  },
+  {
+    "bytes": 6185893,
+    "sha256": "c012c69f70ce3bb5719c299b68c169f8f8755fcdbb051175a5d4a73c0f473e56",
+    "file": "seaside_rock_rough_4k.jpg",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/seaside_rock/seaside_rock_rough_4k.jpg",
+    "md5": "5799b2bdb5f515e848b49cc6944b236e",
+    "asset": "seaside_rock",
+    "license": "CC0-1.0"
   }
 ]
