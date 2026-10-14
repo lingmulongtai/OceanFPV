@@ -1,22 +1,36 @@
 /** Tessendorf spectral sea. CPU IFFT output is shared by rendering and contacts.
  * Unshifted frequency indexing; inverse transforms include 1/N² normalization.
  * See docs/OCEAN_RESEARCH.md and OceanLab's MIT spectrum compute reference. */
+type FFTPlan={swaps:Uint32Array;stages:{length:number;real:Float64Array;imaginary:Float64Array}[]};
+const fftPlans=new Map<number,FFTPlan>();
+function fftPlan(size:number) {
+  let plan=fftPlans.get(size);if(plan)return plan;
+  const swaps:number[]=[],stages:FFTPlan['stages']=[];
+  for(let i=1,j=0;i<size;i++) {
+    let bit=size>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;
+    if(i<j)swaps.push(i,j);
+  }
+  for(let length=2;length<=size;length*=2) {
+    const real=new Float64Array(length/2),imaginary=new Float64Array(length/2);
+    for(let j=0;j<length/2;j++){const angle=2*Math.PI*j/length;real[j]=Math.cos(angle);imaginary[j]=Math.sin(angle);}
+    stages.push({length,real,imaginary});
+  }
+  plan={swaps:Uint32Array.from(swaps),stages};fftPlans.set(size,plan);return plan;
+}
 export function inverseFFT(real: Float64Array, imaginary: Float64Array, size: number) {
   if (size < 2 || (size & (size - 1)) || real.length !== size * size || imaginary.length !== real.length) throw new Error('FFT requires a square power-of-two field');
+  const plan=fftPlan(size);
   const transform = (offset: number, stride: number) => {
-    for (let i=1,j=0;i<size;i++) {
-      let bit=size>>1; for(;j&bit;bit>>=1) j^=bit; j^=bit;
-      if(i<j) { const a=offset+i*stride,b=offset+j*stride; [real[a],real[b]]=[real[b],real[a]];[imaginary[a],imaginary[b]]=[imaginary[b],imaginary[a]]; }
+    for(let i=0;i<plan.swaps.length;i+=2) {
+      const a=offset+plan.swaps[i]*stride,b=offset+plan.swaps[i+1]*stride,ar=real[a],ai=imaginary[a];
+      real[a]=real[b];imaginary[a]=imaginary[b];real[b]=ar;imaginary[b]=ai;
     }
-    for(let length=2;length<=size;length*=2) {
-      const angle=2*Math.PI/length,wr=Math.cos(angle),wi=Math.sin(angle);
+    for(const {length,real:wr,imaginary:wi}of plan.stages) {
       for(let start=0;start<size;start+=length) {
-        let ur=1,ui=0;
         for(let j=0;j<length/2;j++) {
           const a=offset+(start+j)*stride,b=a+length/2*stride;
-          const br=real[b]*ur-imaginary[b]*ui,bi=real[b]*ui+imaginary[b]*ur;
+          const br=real[b]*wr[j]-imaginary[b]*wi[j],bi=real[b]*wi[j]+imaginary[b]*wr[j];
           real[b]=real[a]-br;imaginary[b]=imaginary[a]-bi;real[a]+=br;imaginary[a]+=bi;
-          const next=ur*wr-ui*wi;ui=ur*wi+ui*wr;ur=next;
         }
       }
     }
