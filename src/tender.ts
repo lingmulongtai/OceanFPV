@@ -1,5 +1,6 @@
 import * as T from 'three';
 import {MeshBVH} from 'three-mesh-bvh';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {closedHullGeometry,hullHalfWidth,hullDeckHeight} from './hull';
 
 type Finish='orange'|'white'|'glass'|'rubber'|'metal';
@@ -30,11 +31,37 @@ export function buildTenderModel() {
   const vertices=sections.flatMap(s=>[[-s.hi,2.1,s.roof],[s.hi,2.1,s.roof],[s.lo,0.63,s.z],[-s.lo,0.63,s.z]]),indices:number[]=[];
   for(let i=0;i<3;i++)for(let j=0;j<4;j++){const a=i*4+j,b=(i+1)*4+j,c=i*4+(j+1)%4,d=(i+1)*4+(j+1)%4;indices.push(a,b,c,c,b,d);}
   indices.push(0,1,2,0,2,3,12,14,13,12,15,14);
-  const canopy=new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(vertices.flat(),3));canopy.setAttribute('uv',new T.Float32BufferAttribute(vertices.flatMap(p=>[p[0],p[2]]),2));canopy.setIndex(indices);canopy.computeVertexNormals();part(canopy,'white','closed raked canopy');
+  const canopy=new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(vertices.flat(),3));canopy.setAttribute('uv',new T.Float32BufferAttribute(vertices.flatMap(p=>[p[0],p[2]]),2));canopy.setIndex(indices);canopy.computeVertexNormals();canopy.computeBoundingBox();
   const coaming=canopy.clone(),cp=coaming.attributes.position;
   for(let i=0;i<cp.count;i++){const s=sections[Math.floor(i/4)],corner=i%4;cp.setXYZ(i,(corner===0||corner===3?-1:1)*(s.lo+0.015),corner<2?0.63:0.58,s.z);}
   coaming.computeVertexNormals();part(coaming,'rubber','closed canopy coaming');
   for(let i=0;i<3;i++)quad([0,1,5,4].map(j=>new T.Vector3(...vertices[i*4+j]).add(new T.Vector3(0,0.018,0))),'orange','roof gelcoat',new T.Vector3(0,1,0));
+  const frameStart=parts.length;
+  const panel=(points:T.Vector3[],outward:T.Vector3)=> {
+    const normal=outward.clone().normalize(),front=points.map(p=>p.clone().addScaledVector(normal,0.004)),back=points.map(p=>p.clone().addScaledVector(normal,-0.045));
+    quad(front,'white','canopy frame',normal);quad(back,'white','canopy frame',normal.clone().negate());
+    const centre=points.reduce((sum,p)=>sum.add(p),new T.Vector3()).multiplyScalar(0.25);
+    for(let i=0;i<4;i++) {const next=(i+1)%4;quad([front[i],front[next],back[next],back[i]],'white','window reveal',points[i].clone().add(points[next]).multiplyScalar(0.5).sub(centre));}
+  };
+  const framedWall=(at:(u:number,v:number)=>T.Vector3,outward:T.Vector3,holes:number[][])=> {
+    const us=[...new Set([0,1,...holes.flatMap(h=>h.slice(0,2))])].sort((a,b)=>a-b),vs=[...new Set([0,1,...holes.flatMap(h=>h.slice(2,4))])].sort((a,b)=>a-b);
+    for(let i=1;i<us.length;i++)for(let j=1;j<vs.length;j++) {
+      const u=(us[i-1]+us[i])/2,v=(vs[j-1]+vs[j])/2;
+      if(holes.some(([lo,hi,bottom,top])=>u>lo&&u<hi&&v>bottom&&v<top))continue;
+      panel([at(us[i-1],vs[j-1]),at(us[i],vs[j-1]),at(us[i],vs[j]),at(us[i-1],vs[j])],outward);
+    }
+  };
+  for(const side of [-1,1]) {
+    const row=side<0?0:1,bottom=side<0?3:2;
+    for(const i of [0,2])panel([i*4+row,(i+1)*4+row,(i+1)*4+bottom,i*4+bottom].map(j=>new T.Vector3(...vertices[j])),new T.Vector3(side,0,0));
+    const holes=Array.from({length:6},(_,i)=>{const z=-3.38+i*1.16;return [(z+3.5)/7.1,(z+1.02+3.5)/7.1,(0.86-0.63)/1.47,(1.87-0.63)/1.47];});
+    framedWall((u,v)=>new T.Vector3(side*T.MathUtils.lerp(1.6,1.45,v),T.MathUtils.lerp(0.63,2.1,v),T.MathUtils.lerp(-3.5,3.6,u)),new T.Vector3(side,0.15/1.47,0),holes);
+  }
+  for(const [index,side]of [[0,-1],[3,1]]) {
+    const s=sections[index];framedWall((u,v)=>new T.Vector3((u*2-1)*T.MathUtils.lerp(s.lo,s.hi,v),T.MathUtils.lerp(0.63,2.1,v),T.MathUtils.lerp(s.z,s.roof,v)),new T.Vector3(0,side*(s.z-s.roof)/1.47,side),[[0.09,0.47,0.2,0.85],[0.53,0.91,0.2,0.85]]);
+  }
+  for(let i=0;i<3;i++)quad([0,1,5,4].map(j=>new T.Vector3(...vertices[i*4+j]).add(new T.Vector3(0,-0.045,0))),'white','ceiling underside',new T.Vector3(0,-1,0));
+  const frames=parts.splice(frameStart),shell=mergeGeometries(frames.map(p=>p.geometry));if(!shell)throw new Error('Tender frame merge failed');frames.forEach(p=>p.geometry.dispose());part(shell,'white','apertured canopy');
   const pane=(points:T.Vector3[],outward:T.Vector3,name:string)=> {
     const offset=outward.clone().normalize().multiplyScalar(0.025),corners=points.map(p=>p.clone().add(offset));quad(corners,'glass',name,outward);
     for(let i=0;i<4;i++)rod(corners[i],corners[(i+1)%4],0.022,'rubber','window gasket');

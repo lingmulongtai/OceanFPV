@@ -71,3 +71,19 @@ test('hatches, hoist seats and protection-rail feet meet the actual gelcoat roof
   }
   material.dispose();
 });
+
+test('all sixteen tender windows have real wall openings and retain sealed contacts',()=> {
+  const model=buildTenderModel(),material=new T.MeshBasicMaterial({side:T.DoubleSide}),shell=model.parts.find(p=>p.name==='apertured canopy')!,mesh=new T.Mesh(shell.geometry,material);mesh.updateMatrixWorld();
+  assert.equal(model.parts.some(p=>p.geometry===model.canopy),false);
+  for(const pane of model.parts.filter(p=>p.finish==='glass')) {
+    const p=pane.geometry.attributes.position,normal=new T.Vector3().fromBufferAttribute(pane.geometry.attributes.normal,0),centre=new T.Vector3();
+    for(let i=0;i<p.count;i++)centre.add(new T.Vector3().fromBufferAttribute(p,i));centre.divideScalar(p.count);
+    const ray=new T.Raycaster(centre.clone().addScaledVector(normal,0.1),normal.clone().negate(),0,0.3);
+    assert.equal(ray.intersectObject(mesh).length,0);assert.equal(model.contains(centre),true);
+  }
+  for(const side of [-1,1]) {
+    const ray=new T.Raycaster(new T.Vector3(side*2,1.36,-2.29),new T.Vector3(-side,0,0),0,1);
+    const hits=ray.intersectObject(mesh);assert.ok(hits.length>=2);assert.ok(hits[1].distance-hits[0].distance>0.045);
+  }
+  material.dispose();
+});
