@@ -2,10 +2,11 @@ import * as T from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshBVH } from 'three-mesh-bvh';
 import { terrainSlope, terrainSurfaceHeight } from './terrain';
+import { type Coast } from './bathymetry';
 import { wetCoastalSurface } from './surfaces';
 
 export type RockSite={x:number;z:number;scale:number;yaw:number};
-export type RockPatch={sites:RockSite[];coast:{x:number;z:number;size:number;height:number};fallback:T.InstancedMesh};
+export type RockPatch={sites:RockSite[];coast:Coast;fallback:T.InstancedMesh};
 type RockPlacement={matrix:T.Matrix4;inverse:T.Matrix4;bounds:T.Box3;scale:number};
 
 /** Low coastal shelves support boulders without turning them upright on cliffs. */
@@ -13,8 +14,8 @@ export function coastalRockSites(coast:RockPatch['coast']) {
   const sites:RockSite[]=[];
   for(let i=0;i<2040&&sites.length<90;i++) {
     const angle=i*2.399963,r=coast.size*(0.72+((i*37)%101)/100*0.37),x=Math.cos(angle)*r,z=Math.sin(angle)*r,scale=1.1+(i%7)*0.28;
-    const height=terrainSurfaceHeight(x,z,coast.size,coast.height);
-    if(height< -2||height>14||terrainSlope(x,z,coast.size,coast.height)>Math.PI/4.5)continue;
+    const height=terrainSurfaceHeight(x,z,coast.size,coast.height,coast.profile);
+    if(height< -2||height>14||terrainSlope(x,z,coast.size,coast.height,coast.profile)>Math.PI/4.5)continue;
     if(sites.some(site=>Math.hypot(coast.x+x-site.x,coast.z+z-site.z)<1.8*(scale+site.scale)*0.75))continue;
     sites.push({x:coast.x+x,z:coast.z+z,scale,yaw:angle});
   }
@@ -109,7 +110,7 @@ export class CoastalRocks {
     for(const property of Object.values(material))if(property instanceof T.Texture)property.anisotropy=Math.min(16,renderer.capabilities.getMaxAnisotropy());
     wetCoastalSurface(material,wash);
     for(const patch of patches) {
-      const {coast}=patch,heightAt=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height);
+      const {coast}=patch,heightAt=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile);
       const placements=patch.sites.map(site=>this.shape.place(site,heightAt));this.placements.push(...placements);
       this.group.add(...buildRockBatches(geometry,material,placements));
     }

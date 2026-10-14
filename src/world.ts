@@ -10,8 +10,8 @@ import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { buildMotorYacht,YACHT_BEAM } from './yacht';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
 import { blendGroundCover, wetCoastalSurface, loadSurfaces, type SurfaceGroup } from './surfaces';
-import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS } from './terrain';
-import { COASTS } from './bathymetry';
+import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain';
+import { COASTS, type Coast } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
 import { CoastalRocks, coastalRockSites, type RockPatch } from './rocks';
 
@@ -57,7 +57,7 @@ export class World {
   private yachtContact:((p:T.Vector3)=>boolean)=()=>false;
   gateMeshes: T.Group[] = [];
   colliders: Collider[] = [];
-  islands: { x: number; z: number; size: number; height: number }[] = [];
+  islands: Coast[] = [];
   light: LightPreset = 'golden';
   private propellers: T.Mesh[] = [];
   private vesselTime=-1;
@@ -100,7 +100,7 @@ export class World {
     this.setLight('golden');
     this.ocean = new Ocean(this.sun); this.scene.add(this.ocean.mesh);
     this.buildShip(); this.buildDrone(); this.buildGates();
-    for(const coast of COASTS)this.buildIsland(coast.x,coast.z,coast.size,coast.height);
+    for(const coast of COASTS)this.buildIsland(coast);
     this.buildLighthouse(); this.buildYacht();
     this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:this.cruise.paint,colour:false,roughness:1},{asset:'wood_floor_deck',resolution:'1k',materials:[this.cruise.teak],colour:true},{asset:'rocky_terrain',resolution:'2k',materials:[this.rockMaterial],colour:true});
     this.surfaceGroups.push({asset:'aerial_grass_rock',resolution:'2k',materials:[this.groundCover],colour:true});
@@ -275,16 +275,16 @@ export class World {
       material.color.set(i===next?0x94f3ca:0x567276);material.emissive.set(i===next?0x4cdda0:0x112b30);material.emissiveIntensity=i===next?1.6:0.5;
     });
   }
-  private buildIsland(x: number,z: number,size: number,height: number) {
-    this.islands.push({x,z,size,height});
+  private buildIsland(coast:Coast) {
+    const {x,z,size,height,profile}=coast;this.islands.push({...coast});
     const geo=new T.PlaneGeometry(size*2.4,size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geo.rotateX(-Math.PI/2);
     const pos=geo.attributes.position;const colors:number[]=[],cover:number[]=[];
     for(let i=0;i<pos.count;i++) {
-      const px=pos.getX(i),pz=pos.getZ(i);const y=this.terrain(px,pz,size,height);pos.setY(i,y);
+      const px=pos.getX(i),pz=pos.getZ(i);const y=this.terrain(px,pz,size,height,profile);pos.setY(i,y);
       const color=new T.Color(y<5?0xd0c6a9:y<28?0xa9b99b:y<height*0.65?0x92a28d:0xb7b9a2);
       const variance=0.86+(Math.sin(px*0.37+pz*0.27)*0.5+0.5)*0.25;color.multiplyScalar(variance);colors.push(color.r,color.g,color.b);
       geo.attributes.uv.setXY(i,px/90,pz/90);
-      cover.push(terrainCover(px,pz,size,height));
+      cover.push(terrainCover(px,pz,size,height,profile));
     }
     geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.setAttribute('groundCover',new T.Float32BufferAttribute(cover,1));geo.computeVertexNormals();
     const material=new T.MeshStandardMaterial({vertexColors:true,roughness:0.96});this.surfaceGroups.push({asset:'rocky_terrain',resolution:'2k',materials:[material],colour:true});
@@ -294,7 +294,7 @@ export class World {
     for(let i=0;i<7;i++) {const g=new T.IcosahedronGeometry(1,2),p=g.attributes.position;for(let v=0;v<p.count;v++){const k=0.9+0.1*Math.sin(p.getX(v)*17+p.getY(v)*19+p.getZ(v)*11);p.setXYZ(v,p.getX(v)*k,p.getY(v)*k,p.getZ(v)*k);}g.scale(i?2.6:3.1,i?3:4,i?2.6:3.1);g.translate(i?Math.cos(i*2.4)*2.3:0,6+i*0.55,i?Math.sin(i*2.4)*2.3:0);g.computeVertexNormals();crownParts.push(g);}
     const crowns=new T.InstancedMesh(mergeGeometries(crownParts)!,new T.MeshStandardMaterial({color:0xffffff,roughness:0.9}),170);crownParts.forEach(g=>g.dispose());
     const trunks=new T.InstancedMesh(new T.CylinderGeometry(0.22,0.48,8,8),new T.MeshStandardMaterial({color:0x504437,roughness:1}),170);
-    const matrices:T.Matrix4[]=[],sites=coastalTreeSites(x,z,size,height);crowns.count=trunks.count=sites.length;
+    const matrices:T.Matrix4[]=[],sites=coastalTreeSites(x,z,size,height,profile);crowns.count=trunks.count=sites.length;
     for(let i=0;i<sites.length;i++) {
       const {x:tx,z:tz,y,scale,yaw:angle}=sites[i];
       const matrix=new T.Matrix4().compose(new T.Vector3(tx,y,tz),new T.Quaternion().setFromAxisAngle(new T.Vector3(0,1,0),angle),new T.Vector3(scale,scale,scale));
@@ -305,14 +305,14 @@ export class World {
     crowns.castShadow=trunks.castShadow=true;this.scene.add(crowns,trunks);
     this.treeSites.push({matrices,fallback:[crowns,trunks]});
     const rocks=new T.InstancedMesh(new T.IcosahedronGeometry(1,2),this.rockMaterial,90);
-    for(let i=0;i<90;i++) {const angle=i*2.399,r=size*(0.68+(i%9)*0.027),tx=Math.cos(angle)*r,tz=Math.sin(angle)*r,y=this.terrain(tx,tz,size,height),s=2+(i%7)*0.6;
+    for(let i=0;i<90;i++) {const angle=i*2.399,r=size*(0.68+(i%9)*0.027),tx=Math.cos(angle)*r,tz=Math.sin(angle)*r,y=this.terrain(tx,tz,size,height,profile),s=2+(i%7)*0.6;
       rocks.setMatrixAt(i,new T.Matrix4().compose(new T.Vector3(x+tx,y+s*0.25,z+tz),new T.Quaternion().setFromEuler(new T.Euler(angle,angle*0.7,angle*0.3)),new T.Vector3(s*1.6,s*0.8,s)));
       this.fallbackRockObstacles.push({x:x+tx,z:z+tz,y:y-s*0.1,radius:s*1.3,height:s*1.1});}
     rocks.castShadow=rocks.receiveShadow=true;this.scene.add(rocks);
-    const coast={x,z,size,height};this.rockPatches.push({sites:coastalRockSites(coast),coast,fallback:rocks});
+    this.rockPatches.push({sites:coastalRockSites(coast),coast:{...coast},fallback:rocks});
   }
-  private terrain(x:number,z:number,size:number,height:number) {
-    return terrainSurfaceHeight(x,z,size,height);
+  private terrain(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
+    return terrainSurfaceHeight(x,z,size,height,profile);
   }
   private buildLighthouse() {
     const root=new T.Group();root.position.set(145,0,-135);
@@ -387,7 +387,7 @@ export class World {
     }
     for(const c of this.cruise.boxes)if(vesselBoxContains(c,passenger))return '客船の構造物に接触しました';
     for(const island of this.islands) {
-      const h=this.terrain(p.x-island.x,p.z-island.z,island.size,island.height);
+      const h=this.terrain(p.x-island.x,p.z-island.z,island.size,island.height,island.profile);
       if(p.y<h+0.25) return '島に接触しました';
     }
     for(const obstacle of this.naturalObstacles)if(p.y>obstacle.y&&p.y<obstacle.y+obstacle.height&&Math.hypot(p.x-obstacle.x,p.z-obstacle.z)<obstacle.radius)return '木・岩に接触しました';
