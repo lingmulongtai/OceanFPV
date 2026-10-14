@@ -33,8 +33,8 @@ export class WaveCascade {
   readonly tangentZ: Float32Array;
   private readonly h0: Float64Array;
   private readonly omega: Float64Array;
-  private readonly waveX: Float64Array;
-  private readonly waveZ: Float64Array;
+  private readonly directionX: Float64Array;
+  private readonly directionZ: Float64Array;
   private readonly fields: {real: Float64Array; imaginary: Float64Array}[];
   private lastTime=NaN;
   private foamTime=NaN;
@@ -44,7 +44,7 @@ export class WaveCascade {
 
   constructor(readonly size: number, readonly length: number, seed: number, rms: number, minWave: number, maxWave: number, readonly chop=1.6) {
     const count=size*size;this.displacement=new Float32Array(count*4);this.tangentX=new Float32Array(count*4);this.tangentZ=new Float32Array(count*4);
-    this.h0=new Float64Array(count*2);this.omega=new Float64Array(count);this.waveX=new Float64Array(count);this.waveZ=new Float64Array(count);
+    this.h0=new Float64Array(count*2);this.omega=new Float64Array(count);this.directionX=new Float64Array(count);this.directionZ=new Float64Array(count);
     this.fields=Array.from({length:3},()=>({real:new Float64Array(count),imaginary:new Float64Array(count)}));
     const random=()=> {seed=(Math.imul(seed,1664525)+1013904223)>>>0;return (seed+1)/4294967297;};
     const gaussian=()=>Math.sqrt(-2*Math.log(random()))*Math.cos(2*Math.PI*random());
@@ -52,7 +52,9 @@ export class WaveCascade {
     let energy=0;
     for(let z=0;z<size;z++) for(let x=0;x<size;x++) {
       const i=z*size+x,kx=2*Math.PI*(x<size/2?x:x-size)/length,kz=2*Math.PI*(z<size/2?z:z-size)/length,k=Math.hypot(kx,kz);
-      this.waveX[i]=x===size/2?0:kx;this.waveZ[i]=z===size/2?0:kz;this.omega[i]=Math.sqrt(9.81*k);
+      const dx=x===size/2?0:kx,dz=z===size/2?0:kz,directionK=Math.hypot(dx,dz);
+      this.directionX[i]=directionK?dx/directionK*this.chop:0;this.directionZ[i]=directionK?dz/directionK*this.chop:0;
+      this.omega[i]=Math.sqrt(9.81*k);
       const wavelength=k?2*Math.PI/k:Infinity,alignment=k?(kx*windX+kz*windZ)/k:0;
       // Phillips wind spectrum, disjoint bands and Gaussian phases avoid stripes.
       const density=wavelength>=minWave&&wavelength<=maxWave ? Math.exp(-1/Math.pow(k*windLength,2))*alignment*alignment*Math.exp(-k*k*0.025)/(k*k*k*k)*(alignment<0?0.15:1) : 0;
@@ -71,9 +73,8 @@ export class WaveCascade {
       const ar=this.h0[i*2],ai=this.h0[i*2+1],br=this.h0[opposite*2],bi=this.h0[opposite*2+1];
       const hr=(ar+br)*c-(ai+bi)*s,hi=(ar-br)*s+(ai-bi)*c;
       this.fields[0].real[i]=hr;this.fields[0].imaginary[i]=hi;
-      const k=Math.hypot(this.waveX[i],this.waveZ[i]);
       for(let axis=1;axis<=2;axis++) {
-        const direction=k?(axis===1?this.waveX[i]:this.waveZ[i])/k*this.chop:0;
+        const direction=axis===1?this.directionX[i]:this.directionZ[i];
         this.fields[axis].real[i]=-hi*direction;this.fields[axis].imaginary[i]=hr*direction;
       }
     }
