@@ -123,10 +123,12 @@ export class SpectralSea {
   time=0;
   private scale=1;
   private chopLimit=1;
+  private initialized=false;
   horizontalScale=1;
   constructor(){this.update(0);}
   update(time:number,scale=1) {
-    if(Math.abs(time-this.time)<1/30&&time!==0&&scale===this.scale)return false;
+    if(this.initialized&&Math.abs(time-this.time)<1/30&&scale===this.scale)return false;
+    this.initialized=true;
     this.time=time;this.scale=scale;this.cascades.forEach(c=>c.update(time));
     // Bound the summed symmetric compression before it inverts the surface.
     this.chopLimit=0.82/Math.max(this.cascades.reduce((sum,c)=>sum+c.compressionBound,0),0.001);
