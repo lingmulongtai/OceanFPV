@@ -14,6 +14,7 @@ import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS,
 import { COASTS, type Coast } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
 import { CoastalRocks, coastalRockSites, type RockPatch } from './rocks';
+import { LighthouseReef } from './lighthouse-reef';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
 type Collider = { min: T.Vector3; max: T.Vector3 };
@@ -69,6 +70,7 @@ export class World {
   private groundMaterials:T.MeshStandardMaterial[]=[];
   private naturalObstacles:{x:number;z:number;y:number;radius:number;height:number}[]=[];
   private rockMaterial=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});
+  private lighthouseReef=new LighthouseReef();
   private shorelineWash={value:SEA_SCALE.breeze};
   private treeSites:TreeSite[]=[];
   private rockPatches:RockPatch[]=[];
@@ -316,9 +318,9 @@ export class World {
     return terrainSurfaceHeight(x,z,size,height,profile);
   }
   private buildLighthouse() {
-    const root=new T.Group();root.position.set(145,0,-135);
+    const root=new T.Group();root.position.set(this.lighthouseReef.x,0,this.lighthouseReef.z);
     const stone=this.rockMaterial;
-    const rock=new T.Mesh(new T.IcosahedronGeometry(20,2),stone);rock.scale.set(1.8,0.65,1.35);rock.position.y=-1;root.add(rock);
+    const rock=new T.Mesh(this.lighthouseReef.geometry,stone);root.add(rock);
     const tower=new T.Mesh(new T.CylinderGeometry(2.1,3.2,24,24),new T.MeshStandardMaterial({color:0xe0ddd0,roughness:0.7}));tower.position.y=21;root.add(tower);
     for(const y of [13,25]) {const stripe=new T.Mesh(new T.CylinderGeometry(2.8-(y-13)*0.035,2.85-(y-13)*0.035,3,24),new T.MeshStandardMaterial({color:0xa2483d,roughness:0.6}));stripe.position.y=y;root.add(stripe);}
     const glass=new T.Mesh(new T.CylinderGeometry(2.4,2.4,3,16),new T.MeshPhysicalMaterial({color:0x173848,roughness:0.08,metalness:0.4,clearcoat:1}));glass.position.y=34;root.add(glass);
@@ -396,7 +398,7 @@ export class World {
     for(const obstacle of this.fallbackRockObstacles)if(p.y>obstacle.y&&p.y<obstacle.y+obstacle.height&&Math.hypot(p.x-obstacle.x,p.z-obstacle.z)<obstacle.radius)return '木・岩に接触しました';
     if(this.rocks?.contains(p))return '岩に接触しました';
     if(Math.hypot(p.x-145,p.z+135)<3.5&&p.y<39) return '灯台に接触しました';
-    if(Math.pow((p.x-145)/36,2)+Math.pow((p.z+135)/27,2)<1&&p.y<11) return '岩礁に接触しました';
+    if(this.lighthouseReef.contains(p)) return '岩礁に接触しました';
     const yacht=this.yacht.worldToLocal(p.clone());
     if(this.yachtContact(yacht))return 'ヨットに接触しました';
     return null;
