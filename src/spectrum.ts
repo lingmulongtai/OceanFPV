@@ -60,7 +60,7 @@ export class WaveCascade {
   constructor(readonly size: number, readonly length: number, seed: number, rms: number, minWave: number, maxWave: number, readonly chop=1.6) {
     const count=size*size;this.displacement=new Float32Array(count*4);this.tangentX=new Float32Array(count*4);this.tangentZ=new Float32Array(count*4);
     this.h0=new Float64Array(count*2);this.omega=new Float64Array(count);this.directionX=new Float64Array(count);this.directionZ=new Float64Array(count);
-    this.fields=Array.from({length:3},()=>({real:new Float64Array(count),imaginary:new Float64Array(count)}));
+    this.fields=Array.from({length:2},()=>({real:new Float64Array(count),imaginary:new Float64Array(count)}));
     const random=()=> {seed=(Math.imul(seed,1664525)+1013904223)>>>0;return (seed+1)/4294967297;};
     const gaussian=()=>Math.sqrt(-2*Math.log(random()))*Math.cos(2*Math.PI*random());
     const windX=Math.cos(0.7),windZ=Math.sin(0.7),windLength=11*11/9.81;
@@ -87,14 +87,12 @@ export class WaveCascade {
       const i=z*n+x,opposite=((n-z)%n)*n+(n-x)%n,c=Math.cos(this.omega[i]*time),s=Math.sin(this.omega[i]*time);
       const ar=this.h0[i*2],ai=this.h0[i*2+1],br=this.h0[opposite*2],bi=this.h0[opposite*2+1];
       const hr=(ar+br)*c-(ai+bi)*s,hi=(ar-br)*s+(ai-bi)*c;
-      this.fields[0].real[i]=hr;this.fields[0].imaginary[i]=hi;
-      for(let axis=1;axis<=2;axis++) {
-        const direction=axis===1?this.directionX[i]:this.directionZ[i];
-        this.fields[axis].real[i]=-hi*direction;this.fields[axis].imaginary[i]=hr*direction;
-      }
+      // H + i*Dx packs two real spatial fields into one complex transform.
+      const packed=1-this.directionX[i];this.fields[0].real[i]=hr*packed;this.fields[0].imaginary[i]=hi*packed;
+      const direction=this.directionZ[i];this.fields[1].real[i]=-hi*direction;this.fields[1].imaginary[i]=hr*direction;
     }
     this.fields.forEach(f=>inverseFFT(f.real,f.imaginary,n));
-    const h=this.fields[0].real,dx=this.fields[1].real,dz=this.fields[2].real;
+    const h=this.fields[0].real,dx=this.fields[0].imaginary,dz=this.fields[1].real;
     const derivative= n/(2*this.length);let slopeEnergy=0,heightEnergy=0;
     for(let z=0;z<n;z++) for(let x=0;x<n;x++) {
       const i=z*n+x,l=z*n+(x+n-1)%n,r=z*n+(x+1)%n,b=((z+n-1)%n)*n+x,t=((z+1)%n)*n+x;
@@ -110,7 +108,7 @@ export class WaveCascade {
     }
     this.slopeVariance=slopeEnergy/count;
     this.heightVariance=heightEnergy/count;
-    // Imaginary residues are only round-off: Hermitian symmetry is preserved.
+    // Height and Dx occupy the real/imaginary outputs; Dz remains Hermitian.
     if(count!==this.fields[0].real.length) throw new Error('Invalid ocean field');
   }
   updateFoam(time:number,heightScale:number,horizontalScale:number) {
