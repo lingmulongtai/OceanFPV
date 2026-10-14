@@ -24,3 +24,15 @@ The model and its textures must all load before the new render/contact set repla
 - Native RTX 4050 ULTRA batch comparisons cover shore, close rock, cliff and menu-direction cameras in all three light presets (24 actual 1920×1280 captures). All 12 before/after pairs have identical RGB pixels and no page/console errors. At the 65-degree menu-direction golden camera, submitted triangles fell from 26,717,742 to 21,314,526 while draw calls rose from 197 to 478. This is a draw-budget measurement, not an FPS claim.
 
 This still repeats one rock shape. Terrain texture scale, material variety, boulder/ground contact shading and sustained performance on other GPUs need further visual work. The captures are visual checks, not a frame-rate benchmark or proof of Unreal-level realism. Physical controllers and other browser/device acceptance are separate from this change.
+
+## Lighthouse outcrops
+
+The lighthouse follow-up adds nine instances of the same photographed model without extra asset downloads or dependencies. All 270 island instances remain, bringing the loaded scene to 279. The additional patch samples the actual reef's vertical BVH rays for its local ground normal and every bottom support. Any missing normal/support sample rejects that placement. World-space bounds keep the tower and the existing free point (175,10,−135) clear.
+
+Initial comparison images showed rocks leaning or standing too prominently on the convex reef. The reef patch now limits ground tilt to 15 degrees and embeds 55% of source height after highest-support placement. Each outcrop has at least 80% of sampled support points below the reef surface. Island patches retain their existing 20% embedding and full ground-normal alignment. Render geometry, UVs, normals and the instance/contact transform remain shared.
+
+An independent calculation using the previous placement formula and actual model verifies all 270 island matrices are bit-identical in both Float64 and Float32. The nine reef placements have a minimum embedded-support fraction of 89.82%, maximum tilt of 15 degrees, and no tower/flight-space bounds intersection. Their nearest bounds remain 3.305 m from the preserved free point.
+
+The optional patch has no primitive replacement of its own: scanned render/contact instances appear together after the complete model loads. Asset failure retains the underlying reef and all 270 old island fallback rocks/contacts. Unit checks use the actual glTF geometry, verify nullable support rejection, exclusion bounds, reef footing/tilt, and existing island placements. Native scene/fallback/contact checks pass, including independent rays against the actual rendered rock instances and clear space outside their surface margins.
+
+Four matched ULTRA comparisons cover two reef views in day/golden light at 120 seconds, with 1920×1280 drawing buffers and no page/console errors. The reef substrate is still the earlier synthetic shape with an aerial rock surface; these repeated outcrops improve its close geometry but do not constitute a scanned island or establish sustained FPS. Physical controllers remain unverified.
