@@ -2,6 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as T from 'three';
 import { LighthouseReef } from '../src/lighthouse-reef';
+import {metricPaintGeometry} from '../src/paint';
+
+test('metric reef charts preserve every contact triangle and captured normal',()=> {
+  const reef=new LighthouseReef(),mapped=metricPaintGeometry(reef.geometry,2),source=reef.geometry;
+  for(const name of ['position','normal'])assert.deepEqual(mapped.attributes[name].array,source.attributes[name].array);
+  const uv=mapped.attributes.uv;let minimumArea=Infinity;
+  for(let i=0;i<uv.count;i+=3) {
+    const area=Math.abs((uv.getX(i+1)-uv.getX(i))*(uv.getY(i+2)-uv.getY(i))-(uv.getX(i+2)-uv.getX(i))*(uv.getY(i+1)-uv.getY(i)));
+    minimumArea=Math.min(minimumArea,area);
+  }
+  assert.ok(minimumArea>0.001,'normal maps require non-degenerate charts');
+  assert.notDeepEqual(uv.array,source.attributes.uv.array);mapped.dispose();
+});
 
 test('reef top heights match independent rendered-triangle rays including footprint misses',()=> {
   const reef=new LighthouseReef(),mesh=new T.Mesh(reef.geometry,new T.MeshBasicMaterial({side:T.DoubleSide}));

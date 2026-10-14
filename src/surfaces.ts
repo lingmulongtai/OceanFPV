@@ -1,6 +1,6 @@
 import * as T from 'three';
 
-export type SurfaceGroup={asset:string;resolution:'1k'|'2k';materials:T.MeshStandardMaterial[];colour:boolean;roughness?:number};
+export type SurfaceGroup={asset:string;resolution:'1k'|'2k'|'4k';materials:T.MeshStandardMaterial[];colour:boolean;roughness?:number};
 /** World-space projections keep photographed scale on ground and steep cliffs. */
 export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshStandardMaterial) {
   const available=()=>!!(material.map&&material.normalMap&&material.roughnessMap&&cover.map&&cover.normalMap&&cover.roughnessMap);
