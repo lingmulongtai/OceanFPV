@@ -297,6 +297,26 @@ test('nearshore displacement and geometric normals match CPU sampling on the GPU
   console.log(`Nearshore probe: ${JSON.stringify(probe)}`);
   expect(probe.count).toBeGreaterThanOrEqual(1554);expect(probe.heightError).toBeLessThan(0.003);expect(probe.normalError).toBeLessThan(0.003);expect(probe.varianceError).toBeLessThan(0.003);expect(probe.contactError).toBeLessThan(0.01);expect(errors).toEqual([]);
 });
+test('all passenger tenders have real surface contacts and free space around their bows',async({page})=> {
+  await ready(page);
+  const evidence=await page.evaluate(async()=> {
+    const app=(window as any).__OCEANFPV__,world=app.world,T=await import('/node_modules/three/build/three.module.js' as string),model=await import('/src/tender.ts' as string),root=world.cruise.root;
+    const contact=(point:any)=>world.collision(root.localToWorld(point),app.getState().time,'breeze'),hits=[];
+    for(const mount of model.TENDER_MOUNTS) {
+      const origin=root.localToWorld(new T.Vector3(Math.sign(mount.x)*23,11.4,mount.z)),direction=new T.Vector3(-Math.sign(mount.x),0,0).transformDirection(root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(root,true)[0];
+      if(!hit)throw new Error('Tender side has no rendered surface');hits.push(world.collision(hit.point,app.getState().time,'breeze'));
+    }
+    let supported=0,floorError=0;
+    for(const {line}of world.cruise.hoistSegments)if(line.start.y===12.2) {
+      const origin=root.localToWorld(new T.Vector3(line.start.x,12.205,line.start.z)),direction=new T.Vector3(0,-1,0).transformDirection(root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(root,true)[0];
+      if(!hit)throw new Error('Davit foot has no rendered deck');floorError=Math.max(floorError,Math.abs(root.worldToLocal(hit.point).y-12.18));supported++;
+    }
+    return {hits,supported,floorError,ghost:contact(new T.Vector3(19.6,10.6,-72.8)),outside:contact(new T.Vector3(23,11.4,-68)),hook:contact(model.TENDER_MOUNTS[9].clone().add(model.TENDER_HOOKS[0]))};
+  });
+  expect(evidence.hits).toHaveLength(18);expect(evidence.hits.every((hit:string)=>hit==='客船の救命艇・吊り機構に接触しました')).toBe(true);
+  expect(evidence.ghost).toBeNull();expect(evidence.outside).toBeNull();expect(evidence.hook).toBe('客船の救命艇・吊り機構に接触しました');
+  expect(evidence.supported).toBe(72);expect(evidence.floorError).toBeLessThan(0.00001);
+});
 test('WebGL-unavailable browser gets a clear recovery screen', async ({page})=> {
   await page.addInitScript(()=> {
     const original=HTMLCanvasElement.prototype.getContext;

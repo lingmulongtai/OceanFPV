@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { closedHullGeometry, foredeckGeometry, hullDeckHeight, hullHalfWidth, hullNameGeometry, upperHullSidePose } from './hull';
 import { metricPaintGeometry } from './paint';
 import { bakeCabinOcclusion,roomOcclusionUV,type RoomSurface } from './occlusion';
+import {buildTenderModel,TENDER_MOUNTS} from './tender';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
 export function deckOutline(length:number,beam:number,radius=6) {
@@ -181,13 +182,19 @@ export function buildCruiseShip() {
     }
   }
   for(let tier=0;tier<3;tier++) {box([30-tier*3,0.2,9],[0,12+tier*5.7,106-tier*7],teak);for(const side of [-1,1])rod([side*(14-tier*1.5),13+tier*5.7,102-tier*7],[side*(14-tier*1.5),13+tier*5.7,110-tier*7]);}
-  // Eighteen enclosed orange lifeboats, davits and survival equipment.
-  for(const side of [-1,1]) for(let z=-68;z<=60;z+=16) {
-    add(new T.SphereGeometry(1,24,12),[side*18,11.65,z],orange,new T.Euler(),new T.Vector3(2,1.25,5.3));
-    box([3.3,1,7.2],[side*18,12.8,z],white,true,0.28);box([3.4,0.5,0.08],[side*18,12.9,z-3.65],glass);
-    boxes.push({min:new T.Vector3(side*18-2,10.4,z-5.3),max:new T.Vector3(side*18+2,12.9,z+5.3)});
-    for(const dz of [-3.8,3.8]) {rod([side*14,14,z+dz],[side*19,14.7,z+dz],0.12,white);rod([side*19,14.7,z+dz],[side*19,13,z+dz],0.055,chrome);}
+  const tender=buildTenderModel(),tenderMaterials={orange,white,glass,rubber:black,metal:chrome},hoists:{line:T.Line3;radius:number}[]=[],nearTender=new T.Vector3();
+  const hoist=(a:T.Vector3,b:T.Vector3,radius:number,material:T.MeshStandardMaterial)=>{rod(a.toArray(),b.toArray(),radius,material);hoists.push({line:new T.Line3(a,b),radius});};
+  for(const mount of TENDER_MOUNTS) {
+    tender.parts.forEach(({geometry,finish})=>add(geometry.clone(),mount.toArray(),tenderMaterials[finish]));
+    const side=Math.sign(mount.x);
+    for(const hook of tender.hooks) {
+      const bottom=hook.clone().add(mount),top=new T.Vector3(mount.x,14.9,bottom.z),base=new T.Vector3(side*14.4,12.2,bottom.z),elbow=new T.Vector3(side*14.4,14.5,bottom.z);
+      box([0.55,0.1,0.68],[base.x,12.19,base.z],white,true);
+      hoist(base,elbow,0.14,white);hoist(elbow,top,0.14,white);hoist(base,top,0.085,white);hoist(top,bottom,0.027,chrome);
+      add(new T.CylinderGeometry(0.16,0.16,0.09,12),top.toArray(),black,new T.Euler(0,0,Math.PI/2));
+    }
   }
+  const tenderContains=(point:T.Vector3,padding=0.2)=>TENDER_MOUNTS.some(mount=>tender.contains(nearTender.copy(point).sub(mount),padding))||hoists.some(({line,radius})=>{line.closestPointToPoint(point,true,nearTender);return nearTender.distanceToSquared(point)<(radius+padding)**2;});
   // Funnel, exhaust stacks, radar domes, communications mast and railings.
   const funnelBase=upperRoof,funnelCentre=funnelBase+3.75;
   box([9,7.5,14],[0,funnelCentre,69],navy,true,0.9);box([10,0.45,15],[0,funnelCentre+3.9,69],chrome);
@@ -225,5 +232,5 @@ export function buildCruiseShip() {
   const labelCanvas=document.createElement('canvas');labelCanvas.width=1024;labelCanvas.height=128;const ctx=labelCanvas.getContext('2d')!;ctx.fillStyle='#d8dfe0';ctx.font='600 68px Arial';ctx.textAlign='center';ctx.fillText('OCEAN  MERIDIAN',512,87);
   const label=new T.CanvasTexture(labelCanvas);label.colorSpace=T.SRGBColorSpace;
   for(const side of [-1,1])root.add(new T.Mesh(hullNameGeometry(side),new T.MeshStandardMaterial({map:label,transparent:true,depthWrite:false,roughness:0.5})));
-  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality};
+  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,hoistSegments:hoists};
 }
