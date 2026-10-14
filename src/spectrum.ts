@@ -1,22 +1,36 @@
 /** Tessendorf spectral sea. CPU IFFT output is shared by rendering and contacts.
  * Unshifted frequency indexing; inverse transforms include 1/N² normalization.
  * See docs/OCEAN_RESEARCH.md and OceanLab's MIT spectrum compute reference. */
+type FFTPlan={swaps:Uint32Array;stages:{length:number;real:Float64Array;imaginary:Float64Array}[]};
+const fftPlans=new Map<number,FFTPlan>();
+function fftPlan(size:number) {
+  let plan=fftPlans.get(size);if(plan)return plan;
+  const swaps:number[]=[],stages:FFTPlan['stages']=[];
+  for(let i=1,j=0;i<size;i++) {
+    let bit=size>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;
+    if(i<j)swaps.push(i,j);
+  }
+  for(let length=2;length<=size;length*=2) {
+    const real=new Float64Array(length/2),imaginary=new Float64Array(length/2);
+    for(let j=0;j<length/2;j++){const angle=2*Math.PI*j/length;real[j]=Math.cos(angle);imaginary[j]=Math.sin(angle);}
+    stages.push({length,real,imaginary});
+  }
+  plan={swaps:Uint32Array.from(swaps),stages};fftPlans.set(size,plan);return plan;
+}
 export function inverseFFT(real: Float64Array, imaginary: Float64Array, size: number) {
   if (size < 2 || (size & (size - 1)) || real.length !== size * size || imaginary.length !== real.length) throw new Error('FFT requires a square power-of-two field');
+  const plan=fftPlan(size);
   const transform = (offset: number, stride: number) => {
-    for (let i=1,j=0;i<size;i++) {
-      let bit=size>>1; for(;j&bit;bit>>=1) j^=bit; j^=bit;
-      if(i<j) { const a=offset+i*stride,b=offset+j*stride; [real[a],real[b]]=[real[b],real[a]];[imaginary[a],imaginary[b]]=[imaginary[b],imaginary[a]]; }
+    for(let i=0;i<plan.swaps.length;i+=2) {
+      const a=offset+plan.swaps[i]*stride,b=offset+plan.swaps[i+1]*stride,ar=real[a],ai=imaginary[a];
+      real[a]=real[b];imaginary[a]=imaginary[b];real[b]=ar;imaginary[b]=ai;
     }
-    for(let length=2;length<=size;length*=2) {
-      const angle=2*Math.PI/length,wr=Math.cos(angle),wi=Math.sin(angle);
+    for(const {length,real:wr,imaginary:wi}of plan.stages) {
       for(let start=0;start<size;start+=length) {
-        let ur=1,ui=0;
         for(let j=0;j<length/2;j++) {
           const a=offset+(start+j)*stride,b=a+length/2*stride;
-          const br=real[b]*ur-imaginary[b]*ui,bi=real[b]*ui+imaginary[b]*ur;
+          const br=real[b]*wr[j]-imaginary[b]*wi[j],bi=real[b]*wi[j]+imaginary[b]*wr[j];
           real[b]=real[a]-br;imaginary[b]=imaginary[a]-bi;real[a]+=br;imaginary[a]+=bi;
-          const next=ur*wr-ui*wi;ui=ur*wi+ui*wr;ur=next;
         }
       }
     }
@@ -46,7 +60,7 @@ export class WaveCascade {
   constructor(readonly size: number, readonly length: number, seed: number, rms: number, minWave: number, maxWave: number, readonly chop=1.6) {
     const count=size*size;this.displacement=new Float32Array(count*4);this.tangentX=new Float32Array(count*4);this.tangentZ=new Float32Array(count*4);
     this.h0=new Float64Array(count*2);this.omega=new Float64Array(count);this.directionX=new Float64Array(count);this.directionZ=new Float64Array(count);
-    this.fields=Array.from({length:3},()=>({real:new Float64Array(count),imaginary:new Float64Array(count)}));
+    this.fields=Array.from({length:2},()=>({real:new Float64Array(count),imaginary:new Float64Array(count)}));
     const random=()=> {seed=(Math.imul(seed,1664525)+1013904223)>>>0;return (seed+1)/4294967297;};
     const gaussian=()=>Math.sqrt(-2*Math.log(random()))*Math.cos(2*Math.PI*random());
     const windX=Math.cos(0.7),windZ=Math.sin(0.7),windLength=11*11/9.81;
@@ -73,14 +87,12 @@ export class WaveCascade {
       const i=z*n+x,opposite=((n-z)%n)*n+(n-x)%n,c=Math.cos(this.omega[i]*time),s=Math.sin(this.omega[i]*time);
       const ar=this.h0[i*2],ai=this.h0[i*2+1],br=this.h0[opposite*2],bi=this.h0[opposite*2+1];
       const hr=(ar+br)*c-(ai+bi)*s,hi=(ar-br)*s+(ai-bi)*c;
-      this.fields[0].real[i]=hr;this.fields[0].imaginary[i]=hi;
-      for(let axis=1;axis<=2;axis++) {
-        const direction=axis===1?this.directionX[i]:this.directionZ[i];
-        this.fields[axis].real[i]=-hi*direction;this.fields[axis].imaginary[i]=hr*direction;
-      }
+      // H + i*Dx packs two real spatial fields into one complex transform.
+      const packed=1-this.directionX[i];this.fields[0].real[i]=hr*packed;this.fields[0].imaginary[i]=hi*packed;
+      const direction=this.directionZ[i];this.fields[1].real[i]=-hi*direction;this.fields[1].imaginary[i]=hr*direction;
     }
     this.fields.forEach(f=>inverseFFT(f.real,f.imaginary,n));
-    const h=this.fields[0].real,dx=this.fields[1].real,dz=this.fields[2].real;
+    const h=this.fields[0].real,dx=this.fields[0].imaginary,dz=this.fields[1].real;
     const derivative= n/(2*this.length);let slopeEnergy=0,heightEnergy=0;
     for(let z=0;z<n;z++) for(let x=0;x<n;x++) {
       const i=z*n+x,l=z*n+(x+n-1)%n,r=z*n+(x+1)%n,b=((z+n-1)%n)*n+x,t=((z+1)%n)*n+x;
@@ -96,7 +108,7 @@ export class WaveCascade {
     }
     this.slopeVariance=slopeEnergy/count;
     this.heightVariance=heightEnergy/count;
-    // Imaginary residues are only round-off: Hermitian symmetry is preserved.
+    // Height and Dx occupy the real/imaginary outputs; Dz remains Hermitian.
     if(count!==this.fields[0].real.length) throw new Error('Invalid ocean field');
   }
   updateFoam(time:number,heightScale:number,horizontalScale:number) {
