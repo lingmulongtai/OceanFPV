@@ -71,3 +71,70 @@ test('hatches, hoist seats and protection-rail feet meet the actual gelcoat roof
   }
   material.dispose();
 });
+
+test('all sixteen tender windows have real wall openings and retain sealed contacts',()=> {
+  const model=buildTenderModel(),material=new T.MeshBasicMaterial({side:T.DoubleSide}),shell=model.parts.find(p=>p.name==='apertured canopy')!,mesh=new T.Mesh(shell.geometry,material);mesh.updateMatrixWorld();
+  assert.equal(model.parts.some(p=>p.geometry===model.canopy),false);
+  for(const pane of model.parts.filter(p=>p.finish==='glass')) {
+    const p=pane.geometry.attributes.position,normal=new T.Vector3().fromBufferAttribute(pane.geometry.attributes.normal,0),centre=new T.Vector3();
+    for(let i=0;i<p.count;i++)centre.add(new T.Vector3().fromBufferAttribute(p,i));centre.divideScalar(p.count);
+    const ray=new T.Raycaster(centre.clone().addScaledVector(normal,0.1),normal.clone().negate(),0,0.3);
+    assert.equal(ray.intersectObject(mesh).length,0);assert.equal(model.contains(centre),true);
+  }
+  for(const side of [-1,1]) {
+    const ray=new T.Raycaster(new T.Vector3(side*2,1.36,-2.29),new T.Vector3(-side,0,0),0,1);
+    const hits=ray.intersectObject(mesh);assert.ok(hits.length>=2);assert.ok(hits[1].distance-hits[0].distance>0.045);
+  }
+  material.dispose();
+});
+
+test('tender canopy provides standing headroom and remains below every davit',()=> {
+  const model=buildTenderModel(),material=new T.MeshBasicMaterial({side:T.DoubleSide}),mesh=new T.Mesh(model.parts.find(p=>p.name==='apertured canopy')!.geometry,material);mesh.updateMatrixWorld();
+  const floor=new T.Mesh(model.parts.find(p=>p.name==='cabin floor')!.geometry,material);floor.updateMatrixWorld();
+  for(const z of [-3,-1,1,3]) {
+    const origin=new T.Vector3(0,1,z),ceiling=new T.Raycaster(origin,new T.Vector3(0,1,0)).intersectObject(mesh)[0],deck=new T.Raycaster(origin,new T.Vector3(0,-1,0)).intersectObject(floor)[0];
+    assert.ok(ceiling&&deck);assert.ok(ceiling.point.y-deck.point.y>2.0);
+  }
+  for(const mount of TENDER_MOUNTS) {
+    assert.ok(model.bounds.max.y+mount.y<14.9);
+    for(const hook of TENDER_HOOKS)assert.ok(14.9-(hook.y+mount.y)>0.15);
+  }
+  material.dispose();
+});
+
+test('tender seats rest on the rendered floor and stay inside the raked shell',()=> {
+  const model=buildTenderModel(),material=new T.MeshBasicMaterial({side:T.DoubleSide}),floorParts=model.parts.filter(p=>p.name==='cabin floor'||p.name==='helm floor'),floors=floorParts.map(p=>new T.Mesh(p.geometry,material)),canopy=new T.Mesh(model.canopy,material);
+  for(const mesh of [...floors,canopy])mesh.updateMatrixWorld();
+  for(const part of model.parts.filter(p=>p.name==='seat pedestal'||p.name==='helm pedestal')) {
+    const bounds=part.geometry.boundingBox!,centre=bounds.getCenter(new T.Vector3()),hit=new T.Raycaster(new T.Vector3(centre.x,2,centre.z),new T.Vector3(0,-1,0)).intersectObjects(floors)[0];
+    assert.ok(hit);assert.ok(Math.abs(bounds.min.y-hit.point.y)<0.001);
+  }
+  const seats=model.parts.filter(p=>p.finish==='upholstery');assert.equal(seats.length,26);
+  for(const part of seats) {
+    const p=part.geometry.attributes.position;
+    for(let i=0;i<p.count;i+=5) {
+      const point=new T.Vector3().fromBufferAttribute(p,i),hit=new T.Raycaster(point,new T.Vector3(1,0,0)).intersectObject(canopy)[0];
+      assert.ok(hit&&hit.face!.normal.x>0,'Upholstery protrudes through cabin');
+    }
+  }
+  material.dispose();
+});
+
+test('rendered tender seating is visible through the actual side apertures',()=> {
+  const model=buildTenderModel(),material=new T.MeshBasicMaterial({side:T.DoubleSide}),meshes=model.parts.filter(p=>p.finish!=='glass').map(p=>{const mesh=new T.Mesh(p.geometry,material);mesh.name=p.name;mesh.updateMatrixWorld();return mesh;});
+  for(const side of [-1,1]) {
+    const eye=new T.Vector3(side*2.4,2.2,0.44),target=new T.Vector3(side*1.39,1.4,0.44),hit=new T.Raycaster(eye,target.sub(eye).normalize()).intersectObjects(meshes)[0];
+    assert.ok(hit);assert.equal(hit.object.name,'passenger back');assert.equal(model.contains(hit.point),true);
+  }
+  material.dispose();
+});
+
+test('every tender floor vertex stays over the actual tapered hull deck',()=> {
+  const model=buildTenderModel(),material=new T.MeshBasicMaterial({side:T.DoubleSide}),hull=new T.Mesh(model.hull,material);hull.updateMatrixWorld();
+  const p=model.parts.find(p=>p.name==='cabin floor')!.geometry.attributes.position;
+  for(let i=0;i<p.count;i++) {
+    const point=new T.Vector3().fromBufferAttribute(p,i),hit=new T.Raycaster(point.clone().add(new T.Vector3(0,1,0)),new T.Vector3(0,-1,0)).intersectObject(hull)[0];
+    assert.ok(hit);assert.ok(Math.abs(point.y-hit.point.y-0.008)<0.00002);
+  }
+  material.dispose();
+});

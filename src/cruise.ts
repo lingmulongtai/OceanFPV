@@ -49,6 +49,8 @@ export function buildCruiseShip() {
   const linen=new T.MeshPhysicalMaterial({color:0xe4e0d5,roughness:0.94,sheen:0.8,sheenColor:0xeee9de,sheenRoughness:0.8});
   const quilts=[0x557d83,0x8b8579,0x8e6551].map(color=>new T.MeshPhysicalMaterial({color,roughness:0.95,sheen:0.7,sheenColor:color,sheenRoughness:0.85}));
   const curtain=new T.MeshPhysicalMaterial({color:0xb7ad96,roughness:0.94,sheen:0.7,sheenColor:0xd4c8af,sheenRoughness:0.9,side:T.DoubleSide});
+  const tenderUpholstery=new T.MeshPhysicalMaterial({color:0xc4b89d,roughness:0.92,sheen:0.35,sheenColor:0xe6dcc6,sheenRoughness:0.85});
+  tenderUpholstery.name='Tender upholstery';
   const boxes:VesselBox[]=[],buckets=new Map<T.Material,T.BufferGeometry[]>();
   const furnitureMaterials=new Set<T.Material>([linen,...quilts]),coarseFurniture=new Map<T.Material,T.BufferGeometry[]>();
   const blockers:T.BufferGeometry[]=[];let capture=false,aoFloor=0,aoCabin=0,aoSide=1;
@@ -182,7 +184,7 @@ export function buildCruiseShip() {
     }
   }
   for(let tier=0;tier<3;tier++) {box([30-tier*3,0.2,9],[0,12+tier*5.7,106-tier*7],teak);for(const side of [-1,1])rod([side*(14-tier*1.5),13+tier*5.7,102-tier*7],[side*(14-tier*1.5),13+tier*5.7,110-tier*7]);}
-  const tender=buildTenderModel(),tenderMaterials={orange,white,glass,rubber:black,metal:chrome},hoists:{line:T.Line3;radius:number}[]=[],nearTender=new T.Vector3();
+  const tender=buildTenderModel(),tenderMaterials={orange,white,glass:cabinGlass,rubber:black,metal:chrome,upholstery:tenderUpholstery},hoists:{line:T.Line3;radius:number}[]=[],nearTender=new T.Vector3();
   const hoist=(a:T.Vector3,b:T.Vector3,radius:number,material:T.MeshStandardMaterial)=>{rod(a.toArray(),b.toArray(),radius,material);hoists.push({line:new T.Line3(a,b),radius});};
   for(const mount of TENDER_MOUNTS) {
     tender.parts.forEach(({geometry,finish})=>add(geometry.clone(),mount.toArray(),tenderMaterials[finish]));
