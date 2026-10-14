@@ -24,6 +24,24 @@ test('retained energy matches independent integration of bilinear and trilinear 
   data.fill(2);mips.update();for(const lod of [0,0.73,1.2,2.7,3])assert.ok(Math.abs(retainedWaveEnergy(mips,lod)-4)<1e-12);
 });
 
+test('mip covariance matches exact independent quadrature at shifted periodic centres',()=> {
+  for(const n of [2,4,8,16]) {
+    const data=new Float32Array(n*n*4);for(let z=0;z<n;z++)for(let x=0;x<n;x++)data[(z*n+x)*4+1]=Math.sin(x*1.73+z*0.31)+Math.cos(z*2.19-x*0.47);
+    const mips=new WaveMipmaps(data,n),boundaries=[0.5,1,2,2.5],gauss=[-1/Math.sqrt(3),1/Math.sqrt(3)];
+    for(let level=0;level<mips.levels.length-1;level++) {
+      const fine=mips.levels[level].width,coarse=fine/2;let integrated=0;
+      for(let z=0;z<coarse;z++)for(let x=0;x<coarse;x++)for(let iz=0;iz<3;iz++)for(let ix=0;ix<3;ix++) {
+        const hx=(boundaries[ix+1]-boundaries[ix])/2,hz=(boundaries[iz+1]-boundaries[iz])/2,cx=(boundaries[ix+1]+boundaries[ix])/2,cz=(boundaries[iz+1]+boundaries[iz])/2;
+        for(const gx of gauss)for(const gz of gauss) {
+          const u=(2*x+cx+gx*hx+0.5)/fine,v=(2*z+cz+gz*hz+0.5)/fine;
+          integrated+=sampleWaveMip(mips,u,v,level,1)*sampleWaveMip(mips,u,v,level+1,1)*hx*hz;
+        }
+      }
+      assert.ok(Math.abs(mips.crossEnergy[level]-integrated/(fine*fine))<1e-12,`covariance at size${n} level${level}`);
+    }
+  }
+});
+
 test('pixel averaging removes a subpixel wave while keeping a long wave in the same field',()=> {
   const n=128,data=new Float32Array(n*n*4);
   for(let z=0;z<n;z++)for(let x=0;x<n;x++){data[(z*n+x)*4+1]=Math.sin(x*Math.PI/32);data[(z*n+x)*4+2]=x%2?1:-1;}
