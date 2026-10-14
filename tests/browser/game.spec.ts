@@ -340,13 +340,17 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
   await expect(page.locator('#device-status')).toContainText('THROTTLE 0%');
   await page.locator('[data-close="settings-dialog"]').last().click();await page.locator('#start').click();await expect(page.locator('#intro')).toBeHidden();
 });
-test('settings persist, help is keyboard accessible and mobile panels fit', async ({page})=> {
+test('lighting and sea settings persist across a full reload', async ({page})=> {
   test.setTimeout(300000);
   await ready(page);await page.locator('#open-settings').click();await page.locator('#light').selectOption('day');await page.locator('#sea').selectOption('calm');
   await page.keyboard.press('Escape');await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
   expect(persisted).toEqual({light:'day',sea:'calm'});
-  await page.setViewportSize({width:390,height:844});await page.locator('#open-help').click();await expect(page.locator('#help-dialog')).toBeVisible();
+});
+
+test('mobile help fits the viewport and closes with the keyboard', async ({page})=> {
+  await page.setViewportSize({width:390,height:844});await ready(page);
+  await page.locator('#open-help').click();await expect(page.locator('#help-dialog')).toBeVisible();
   const box=await page.locator('#help-dialog').boundingBox();expect(box!.width).toBeLessThan(390);
   await page.screenshot({path:'test-results/oceanfpv-mobile-help.png'});
   await page.keyboard.press('Escape');await expect(page.locator('#help-dialog')).toBeHidden();
