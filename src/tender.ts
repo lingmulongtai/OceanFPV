@@ -1,9 +1,10 @@
 import * as T from 'three';
 import {MeshBVH} from 'three-mesh-bvh';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
+import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 import {closedHullGeometry,hullHalfWidth,hullDeckHeight} from './hull';
 
-type Finish='orange'|'white'|'glass'|'rubber'|'metal';
+type Finish='orange'|'white'|'glass'|'rubber'|'metal'|'upholstery';
 export const TENDER_MOUNTS=([-1,1] as const).flatMap(side=>Array.from({length:9},(_,i)=>new T.Vector3(side*18.4,11.65,-68+i*16)));
 export const TENDER_CABIN_TOP=2.7;
 export const TENDER_HOOKS=[new T.Vector3(0,TENDER_CABIN_TOP+0.38,-3.2),new T.Vector3(0,TENDER_CABIN_TOP+0.38,3.2)];
@@ -77,6 +78,31 @@ export function buildTenderModel() {
     const lo=half<0?0.09:0.53,hi=half<0?0.47:0.91;
     pane([at(lo,0.2),at(hi,0.2),at(hi,0.85),at(lo,0.85)],new T.Vector3(0,side*(s.z-s.roof)/cabinHeight,side),'end windscreen');
   }
+  const floorAt=(z:number)=> {
+    const station=(z+5.3)/10.6*128,index=Math.floor(station);
+    return T.MathUtils.lerp(hp.getY(index*6),hp.getY((index+1)*6),station-index)+0.008;
+  };
+  const floor=new T.PlaneGeometry(2.9,6.8,8,64).rotateX(-Math.PI/2),fp=floor.attributes.position;
+  for(let i=0;i<fp.count;i++)fp.setY(i,floorAt(fp.getZ(i)));floor.computeVertexNormals();part(floor,'rubber','cabin floor');
+  const helmY=floorAt(-3.45)+0.0175;
+  box([1.8,0.045,0.9],[-0.1,helmY-0.0225,-3.45],'rubber','helm floor');
+  const cushion=(size:number[],position:number[],name:string)=>part(new RoundedBoxGeometry(...size as [number,number,number],2,0.045).translate(...position as [number,number,number]),'upholstery',name);
+  for(const side of [-1,1])for(let i=0;i<6;i++) {
+    const z=-2.2+i*0.88,y=floorAt(z);
+    box([0.56,0.32,0.74],[side*1.15,y+0.16,z],'white','seat pedestal');
+    cushion([0.6,0.12,0.8],[side*1.15,y+0.37,z],'passenger cushion');cushion([0.12,0.65,0.8],[side*1.39,y+0.735,z],'passenger back');
+  }
+  box([0.4,0.38,0.42],[-0.3,helmY+0.19,-3],'white','helm pedestal');
+  cushion([0.55,0.12,0.58],[-0.3,helmY+0.43,-3],'helm cushion');cushion([0.55,0.7,0.12],[-0.3,helmY+0.79,-2.74],'helm back');
+  box([1.18,0.6,0.37],[-0.15,floorAt(-3.6)+0.3,-3.6],'white','helm console');
+  box([0.43,0.08,0.3],[-0.33,floorAt(-3.6)+0.625,-3.6],'rubber','instrument panel');
+  for(const x of [-0.44,-0.25]) {
+    const y=floorAt(-3.6)+0.679,dial=new T.CylinderGeometry(0.066,0.066,0.012,16).translate(x,y-0.008,-3.6);part(dial,'white','instrument dial');
+    rod(new T.Vector3(x-0.022,y,-3.62),new T.Vector3(x+0.021,y,-3.575),0.003,'rubber','instrument needle');
+  }
+  const hub=new T.Vector3(-0.3,helmY+0.79,-3.34),wheel=new T.TorusGeometry(0.15,0.018,8,24);wheel.rotateX(-0.3);wheel.translate(...hub.toArray());part(wheel,'metal','helm wheel');
+  for(let i=0;i<3;i++) {const angle=i*Math.PI*2/3,end=new T.Vector3(Math.cos(angle)*0.14,Math.sin(angle)*0.14,0).applyAxisAngle(new T.Vector3(1,0,0),-0.3).add(hub);rod(hub,end,0.01,'metal','wheel spoke');}
+  rod(new T.Vector3(-0.3,helmY+0.76,-3.57),new T.Vector3(-0.3,helmY+0.79,-3.34),0.022,'metal','steering column');
   const fender:T.Vector3[]=[];
   for(let i=0;i<=64;i++)fender.push(new T.Vector3(hullHalfWidth(i/64,3.6,true)+0.025,hullDeckHeight(i/64,10.6,0.6)+0.025,(i/64-0.5)*10.6));
   for(let i=64;i>=0;i--)fender.push(new T.Vector3(-hullHalfWidth(i/64,3.6,true)-0.025,hullDeckHeight(i/64,10.6,0.6)+0.025,(i/64-0.5)*10.6));
