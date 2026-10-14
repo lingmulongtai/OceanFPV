@@ -4,22 +4,25 @@ async function ready(page: Page) {
   await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
   await page.goto('/?test=1');
   await expect(page.locator('#start')).toBeEnabled({timeout:90000});
-  await page.evaluate(() => document.querySelector<HTMLSelectElement>('#quality')!.value='balanced');
-  await page.locator('#quality').dispatchEvent('input');
+  await page.evaluate(() => {
+    const quality=document.querySelector<HTMLSelectElement>('#quality')!;
+    if(quality.value!=='balanced') {quality.value='balanced';quality.dispatchEvent(new Event('input',{bubbles:true}));}
+  });
 }
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
-  const gpu=await page.evaluate(()=> {const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');return ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable';});
+  const {gpu,render,forest}=await page.evaluate(()=> {
+    const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
+    return {gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:app.world.forest?.sourceTriangles??0};
+  });
   console.log(`Renderer: ${gpu}`);
   if(process.env.OCEANFPV_NATIVE_GPU==='1') {
     expect(gpu).not.toMatch(/SwiftShader|Microsoft Basic|unavailable/i);expect(gpu).toContain('Direct3D11');
   }
   await expect(page.locator('#unsupported')).toBeHidden();
-  const render=await page.evaluate(()=> (window as any).__OCEANFPV__.getState());
   expect(render.triangles).toBeGreaterThan(30000);
-  const forest=await page.evaluate(()=> (window as any).__OCEANFPV__.world.forest?.sourceTriangles??0);
   expect(forest).toBeGreaterThan(1000000);
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
@@ -75,10 +78,14 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   test.setTimeout(300000);
   await ready(page);await page.locator('#start').click();
   await page.keyboard.down('Space');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(8);await page.keyboard.up('Space');
-  const altitude=await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y);
-  expect(altitude).toBeGreaterThan(6);
-  await page.keyboard.down('KeyW');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.velocity.z)).toBeLessThan(-0.8);await page.keyboard.up('KeyW');
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.velocity.z)).toBeLessThan(-0.5);
+  const beforePitch=await page.evaluate(()=> {
+    const flight=(window as any).__OCEANFPV__.flight,forward=flight.position.clone().set(0,0,-1).applyQuaternion(flight.orientation).setY(0).normalize();
+    return {altitude:flight.position.y,forward:forward.toArray(),speed:flight.velocity.dot(forward)};
+  });
+  expect(beforePitch.altitude).toBeGreaterThan(6);
+  const forwardSpeed=()=>page.evaluate((forward:number[])=> {const v=(window as any).__OCEANFPV__.flight.velocity;return v.x*forward[0]+v.z*forward[2];},beforePitch.forward);
+  await page.keyboard.down('KeyW');await expect.poll(forwardSpeed).toBeGreaterThan(Math.max(0.8,beforePitch.speed+0.8));await page.keyboard.up('KeyW');
+  expect(await forwardSpeed()).toBeGreaterThan(0.5);
   await page.keyboard.press('Escape');await expect(page.locator('#pause-dialog')).toBeVisible();
   const paused=await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray());
   await page.waitForTimeout(300);expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray())).toEqual(paused);
@@ -177,9 +184,10 @@ test('race registers actual ordered gate crossing and saves a completed run', as
     return (window as any).__OCEANFPV__.getState().time;
   });
   expect(resetTime).toBe(0);
-  for(let i=0;i<18;i++) {
-    const crossed=await page.evaluate(async(index)=> {
-      const app=(window as any).__OCEANFPV__,g=app.world.gateMeshes[index%6];
+  const crossings=await page.evaluate(async()=> {
+    const app=(window as any).__OCEANFPV__,crossings:{progress:number;waited:number}[]=[];
+    for(let index=0;index<18;index++) {
+      const g=app.world.gateMeshes[index%6];
       // Use the mesh orientation to put flight one step before the real plane.
       const normal=app.flight.position.clone().set(0,0,1).applyQuaternion(g.quaternion);
       app.flight.position.copy(g.position).addScaledVector(normal,-0.08);
@@ -188,9 +196,14 @@ test('race registers actual ordered gate crossing and saves a completed run', as
       // Let real animation/physics frames cross the plane without a protocol poll per frame.
       do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
       while(progress()<index+1&&performance.now()-start<20000);
-      return {progress:progress(),waited:performance.now()-start};
-    },i);
-    expect(crossed.progress).toBe(i+1);expect(crossed.waited).toBeLessThanOrEqual(20000);
+      const crossed={progress:progress(),waited:performance.now()-start};crossings.push(crossed);
+      if(crossed.progress!==index+1||crossed.waited>20000)break;
+    }
+    return crossings;
+  });
+  expect(crossings).toHaveLength(18);
+  for(const [index,crossed]of crossings.entries()) {
+    expect(crossed.progress).toBe(index+1);expect(crossed.waited).toBeLessThanOrEqual(20000);
   }
   await expect(page.locator('#pause-title')).toHaveText('コース完走！');
   await expect(page.locator('#results')).toContainText('TOTAL');
@@ -202,9 +215,19 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
     Object.defineProperty(navigator,'getGamepads',{value:()=>[(window as any).__pad]});
   });
   await ready(page);await page.locator('#open-settings').click();await page.locator('[data-tab="controller"]').click();
-  await page.locator('#input-source').selectOption('xbox');await page.locator('[data-close="settings-dialog"]').last().click();await page.locator('#start').click();
-  await page.evaluate(()=> {(window as any).__pad.axes=[0,-1,0,-0.5];});await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(7);
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(6);
+  await page.locator('#input-source').selectOption('xbox');await page.locator('[data-close="settings-dialog"]').last().click();
+  const climbed=await page.evaluate(async()=> {
+    const app=(window as any).__OCEANFPV__;
+    document.querySelector<HTMLButtonElement>('#start')!.click();
+    const initial=app.flight.position.y,start=performance.now();
+    (window as any).__pad.axes=[0,-1,0,-0.5];
+    do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+    while((app.flight.position.y<=7||app.flight.position.y<=initial+1)&&performance.now()-start<20000);
+    return {initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks()};
+  });
+  expect(climbed.altitude).toBeGreaterThan(7);expect(climbed.altitude-climbed.initial).toBeGreaterThan(1);
+  expect(climbed.armed).toBe(true);expect(climbed.source).toBe('xbox');
+  expect(climbed.sticks.throttle).toBe(1);expect(climbed.sticks.pitch).toBeLessThan(0);expect(climbed.sticks.absoluteThrottle).toBe(false);
   await page.evaluate(()=> {(window as any).__pad=null;});await expect(page.locator('#pause-title')).toHaveText('コントローラー接続が切れました');
   await page.locator('#resume').click();await expect(page.locator('#pause-dialog')).toBeVisible();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().paused)).toBe(true);
