@@ -6,4 +6,4 @@ The delivered glTF contains one identity-transform node named `coastal_cliff_02_
 
 The source is an open cliff scan. Exact-position welding for inspection produces 472,771 vertices, 2,256 boundary edges in one loop, and no non-manifold/shared-edge winding errors. It must not use a closed-solid exit-ray classification without a supported closure. The unchanged source geometry and captured UVs/normals should be retained in render/contact integration.
 
-This ingestion commit adds the source package only. Runtime activation, terrain joins, contact behavior and water-depth integration are separate work. It does not make the cliff part of the current gameplay scene.
+Runtime placement is (-390,-3,-450) metres, with a 90 degree yaw. The original surface is retained; a rigidly transformed copy supplies BVH contacts. The open scan uses swept surface distance and finite double-sided ray intersection, rather than a solid-interior classification. The adjacent island ground and its placements are changed only after successful model loading. See [integration and measured limits](../../../docs/COASTAL_CLIFF.md).
