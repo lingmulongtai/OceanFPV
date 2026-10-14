@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import * as T from 'three';
-import { CoastalRockShape,coastalRockSites,normaliseRockGeometry,buildRockBatches } from '../src/rocks';
+import { CoastalRockShape,coastalRockSites,normaliseRockGeometry,buildRockBatches,rockPatchPlacements } from '../src/rocks';
 import { COASTS } from '../src/bathymetry';
 import { terrainSlope,terrainSurfaceHeight } from '../src/terrain';
 
@@ -51,6 +51,19 @@ test('all coastal placements preserve scale and settle into rendered terrain rat
     assert.ok(Math.abs(Math.min(...gaps)+embed)<1e-5);assert.ok(Number.isFinite(placement.bounds.min.y));assert.ok(placement.bounds.max.y-ground(site.x,site.z)>0.3);count++;
   }
   assert.equal(count,270);
+});
+
+test('custom rock patches reject missing support feet and keep excluded world space clear',()=> {
+  const shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),coast=COASTS[0],sites=[{x:0,z:0,scale:2,yaw:0},{x:-10,z:0,scale:2,yaw:0}];
+  const supported=rockPatchPlacements(shape,{coast,sites,heightAt:(x)=>x>2?null:2});
+  assert.equal(supported.length,1);assert.equal(supported[0].matrix.elements[12],-10);
+  const excluded=new T.Box3(new T.Vector3(-10.25,1,-0.25),new T.Vector3(-9.75,4,0.25));
+  assert.equal(rockPatchPlacements(shape,{coast,sites,heightAt:(x)=>x>2?null:2,avoid:[excluded]}).length,0);
+  for(const c of COASTS) {
+    const placements=rockPatchPlacements(shape,{coast:c,sites:coastalRockSites(c)});
+    assert.equal(placements.length,90);
+    for(const placement of placements)assert.ok(placement.matrix.elements.every(Number.isFinite));
+  }
 });
 
 test('spatial batches retain every captured rock and conservative bounds for each render camera',()=> {

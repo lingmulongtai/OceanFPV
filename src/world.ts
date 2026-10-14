@@ -117,7 +117,7 @@ export class World {
     }else missing.push('coastal tree');
     if(rocks) {
       this.rocks=rocks;this.scene.add(rocks.group);
-      for(const patch of this.rockPatches){this.scene.remove(patch.fallback);patch.fallback.geometry.dispose();}
+      for(const patch of this.rockPatches)if(patch.fallback){this.scene.remove(patch.fallback);patch.fallback.geometry.dispose();}
       this.fallbackRockObstacles=[];
     }else missing.push('coastal rock');
     return missing;

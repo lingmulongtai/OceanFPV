@@ -6,7 +6,7 @@ import { type Coast } from './bathymetry';
 import { wetCoastalSurface } from './surfaces';
 
 export type RockSite={x:number;z:number;scale:number;yaw:number};
-export type RockPatch={sites:RockSite[];coast:Coast;fallback:T.InstancedMesh};
+export type RockPatch={sites:RockSite[];coast:Coast;fallback?:T.InstancedMesh;heightAt?:(x:number,z:number)=>number|null;avoid?:T.Box3[]};
 type RockPlacement={matrix:T.Matrix4;inverse:T.Matrix4;bounds:T.Box3;scale:number};
 
 /** Low coastal shelves support boulders without turning them upright on cliffs. */
@@ -42,12 +42,19 @@ export class CoastalRockShape {
     }
     if(!this.feet.length)throw new Error('Rock has no support footprint');
   }
-  place(site:RockSite,heightAt:(x:number,z:number)=>number):RockPlacement {
+  place(site:RockSite,heightAt:(x:number,z:number)=>number):RockPlacement;
+  place(site:RockSite,heightAt:(x:number,z:number)=>number|null):RockPlacement|null;
+  place(site:RockSite,heightAt:(x:number,z:number)=>number|null):RockPlacement|null {
     const sample=(dx:number,dz:number)=>heightAt(site.x+dx,site.z+dz);
-    const normal=new T.Vector3(-(sample(0.2,0)-sample(-0.2,0))/0.4,1,-(sample(0,0.2)-sample(0,-0.2))/0.4).normalize();
+    const left=sample(-0.2,0),right=sample(0.2,0),back=sample(0,-0.2),front=sample(0,0.2);
+    if(left===null||right===null||back===null||front===null)return null;
+    const normal=new T.Vector3(-(right-left)/0.4,1,-(front-back)/0.4).normalize();
     const orientation=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),normal).multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(0,1,0),site.yaw));
     let support=-Infinity;
-    for(const foot of this.feet) {this.point.copy(foot).multiplyScalar(site.scale).applyQuaternion(orientation);support=Math.max(support,heightAt(site.x+this.point.x,site.z+this.point.z)-this.point.y);}
+    for(const foot of this.feet) {
+      this.point.copy(foot).multiplyScalar(site.scale).applyQuaternion(orientation);const height=heightAt(site.x+this.point.x,site.z+this.point.z);
+      if(height===null)return null;support=Math.max(support,height-this.point.y);
+    }
     // Settle on the highest support, then embed part of the stone into the ground.
     // Using the lowest support instead buries the whole boulder on uneven shores.
     const embed=Math.max(0.12,this.geometry.boundingBox!.getSize(new T.Vector3()).y*site.scale*0.2);
@@ -64,6 +71,12 @@ export class CoastalRockShape {
     // The geometric face normal is outward; interpolated hit.normal faces the ray.
     return !!hit?.face&&hit.face.normal.dot(this.ray.direction)>0;
   }
+}
+
+/** Custom mesh ground can reject unsupported feet; exclusions stay in world metres. */
+export function rockPatchPlacements(shape:CoastalRockShape,patch:RockPatch) {
+  const {coast}=patch,heightAt=patch.heightAt??((x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile));
+  return patch.sites.map(site=>shape.place(site,heightAt)).filter((p):p is RockPlacement=>p!==null&&!patch.avoid?.some(bounds=>p.bounds.intersectsBox(bounds)));
 }
 
 function disposeModel(source:T.Group,disposeTextures=true) {
@@ -110,8 +123,7 @@ export class CoastalRocks {
     for(const property of Object.values(material))if(property instanceof T.Texture)property.anisotropy=Math.min(16,renderer.capabilities.getMaxAnisotropy());
     wetCoastalSurface(material,wash);
     for(const patch of patches) {
-      const {coast}=patch,heightAt=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile);
-      const placements=patch.sites.map(site=>this.shape.place(site,heightAt));this.placements.push(...placements);
+      const placements=rockPatchPlacements(this.shape,patch);this.placements.push(...placements);
       this.group.add(...buildRockBatches(geometry,material,placements));
     }
   }
