@@ -304,12 +304,13 @@ export class World {
     }
     crowns.castShadow=trunks.castShadow=true;this.scene.add(crowns,trunks);
     this.treeSites.push({matrices,fallback:[crowns,trunks]});
-    const rocks=new T.InstancedMesh(new T.IcosahedronGeometry(1,2),this.rockMaterial,90);
-    for(let i=0;i<90;i++) {const angle=i*2.399,r=size*(0.68+(i%9)*0.027),tx=Math.cos(angle)*r,tz=Math.sin(angle)*r,y=this.terrain(tx,tz,size,height,profile),s=2+(i%7)*0.6;
+    const rockSites=coastalRockSites(coast),fallbackSites=profile==='headland'?rockSites:null;
+    const rocks=new T.InstancedMesh(new T.IcosahedronGeometry(1,2),this.rockMaterial,fallbackSites?.length??90);
+    for(let i=0;i<rocks.count;i++) {const site=fallbackSites?.[i],angle=site?.yaw??i*2.399,r=size*(0.68+(i%9)*0.027),tx=site?site.x-x:Math.cos(angle)*r,tz=site?site.z-z:Math.sin(angle)*r,y=this.terrain(tx,tz,size,height,profile),s=site?site.scale*2:2+(i%7)*0.6;
       rocks.setMatrixAt(i,new T.Matrix4().compose(new T.Vector3(x+tx,y+s*0.25,z+tz),new T.Quaternion().setFromEuler(new T.Euler(angle,angle*0.7,angle*0.3)),new T.Vector3(s*1.6,s*0.8,s)));
       this.fallbackRockObstacles.push({x:x+tx,z:z+tz,y:y-s*0.1,radius:s*1.3,height:s*1.1});}
     rocks.castShadow=rocks.receiveShadow=true;this.scene.add(rocks);
-    this.rockPatches.push({sites:coastalRockSites(coast),coast:{...coast},fallback:rocks});
+    this.rockPatches.push({sites:rockSites,coast:{...coast},fallback:rocks});
   }
   private terrain(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
     return terrainSurfaceHeight(x,z,size,height,profile);

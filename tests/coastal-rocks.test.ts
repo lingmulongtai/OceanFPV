@@ -43,8 +43,8 @@ test('all coastal placements preserve scale and settle into rendered terrain rat
   const shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),point=new T.Vector3();let count=0;
   for(const coast of COASTS)for(const site of coastalRockSites(coast)) {
     const {scale}=site;
-    const ground=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height),placement=shape.place(site,ground);
-    assert.ok(ground(site.x,site.z)>=-2&&ground(site.x,site.z)<=14);assert.ok(terrainSlope(site.x-coast.x,site.z-coast.z,coast.size,coast.height)<=Math.PI/4.5);
+    const ground=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile),placement=shape.place(site,ground);
+    assert.ok(ground(site.x,site.z)>=-2&&ground(site.x,site.z)<=14);assert.ok(terrainSlope(site.x-coast.x,site.z-coast.z,coast.size,coast.height,coast.profile)<=Math.PI/4.5);
     const scales=new T.Vector3().setFromMatrixScale(placement.matrix);assert.ok(scales.distanceTo(new T.Vector3().setScalar(scale))<1e-6);
     const gaps=shape.feet.map(foot=>{point.copy(foot).applyMatrix4(placement.matrix);return point.y-ground(point.x,point.z);});
     const embed=shape.geometry.boundingBox!.getSize(new T.Vector3()).y*scale*0.2;
@@ -55,7 +55,7 @@ test('all coastal placements preserve scale and settle into rendered terrain rat
 
 test('spatial batches retain every captured rock and conservative bounds for each render camera',()=> {
   const geometry=normaliseRockGeometry(capturedGeometry()),shape=new CoastalRockShape(geometry),material=new T.MeshStandardMaterial(),matrix=new T.Matrix4();
-  const placements=COASTS.flatMap(coast=>coastalRockSites(coast).map(site=>shape.place(site,(x,z)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height))));
+  const placements=COASTS.flatMap(coast=>coastalRockSites(coast).map(site=>shape.place(site,(x,z)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile))));
   const batches=buildRockBatches(geometry,material,placements),original=new Set(placements.map(p=>p.matrix.elements.map(Math.fround).join(','))),seen=new Set<string>();
   geometry.computeBoundingSphere();const sphere=new T.Sphere(),camera=new T.PerspectiveCamera(65,1.5,0.1,5000),frustum=new T.Frustum();
   assert.equal(batches.reduce((sum,mesh)=>sum+mesh.count,0),270);assert.ok(batches.length>3&&batches.length<270);

@@ -1,7 +1,7 @@
 import { terrainHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain';
 
 export type Coast={x:number;z:number;size:number;height:number;profile?:TerrainProfile};
-export const COASTS=[{x:-580,z:-420,size:260,height:130,profile:'radial'},{x:610,z:-800,size:320,height:190,profile:'radial'},{x:-850,z:420,size:190,height:85,profile:'radial'}] as const;
+export const COASTS=[{x:-580,z:-420,size:260,height:130,profile:'headland'},{x:610,z:-800,size:320,height:190,profile:'radial'},{x:-850,z:420,size:190,height:85,profile:'radial'}] as const;
 export const BATHY_SIZE=TERRAIN_SEGMENTS+1;
 /** Each RGB channel contains one island's exact rendered terrain vertices. */
 export function bathymetryData() {

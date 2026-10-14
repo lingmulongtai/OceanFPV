@@ -76,10 +76,10 @@ test('painted roof charts retain geometry and a 2.5 metre photographed period',(
 
 test('coastal trees root on dry rendered triangles below 35 degrees',()=> {
   for(const coast of COASTS) {
-    const sites=coastalTreeSites(coast.x,coast.z,coast.size,coast.height);assert.ok(sites.length>60&&sites.length<=170);
-    assert.deepEqual(sites,coastalTreeSites(coast.x,coast.z,coast.size,coast.height));
+    const sites=coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile);assert.ok(sites.length>60&&sites.length<=170);
+    assert.deepEqual(sites,coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile));
     const geometry=new PlaneGeometry(coast.size*2.4,coast.size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geometry.rotateX(-Math.PI/2);
-    const p=geometry.attributes.position;for(let i=0;i<p.count;i++)p.setY(i,terrainHeight(p.getX(i),p.getZ(i),coast.size,coast.height));
+    const p=geometry.attributes.position;for(let i=0;i<p.count;i++)p.setY(i,terrainHeight(p.getX(i),p.getZ(i),coast.size,coast.height,coast.profile));
     const material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(geometry,material);mesh.updateMatrixWorld();
     for(let i=0;i<sites.length;i+=5) {
       const site=sites[i];assert.ok(site.y>10&&site.scale>=0.65&&site.scale<=1.35);
@@ -166,7 +166,7 @@ test('coastal water depths follow the same terrain triangles as visible shores',
     const gx=7.23+(i*31.7)%174,gz=4.71+(i*17.8)%181,ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz;
     const h=(x:number,z:number)=>data[(z*n+x)*4+channel],a=h(ix,iz),b=h(ix,iz+1),d=h(ix+1,iz),c=h(ix+1,iz+1);
     const sampled=u+v<=1?a+(b-a)*v+(d-a)*u:c+(b-c)*(1-u)+(d-c)*(1-v);
-    const expected=terrainSurfaceHeight((gx/(n-1)*2-1)*coast.size*1.2,(gz/(n-1)*2-1)*coast.size*1.2,coast.size,coast.height);
+    const expected=terrainSurfaceHeight((gx/(n-1)*2-1)*coast.size*1.2,(gz/(n-1)*2-1)*coast.size*1.2,coast.size,coast.height,coast.profile);
     assert.ok(Math.abs(sampled-expected)<0.00002);
   }
 });
@@ -185,19 +185,19 @@ test('rounded passenger decks leave corner airspace flyable and keep deck contac
 
 test('terrain contact height follows the rendered triangle grid continuously',()=> {
   const size=260,height=130,step=size*2.4/192;
-  for(let i=0;i<190;i+=17) {
+  for(const profile of ['radial','headland'] as const)for(let i=0;i<190;i+=17) {
     const x=-size*1.2+i*step,z=-size*1.2+(i+1)*step;
-    assert.ok(Math.abs(terrainSurfaceHeight(x,z,size,height)-terrainHeight(x,z,size,height))<1e-8);
-    const expected=(terrainHeight(x,z,size,height)+terrainHeight(x+step,z,size,height))/2;
-    assert.ok(Math.abs(terrainSurfaceHeight(x+step/2,z,size,height)-expected)<1e-8);
-    assert.ok(Math.abs(terrainSurfaceHeight(x-0.0001,z,size,height)-terrainSurfaceHeight(x+0.0001,z,size,height))<0.01);
+    assert.ok(Math.abs(terrainSurfaceHeight(x,z,size,height,profile)-terrainHeight(x,z,size,height,profile))<1e-8);
+    const expected=(terrainHeight(x,z,size,height,profile)+terrainHeight(x+step,z,size,height,profile))/2;
+    assert.ok(Math.abs(terrainSurfaceHeight(x+step/2,z,size,height,profile)-expected)<1e-8);
+    assert.ok(Math.abs(terrainSurfaceHeight(x-0.0001,z,size,height,profile)-terrainSurfaceHeight(x+0.0001,z,size,height,profile))<0.01);
   }
 });
 
 test('terrain sampling stays finite and continuous through the coastline',()=> {
-  for(let x=-400;x<400;x+=31)for(let z=-400;z<400;z+=43) {
-    const y=terrainHeight(x,z,260,130);assert.ok(Number.isFinite(y)&&y>=-9&&y<210);
-    assert.ok(Math.abs(terrainHeight(x+0.001,z,260,130)-y)<0.02);
+  for(const profile of ['radial','headland'] as const)for(let x=-400;x<400;x+=31)for(let z=-400;z<400;z+=43) {
+    const y=terrainHeight(x,z,260,130,profile);assert.ok(Number.isFinite(y)&&y>=-9&&y<210);
+    assert.ok(Math.abs(terrainHeight(x+0.001,z,260,130,profile)-y)<0.02);
   }
 });
 

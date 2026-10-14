@@ -4,11 +4,23 @@ function noise(x:number,z:number) {
   return (hash(ix,iz)*(1-fx)+hash(ix+1,iz)*fx)*(1-fz)+(hash(ix,iz+1)*(1-fx)+hash(ix+1,iz+1)*fx)*fz;
 }
 export const TERRAIN_SEGMENTS=192;
-export type TerrainProfile='radial';
-export function terrainHeight(x:number,z:number,size:number,height:number,_profile:TerrainProfile='radial') {
+export type TerrainProfile='radial'|'headland';
+export function terrainHeight(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
   const coast=1+(noise(x*0.013+3,z*0.013-7)-0.5)*0.35;
   const r=Math.hypot(x,z*1.06)/size*coast;
-  const mask=Math.pow(Math.max(0,1-r*r),1.65);
+  let mask=Math.pow(Math.max(0,1-r*r),1.65);
+  if(profile==='headland') {
+    const u=x/size,v=z/size;
+    const ridge=(ax:number,az:number,bx:number,bz:number,width:number,amplitude:number)=> {
+      const dx=bx-ax,dz=bz-az,t=Math.max(0,Math.min(1,((u-ax)*dx+(v-az)*dz)/(dx*dx+dz*dz)));
+      const distance=Math.hypot(u-ax-t*dx,v-az-t*dz)*coast/width;
+      return Math.max(amplitude*Math.pow(Math.max(0,1-distance*distance),1.2),0.105*(1-fade(0.85,1.2,distance)));
+    };
+    const north=ridge(-0.52,-0.48,-0.08,-0.03,0.44,1),south=ridge(-0.63,0.25,-0.2,0.51,0.36,0.72);
+    const cape=Math.pow(Math.max(0,1-((u-0.4)*coast/0.53)**2-((v+0.11)*coast/0.22)**2),1.2)*0.24;
+    const bay=1-fade(0.45,1.15,Math.hypot((u-0.38)/0.42,(v-0.4)/0.46));
+    mask=Math.max(north,south,cape)*(1-bay);
+  }
   let ridges=0,weight=0.56,frequency=0.009;
   for(let octave=0;octave<5;octave++){ridges+=(1-Math.abs(noise(x*frequency+12,z*frequency-5)*2-1))*weight;frequency*=2.13;weight*=0.48;}
   const cliffs= Math.pow(Math.max(0,noise(x*0.021-8,z*0.018+4)-0.25),1.3)*height*0.25;
@@ -38,8 +50,9 @@ export function terrainCover(x:number,z:number,size:number,height:number,profile
 }
 export function coastalTreeSites(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
   const sites:{x:number;z:number;y:number;scale:number;yaw:number}[]=[];
-  for(let i=0;i<1020&&sites.length<170;i++) {
-    const angle=i*2.399963,r=Math.sqrt((i+0.5)/1020)*size*0.91,tx=Math.cos(angle)*r,tz=Math.sin(angle)*r;
+  const candidates=profile==='headland'?2040:1020;
+  for(let i=0;i<candidates&&sites.length<170;i++) {
+    const angle=i*2.399963,r=Math.sqrt((i+0.5)/candidates)*size*0.91,tx=Math.cos(angle)*r,tz=Math.sin(angle)*r;
     const cover=terrainCover(tx,tz,size,height,profile),density=0.35+0.65*noise((x+tx)*0.018+7,(z+tz)*0.018-3);
     if(cover<0.3||hash(i+Math.floor(x),Math.floor(z))>cover*density)continue;
     sites.push({x:x+tx,z:z+tz,y:terrainSurfaceHeight(tx,tz,size,height,profile),scale:0.65+hash(i,Math.floor(x+z))*0.7,yaw:angle});
