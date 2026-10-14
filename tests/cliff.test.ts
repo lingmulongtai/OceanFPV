@@ -20,6 +20,11 @@ test('open cliff contact sweeps both directions and leaves distant air clear',()
   assert.equal(surface.contacts(p(1.15,.7,1),p(1.15,.7,-1)),true);
   assert.equal(surface.contacts(p(3,.5,-2),p(3,.5,-1)),false);
   assert.equal(surface.contacts(p(.5,.5,-2)),false);
+  const face=new T.BufferGeometry();face.setAttribute('position',new T.Float32BufferAttribute([0,0,0,10,0,0,0,10,0],3));face.setIndex([0,1,2]);
+  const wide=new CliffSurface(face);
+  assert.equal(wide.contacts(p(3,3,1),p(3,3,-1)),true);
+  assert.equal(wide.contacts(p(3,3,-1),p(3,3,1)),true);
+  assert.equal(wide.contacts(p(3,3,2),p(3,3,1)),false);
 });
 test('captured cliff boundary is one physical loop across photographed seams',()=> {
   const root=new URL('../public/models/coastal_cliff_02/',import.meta.url),gltf=JSON.parse(readFileSync(new URL('coastal_cliff_02_4k.gltf',root),'utf8')),binary=readFileSync(new URL('coastal_cliff_02.bin',root)),primitive=gltf.meshes[0].primitives[0],geometry=new T.BufferGeometry();

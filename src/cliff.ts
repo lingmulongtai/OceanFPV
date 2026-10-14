@@ -16,8 +16,9 @@ export class CliffSurface {
     if(!this.bounds.intersectsBox(this.segment))return false;
     const nearest=this.tree.closestPointToPoint(position,undefined,0,padding);
     if(nearest&&nearest.distance<=padding)return true;
-    // Distance from the swept centre line to each nearby triangle also catches
-    // grazing contact and steps whose endpoints both lie clear of the scan.
+    this.ray.origin.copy(previous);this.ray.direction.copy(position).sub(previous);const length=this.ray.direction.length();
+    if(length>0){this.ray.direction.divideScalar(length);if(this.tree.raycastFirst(this.ray,T.DoubleSide,0,length))return true;}
+    // Segment-to-edge and endpoint distances additionally catch grazing contact.
     const line=new T.Line3(previous,position);
     return this.tree.shapecast({intersectsBounds:box=>box.intersectsBox(this.segment),intersectsTriangle:triangle=>triangle.closestPointToSegment(line)<=padding});
   }
