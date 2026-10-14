@@ -99,6 +99,21 @@ test('lighthouse outcrops use real reef support and preserve tower and known fre
   }
 });
 
+test('unsupported island ledges are rejected from the shared render and contact placements',()=> {
+  const shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),point=new T.Vector3();let accepted=0;
+  for(const coast of COASTS) {
+    const ground=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile),sites=coastalRockSites(coast);
+    const placements=rockPatchPlacements(shape,{coast,sites,embedFraction:0.45,maxTilt:Math.PI/12,minSupportFraction:0.8});
+    assert.ok(placements.length>0&&placements.length<sites.length);
+    for(const placement of placements) {
+      const embedded=shape.feet.filter(foot=>{point.copy(foot).applyMatrix4(placement.matrix);return point.y<=ground(point.x,point.z);}).length;
+      assert.ok(embedded>=shape.feet.length*0.8);accepted++;
+    }
+    if(coast===COASTS[0])assert.ok(!placements.some(p=>Math.abs(p.matrix.elements[12]-sites[16].x)<0.000001&&Math.abs(p.matrix.elements[14]-sites[16].z)<0.000001));
+  }
+  assert.ok(accepted>0&&accepted<270);
+});
+
 test('spatial batches retain every captured rock and conservative bounds for each render camera',()=> {
   const geometry=normaliseRockGeometry(capturedGeometry()),shape=new CoastalRockShape(geometry),material=new T.MeshStandardMaterial(),matrix=new T.Matrix4();
   const placements=COASTS.flatMap(coast=>coastalRockSites(coast).map(site=>shape.place(site,(x,z)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile))));
