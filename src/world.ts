@@ -100,7 +100,7 @@ export class World {
     this.sunlight.shadow.camera.near = 1; this.sunlight.shadow.camera.far = 650;
     this.sunlight.shadow.bias = -0.0003; this.sunlight.shadow.normalBias = 0.04;
     this.setLight('golden');
-    this.ocean = new Ocean(this.sun); this.scene.add(this.ocean.mesh);
+    this.ocean = new Ocean(this.sun,this.lighthouseReef); this.scene.add(this.ocean.mesh);
     this.buildShip(); this.buildDrone(); this.buildGates();
     for(const coast of COASTS)this.buildIsland(coast);
     this.buildLighthouse(); this.buildYacht();

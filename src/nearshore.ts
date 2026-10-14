@@ -18,15 +18,15 @@ vec4 bottomAt(vec2 uv) {
 }
 vec3 coastalBottom(vec2 p) {
   vec3 result=vec3(-60.0,0,0);
-  for(int i=0;i<3;i++) {
-    vec2 uv=(p-islands[i].xy)/(islands[i].z*2.4)+0.5;
+  for(int i=0;i<4;i++) {
+    vec2 uv=(p-islands[i].xy)/(islands[i].zw*2.4)+0.5;
     if(any(lessThan(uv,vec2(0)))||any(greaterThan(uv,vec2(1))))continue;
     vec2 pixel=uv*${BATHY_SIZE-1}.0,base=min(floor(pixel),vec2(${BATHY_SIZE-2}.0)),f=pixel-base,a=(base+0.5)/${BATHY_SIZE}.0;
     float h=texture2D(bathymetry,a)[i],b=texture2D(bathymetry,a+vec2(0,1.0/${BATHY_SIZE}.0))[i],d=texture2D(bathymetry,a+vec2(1.0/${BATHY_SIZE}.0,0))[i];
     float height;vec2 gradient;
     if(f.x+f.y<=1.0){height=h+(b-h)*f.y+(d-h)*f.x;gradient=vec2(d-h,b-h);}
     else {float c=texture2D(bathymetry,a+vec2(1.0/${BATHY_SIZE}.0))[i];height=c+(b-c)*(1.0-f.x)+(d-c)*(1.0-f.y);gradient=vec2(c-b,c-d);}
-    if(height>result.x)result=vec3(height,gradient*${BATHY_SIZE-1}.0/(islands[i].z*2.4));
+    if(height>result.x)result=vec3(height,gradient*${BATHY_SIZE-1}.0/(islands[i].zw*2.4));
   }
   return result;
 }

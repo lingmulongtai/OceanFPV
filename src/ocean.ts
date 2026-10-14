@@ -2,7 +2,8 @@ import * as T from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { SEA_SCALE, type SeaState } from './sea';
 import { SpectralSea } from './spectrum';
-import { bathymetryData, sampleBathymetry, BATHY_SIZE, COASTS } from './bathymetry';
+import { bathymetryData, sampleBathymetry, BATHY_SIZE, BATHY_COASTS } from './bathymetry';
+import {LighthouseReef} from './lighthouse-reef';
 import { nearshoreCode, nearshoreEnvelope } from './nearshore';
 import { WAKE_SAMPLES, WAKE_STEP } from './navigation';
 import { WaveMipmaps } from './wave-mips';
@@ -32,11 +33,12 @@ vec4 fieldLevel(sampler2D field,vec2 uv,float level) {
   vec2 pixel=uv*width-0.5,base=floor(pixel),f=fract(pixel),a=(base+0.5)/width;
   return mix(mix(textureLod(field,a,level),textureLod(field,a+vec2(1.0/width,0),level),f.x),mix(textureLod(field,a+vec2(0,1.0/width),level),textureLod(field,a+vec2(1.0/width),level),f.x),f.y);
 }
-vec4 fieldSampleLod(sampler2D field,vec2 uv,float lod) {
-  lod=clamp(lod,0.0,7.0);if(!manualInterpolation)return textureLod(field,uv,lod);
+vec4 fieldSampleLod(sampler2D field,vec2 uv,float lod,bool precise) {
+  lod=clamp(lod,0.0,7.0);if(!manualInterpolation&&!precise)return textureLod(field,uv,lod);
   float low=floor(lod),high=min(low+1.0,7.0);vec4 a=fieldLevel(field,uv,low);if(lod==low||high==low)return a;
   return mix(a,fieldLevel(field,uv,high),lod-low);
 }
+vec4 fieldSampleLod(sampler2D field,vec2 uv,float lod) {return fieldSampleLod(field,uv,lod,false);}
 vec4 fieldSample(sampler2D field,vec2 uv) {return fieldSampleLod(field,uv,0.0);}
 vec3 waveLod(float footprint) {return clamp(log2(max(vec3(1.0),footprint*vec3(128.0/433.0,128.0/97.0,128.0/23.3))),vec3(0),vec3(7));}
 vec4 displacementAt(vec2 p) {
@@ -44,11 +46,11 @@ vec4 displacementAt(vec2 p) {
   return vec4((a.xyz+b.xyz+c.xyz)*vec3(chopScale,seaScale*nearshoreAt(p).x,chopScale),max(max(a.w,b.w),c.w));
 }
 vec3 normalAt(vec2 p,vec3 lod) {
+  vec3 coast=nearshoreAt(p);bool precise=coast.x!=1.0||dot(coast.yz,coast.yz)>0.0;
   vec3 strength=vec3(chopScale,seaScale,chopScale);
-  vec3 tx=vec3(1,0,0)+(fieldSampleLod(tangentX0,cascadeUV(p,433.0),lod.x).xyz+fieldSampleLod(tangentX1,cascadeUV(p,97.0),lod.y).xyz+fieldSampleLod(tangentX2,cascadeUV(p,23.3),lod.z).xyz)*strength;
-  vec3 tz=vec3(0,0,1)+(fieldSampleLod(tangentZ0,cascadeUV(p,433.0),lod.x).xyz+fieldSampleLod(tangentZ1,cascadeUV(p,97.0),lod.y).xyz+fieldSampleLod(tangentZ2,cascadeUV(p,23.3),lod.z).xyz)*strength;
-  vec3 coast=nearshoreAt(p);
-  float height=(fieldSampleLod(displacement0,cascadeUV(p,433.0),lod.x).y+fieldSampleLod(displacement1,cascadeUV(p,97.0),lod.y).y+fieldSampleLod(displacement2,cascadeUV(p,23.3),lod.z).y)*seaScale;
+  vec3 tx=vec3(1,0,0)+(fieldSampleLod(tangentX0,cascadeUV(p,433.0),lod.x,precise).xyz+fieldSampleLod(tangentX1,cascadeUV(p,97.0),lod.y,precise).xyz+fieldSampleLod(tangentX2,cascadeUV(p,23.3),lod.z,precise).xyz)*strength;
+  vec3 tz=vec3(0,0,1)+(fieldSampleLod(tangentZ0,cascadeUV(p,433.0),lod.x,precise).xyz+fieldSampleLod(tangentZ1,cascadeUV(p,97.0),lod.y,precise).xyz+fieldSampleLod(tangentZ2,cascadeUV(p,23.3),lod.z,precise).xyz)*strength;
+  float height=(fieldSampleLod(displacement0,cascadeUV(p,433.0),lod.x,precise).y+fieldSampleLod(displacement1,cascadeUV(p,97.0),lod.y,precise).y+fieldSampleLod(displacement2,cascadeUV(p,23.3),lod.z,precise).y)*seaScale;
   tx.y=tx.y*coast.x+height*coast.y;tz.y=tz.y*coast.x+height*coast.z;
   vec3 n=cross(tz,tx);return normalize(vec3(n.x,max(n.y,0.025),n.z));
 }
@@ -69,14 +71,15 @@ export class Ocean {
   material:T.ShaderMaterial;
   readonly simulation=new SpectralSea();
   readonly waveMipmaps=this.simulation.cascades.map(c=>({displacement:new WaveMipmaps(c.displacement,c.size),tangentX:new WaveMipmaps(c.tangentX,c.size),tangentZ:new WaveMipmaps(c.tangentZ,c.size)}));
-  private bottomData=bathymetryData();
+  private bottomData:Float32Array;
   private coastalScale=(x:number,z:number)=>nearshoreEnvelope(-sampleBathymetry(this.bottomData,x,z).height).value;
   private textures:T.DataTexture[]=[];
   private fieldsDirty=true;
   private quality='high';
   private state:SeaState='breeze';
   private reflectedView:T.Camera|null=null;
-  constructor(sun:T.Vector3) {
+  constructor(sun:T.Vector3,reef=new LighthouseReef()) {
+    this.bottomData=bathymetryData(reef);
     this.mesh=new Reflector(radialGeometry(),{textureWidth:1536,textureHeight:1536,multisample:0,clipBias:0.012});
     const reflect=this.mesh.onBeforeRender.bind(this.mesh);
     this.mesh.onBeforeRender=(renderer,scene,camera,...args)=> {
@@ -96,7 +99,7 @@ export class Ocean {
       slopeMipCross:{value:Array.from({length:8},()=>new T.Vector3())},heightMipCross:{value:Array.from({length:8},()=>new T.Vector3())},
       wakePoints:{value:Array.from({length:3*WAKE_SAMPLES},()=>new T.Vector4())},wakeBounds:{value:Array.from({length:3},()=>new T.Vector4())},
       reflectionSize:{value:1536},
-      islands:{value:[...COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.height)),new T.Vector4(145,-135,36,27)]},
+      islands:{value:BATHY_COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.sizeZ??c.size))},
     });
     const bottom=new T.DataTexture(this.bottomData,BATHY_SIZE,BATHY_SIZE,T.RGBAFormat,T.FloatType);
     bottom.magFilter=bottom.minFilter=T.NearestFilter;bottom.needsUpdate=true;this.material.uniforms.bathymetry={value:bottom};
@@ -204,14 +207,14 @@ export class Ocean {
         if(hullCutout)discard;
         vec3 reflected=textureLod(mirrorSampler,clamp(reflectionUV,0.001,0.999),reflectionLOD).rgb;float shallow=0.0,shoreFoam=0.0;
         for(int i=0;i<4;i++) {
-          vec2 uv=(p-islands[i].xy)/(islands[i].z*2.4)+0.5;float bottomHeight=-60.0;
-          if(i<3&&all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1))))bottomHeight=bottomAt(uv)[i];
-          if(i==3){vec2 reef=(p-islands[i].xy)/islands[i].zw;float r=dot(reef,reef);bottomHeight=r<1.0?-1.0+13.0*sqrt(1.0-r):-60.0;}
+          vec2 uv=(p-islands[i].xy)/(islands[i].zw*2.4)+0.5;float bottomHeight=-60.0;
+          if(all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1))))bottomHeight=bottomAt(uv)[i];
           float depth=max(worldPosition.y-bottomHeight,0.0);
           shallow=max(shallow,pow(1.0-smoothstep(0.0,8.0,depth),2.0));
           float wash=0.65+0.35*sin(time*1.2+bottomHeight*1.8);
           shoreFoam=max(shoreFoam,(1.0-smoothstep(0.4,3.2,depth))*wash*smoothstep(0.23,0.65,n));
         }
+        shoreFoam=max(shoreFoam,smoothstep(0.3,0.7,1.0-normal.y)*(1.0-smoothstep(0.5,4.0,max(-coastalBottom(waveCoordinate).x,0.0))));
         shoreFoam*=shoreDetail;
         vec3 absorption=mix(vec3(0.006,0.045,0.082),vec3(0.016,0.17,0.145),shallow);
         float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);absorption+=vec3(0.018,0.11,0.078)*crestLight;
