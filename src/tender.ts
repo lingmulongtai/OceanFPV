@@ -18,7 +18,14 @@ export function buildTenderModel() {
     const geometry=new T.BufferGeometry().setFromPoints(points),normal=points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0]));
     geometry.setIndex(normal.dot(outward)>0?[0,1,2,0,2,3]:[0,2,1,0,3,2]);geometry.setAttribute('uv',new T.Float32BufferAttribute([0,0,1,0,1,1,0,1],2));geometry.computeVertexNormals();return part(geometry,finish,name);
   };
-  const hull=part(closedHullGeometry(10.6,3.6,0.6,1.25,true),'orange','closed station hull');
+  const hull=closedHullGeometry(10.6,3.6,0.6,1.25,true),hp=hull.attributes.position;
+  // A rising forefoot replaces the full-depth vertical blade at the bow.
+  for(let station=0;station<=128;station++) {
+    const lift=1.1*(1-station/128)**5;
+    for(const row of [2,3,4,5]){const i=station*6+row;hp.setY(i,hp.getY(i)+lift*(row===2||row===5?0.55:1));}
+  }
+  for(const [end,center]of [[0,hp.count-2],[128,hp.count-1]]) {let mean=0;for(let row=0;row<6;row++)mean+=hp.getY(end*6+row)/6;hp.setY(center,mean);}
+  hull.computeVertexNormals();part(hull,'orange','closed station hull');
   const sections=[{lo:1.05,hi:1.05,z:-4.3,roof:-3.7},{lo:1.6,hi:1.45,z:-3.5,roof:-3.5},{lo:1.6,hi:1.45,z:3.6,roof:3.6},{lo:1.15,hi:1.08,z:4.3,roof:3.95}];
   const vertices=sections.flatMap(s=>[[-s.hi,2.1,s.roof],[s.hi,2.1,s.roof],[s.lo,0.63,s.z],[-s.lo,0.63,s.z]]),indices:number[]=[];
   for(let i=0;i<3;i++)for(let j=0;j<4;j++){const a=i*4+j,b=(i+1)*4+j,c=i*4+(j+1)%4,d=(i+1)*4+(j+1)%4;indices.push(a,b,c,c,b,d);}

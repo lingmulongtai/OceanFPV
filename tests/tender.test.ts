@@ -25,6 +25,16 @@ test('canopy coaming bridges the hull deck to the full cabin base',()=> {
   material.dispose();
 });
 
+test('tender forefoot rises to the stem while the stern draft and end caps stay sound',()=> {
+  const model=buildTenderModel(),p=model.hull.attributes.position;
+  assert.ok(p.getY(3)>-0.151&&p.getY(3)<-0.149);assert.ok(p.getY(128*6+3)<-1.249);
+  for(let station=1;station<128;station++)assert.ok(p.getY(station*6+3)<=p.getY((station-1)*6+3));
+  for(const [end,center]of [[0,p.count-2],[128,p.count-1]]) {
+    const ys=Array.from({length:6},(_,row)=>p.getY(end*6+row));assert.ok(p.getY(center)>Math.min(...ys)&&p.getY(center)<Math.max(...ys));
+  }
+  assert.equal(model.contains(new T.Vector3(0,-1.0,-5.2)),false);assert.equal(model.contains(new T.Vector3(0,-1.0,4.8)),true);
+});
+
 test('tender contacts include independently raycast surfaces but leave bow airspace free',()=> {
   const model=buildTenderModel(),material=new T.MeshBasicMaterial({side:T.FrontSide}),meshes=[model.hull,model.canopy].map(geometry=>new T.Mesh(geometry,material));
   for(const mesh of meshes)mesh.updateMatrixWorld();
