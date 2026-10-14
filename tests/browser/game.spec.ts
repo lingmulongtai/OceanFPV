@@ -13,15 +13,16 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
-  const gpu=await page.evaluate(()=> {const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');return ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable';});
+  const {gpu,render,forest}=await page.evaluate(()=> {
+    const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
+    return {gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:app.world.forest?.sourceTriangles??0};
+  });
   console.log(`Renderer: ${gpu}`);
   if(process.env.OCEANFPV_NATIVE_GPU==='1') {
     expect(gpu).not.toMatch(/SwiftShader|Microsoft Basic|unavailable/i);expect(gpu).toContain('Direct3D11');
   }
   await expect(page.locator('#unsupported')).toBeHidden();
-  const render=await page.evaluate(()=> (window as any).__OCEANFPV__.getState());
   expect(render.triangles).toBeGreaterThan(30000);
-  const forest=await page.evaluate(()=> (window as any).__OCEANFPV__.world.forest?.sourceTriangles??0);
   expect(forest).toBeGreaterThan(1000000);
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
