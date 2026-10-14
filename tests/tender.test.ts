@@ -87,3 +87,17 @@ test('all sixteen tender windows have real wall openings and retain sealed conta
   }
   material.dispose();
 });
+
+test('tender canopy provides standing headroom and remains below every davit',()=> {
+  const model=buildTenderModel(),material=new T.MeshBasicMaterial({side:T.DoubleSide}),mesh=new T.Mesh(model.parts.find(p=>p.name==='apertured canopy')!.geometry,material);mesh.updateMatrixWorld();
+  const floor=new T.Mesh(model.hull,material);floor.updateMatrixWorld();
+  for(const z of [-3,-1,1,3]) {
+    const origin=new T.Vector3(0,1,z),ceiling=new T.Raycaster(origin,new T.Vector3(0,1,0)).intersectObject(mesh)[0],deck=new T.Raycaster(origin,new T.Vector3(0,-1,0)).intersectObject(floor)[0];
+    assert.ok(ceiling&&deck);assert.ok(ceiling.point.y-deck.point.y>2.0);
+  }
+  for(const mount of TENDER_MOUNTS) {
+    assert.ok(model.bounds.max.y+mount.y<14.9);
+    for(const hook of TENDER_HOOKS)assert.ok(14.9-(hook.y+mount.y)>0.15);
+  }
+  material.dispose();
+});
