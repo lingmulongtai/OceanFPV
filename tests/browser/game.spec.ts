@@ -73,6 +73,15 @@ test('detailed cliff water height gradient and attenuation agree on the GPU',asy
   console.log(`Cliff depth probe: ${JSON.stringify(result)}`);expect(result.count).toBe(77);expect(result.heightError).toBeLessThan(.003);expect(result.gradientError).toBeLessThan(.003);expect(result.envelopeError).toBeLessThan(.003);expect(errors).toEqual([]);
 });
 
+test('production hull water masks agree on the GPU for cruise explorer and yacht',async({page})=> {
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto('/tests/browser/fixtures/hull-mask-probe.html');
+  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__HULL_MASK_PROBE__);},{timeout:60000}).toBe(true);
+  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(1704);
+  // SwiftShader's existing sin/pow bow profile differs by up to 1.36 mm; the new aft profile stays tighter.
+  expect(result.widthError).toBeLessThan(.002);expect(result.aftWidthError).toBeLessThan(.0005);expect(result.maskErrors).toBe(0);expect(errors).toEqual([]);
+});
+
 test('cruise aft hull surfaces have matching flight contacts and clear surrounding air',async({page})=> {
   await ready(page);
   const samples=await page.evaluate(async()=>{
