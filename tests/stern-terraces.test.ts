@@ -1,0 +1,24 @@
+import test from 'node:test';import assert from 'node:assert/strict';import * as T from 'three';
+import {buildSternTerraces,STERN_TERRACES} from '../src/stern-terraces';
+
+test('stern terraces put timber above painted structure with real surface contacts',()=> {
+  const model=buildSternTerraces(),meshes=model.parts.map(part=>new T.Mesh(part.geometry,new T.MeshBasicMaterial()));meshes.forEach(mesh=>mesh.updateMatrixWorld(true));
+  assert.equal(model.parts.filter(p=>p.finish==='teak').length,3);
+  for(const deck of STERN_TERRACES) {
+    const ray=new T.Raycaster(new T.Vector3(deck.width/2-.3,deck.y+1,deck.z+3.6),new T.Vector3(0,-1,0)),hit=ray.intersectObjects(meshes)[0];assert.ok(hit);
+    assert.ok(Math.abs(hit.point.y-(deck.y+.2))<1e-5);assert.equal(model.contains(hit.point),true);
+    assert.equal(model.contains(hit.point.clone().add(new T.Vector3(0,.3,0))),false);
+    assert.equal(model.contains(new T.Vector3(deck.width/2+.6,deck.y,deck.z+3.6)),false);
+    const underside=new T.Raycaster(new T.Vector3(deck.width/2-.3,deck.y-1,deck.z+3.6),new T.Vector3(0,1,0)).intersectObjects(meshes)[0];assert.ok(underside);assert.ok(Math.abs(underside.point.y-(deck.y-.14))<1e-5);
+    assert.equal(model.parts[meshes.findIndex(mesh=>mesh===underside.object)].finish,'paint');
+  }
+});
+
+test('terrace support walls span to the previous deck without blocking open air',()=> {
+  const model=buildSternTerraces();
+  for(const [tier,deck]of STERN_TERRACES.entries()) {
+    const foot=tier?STERN_TERRACES[tier-1].y+.2:9.28,top=deck.y-.14,z=tier?deck.z+3.3:deck.z-3.3;
+    for(const side of [-1,1]) {const x=side*(deck.width/2-1.1);assert.equal(model.contains(new T.Vector3(x,(foot+top)/2,z),0),true);assert.equal(model.contains(new T.Vector3(x,foot+.001,z),0),true);}
+    assert.equal(model.contains(new T.Vector3(0,(foot+top)/2,z),.1),false);
+  }
+});
