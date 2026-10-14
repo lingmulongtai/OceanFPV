@@ -2,6 +2,10 @@
 
 Date: 2026-10-14 (Asia/Tokyo). This records the new browser game. The original `OceanLab/VALIDATION.md` describes a separate Godot application and is not evidence that this game passed.
 
+## Aggregate software-rendering budget
+
+[Headland run 38518423553](https://github.com/lingmulongtai/OceanFPV/actions/runs/38518423553) passed units/build and eleven browser cases without individual failures. At 35 minutes the job cancelled during the remaining two cases; completed rendering/interaction cases took 2.2–4.9 minutes each. The aggregate job budget is now 60 minutes so the full suite can finish under its existing per-case limits. Assertions, viewports, rendering quality, readiness limits and per-case timeouts remain unchanged. Cancellation is not a passing result; fresh complete CI is still required before publication.
+
 ## Marine follow-up
 
 The 2026-10-13 marine follow-up passed **27/27 unit tests**, the strict production build and **9/9 browser cases** in [CI run 38380778208](https://github.com/lingmulongtai/OceanFPV/actions/runs/38380778208). Added coverage checks curved-deck airspace versus solid contacts, bow planking against the closed hull's actual station vertices, packed coastal depths against rendered terrain triangles, displaced wave tangents at all sea strengths, and stronger whitecaps plus deterministic foam reset on preset changes/time rewind. An additional check samples combined horizontal Jacobians at 4,000 positions/times and verifies that SWELL height is preserved when excessive crest compression is limited. Main deployment and public-byte verification are separate checks.
