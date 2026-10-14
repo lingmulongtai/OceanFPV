@@ -1,6 +1,6 @@
 import * as T from 'three';
 import {Ocean} from '../../../src/ocean.ts';
-import {COASTS,BATHY_SIZE,sampleBathymetry} from '../../../src/bathymetry.ts';
+import {BATHY_COASTS,BATHY_SIZE,sampleBathymetry} from '../../../src/bathymetry.ts';
 import {nearshoreEnvelope} from '../../../src/nearshore.ts';
 import {sampleWaveMip,retainedWaveEnergy} from '../../../src/wave-mips.ts';
 const renderer=new T.WebGLRenderer();renderer.setSize(1,1);document.body.append(renderer.domElement);
@@ -13,17 +13,17 @@ void main(){if(probeMode==0)gl_FragColor=vec4(displacementAt(probePoint).xyz,nea
 const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,0.1,10),target=new T.WebGLRenderTarget(1,1,{type:T.FloatType});
 scene.add(new T.Mesh(new T.PlaneGeometry(2,2),material));camera.position.z=1;
 const data=uniforms.bathymetry.value.image.data,points=[];
-for(const coast of COASTS)for(const depth of [-5,0,0.2,0.8,1.5,2,2.5,3,4,6,8,8.2]) {
+for(const coast of BATHY_COASTS)for(const depth of [-5,0,0.2,0.8,1.5,2,2.5,3,4,6,8,8.2]) {
   let closest;
   for(let z=0;z<BATHY_SIZE-1;z++)for(let x=0;x<BATHY_SIZE-1;x++) {
-    const px=coast.x+((x+0.23)/(BATHY_SIZE-1)*2-1)*coast.size*1.2,pz=coast.z+((z+0.31)/(BATHY_SIZE-1)*2-1)*coast.size*1.2;
+    const px=coast.x+((x+0.23)/(BATHY_SIZE-1)*2-1)*coast.size*1.2,pz=coast.z+((z+0.31)/(BATHY_SIZE-1)*2-1)*(coast.sizeZ??coast.size)*1.2;
     const bottom=sampleBathymetry(data,px,pz),error=Math.abs(-bottom.height-depth);
     if(!closest||error<closest.error)closest={x:px,z:pz,error};
   }
   points.push(closest);
 }
 points.push({x:10000,z:10000});
-const samples=[];let heightError=0,normalError=0,varianceError=0,contactError=0;
+const samples=[];let heightError=0,normalError=0,varianceError=0,varianceRelativeError=0,shadingVarianceError=0,contactError=0;
 for(const manual of [false,true]) {
   if(!manual&&!renderer.getContext().getExtension('OES_texture_float_linear'))continue;
   ocean.configureFiltering(!manual);
@@ -49,18 +49,22 @@ for(const manual of [false,true]) {
           expected=[0.5*(missingSlope*envelope.value**2+missingHeight*envelope.derivative**2*(bottom.dx**2+bottom.dz**2))];
         }else if(controlled) {
           // Independent central differences of the modified geometric height.
-          const amplitude=1.5*scale,height=(x,z)=>amplitude*nearshoreEnvelope(-sampleBathymetry(data,x,z).height).value,e=0.001;
+          // A 1 mm step crossed the steep reef's clamped waterline transition.
+          const amplitude=1.5*scale,height=(x,z)=>amplitude*nearshoreEnvelope(-sampleBathymetry(data,x,z).height).value,e=0.00001;
           expected=new T.Vector3(-(height(point.x+e,point.z)-height(point.x-e,point.z))/(2*e),1,-(height(point.x,point.z+e)-height(point.x,point.z-e))/(2*e)).normalize().toArray();
         }else {
           const tx=new T.Vector3(1+filtered(0,'tangentX')*horizontal,filtered(1,'tangentX')*scale*envelope.value-filtered(1)*scale*envelope.derivative*bottom.dx,filtered(2,'tangentX')*horizontal);
           const tz=new T.Vector3(filtered(0,'tangentZ')*horizontal,filtered(1,'tangentZ')*scale*envelope.value-filtered(1)*scale*envelope.derivative*bottom.dz,1+filtered(2,'tangentZ')*horizontal),n=tz.cross(tx);n.y=Math.max(n.y,0.025);expected=n.normalize().toArray();
         }
         const error=Math.max(...expected.map((v,i)=>Math.abs(v-actual[i])));samples.push({manual,state,controlled,kind,lod,point,actual:[...actual],expected,error});
-        if(!Number.isFinite(error)||error>0.003)throw new Error(`Nearshore mismatch ${JSON.stringify(samples.at(-1))}`);
+        // Raw variance can exceed 100 at steep coasts; compare relative precision
+        // and the actual GGX contribution, which the production shader caps at 0.2.
+        const relative=kind==='variance'?error/Math.max(1,Math.abs(expected[0])):0,shading=kind==='variance'?Math.abs(Math.min(0.2,actual[0])-Math.min(0.2,expected[0])):0;
+        if(!Number.isFinite(error)||(kind==='variance'?relative>0.0001||shading>0.0001:error>0.003))throw new Error(`Nearshore mismatch ${JSON.stringify(samples.at(-1))}`);
         if(kind==='height') {
           heightError=Math.max(heightError,error);
           if(!controlled)contactError=Math.max(contactError,Math.abs(ocean.heightAt(point.x+actual[0],point.z+actual[2])-actual[1]));
-        }else if(kind==='normal')normalError=Math.max(normalError,error);else varianceError=Math.max(varianceError,error);
+        }else if(kind==='normal')normalError=Math.max(normalError,error);else {varianceError=Math.max(varianceError,error);varianceRelativeError=Math.max(varianceRelativeError,relative);shadingVarianceError=Math.max(shadingVarianceError,shading);}
       }
       if(controlled){ocean.advance(0,state);ocean.advance(6,state);}
     }
@@ -88,4 +92,4 @@ for(const manual of [false,true]) {
   }
 }
 if(longWaveError>0.005||subpixelMaximum>0.000001)throw new Error('Visible long waves lost or subpixel waves retained');
-const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');window.__NEARSHORE_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,heightError,normalError,varianceError,contactError,mipSamples,mipError,manualMipError,longWaveError,subpixelMaximum};
+const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');window.__NEARSHORE_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,heightError,normalError,varianceError,varianceRelativeError,shadingVarianceError,contactError,mipSamples,mipError,manualMipError,longWaveError,subpixelMaximum};

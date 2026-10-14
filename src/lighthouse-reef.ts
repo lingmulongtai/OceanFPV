@@ -1,10 +1,12 @@
 import * as T from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
+export const LIGHTHOUSE_COAST={x:145,z:-135,size:32,sizeZ:24,height:12} as const;
+
 /** Rendered reef and contacts share triangles in metres despite its unequal axes. */
 export class LighthouseReef {
-  readonly x=145;
-  readonly z=-135;
+  readonly x=LIGHTHOUSE_COAST.x;
+  readonly z=LIGHTHOUSE_COAST.z;
   readonly geometry=new T.IcosahedronGeometry(20,2).scale(1.8,0.65,1.35).translate(0,-1,0);
   private readonly tree:MeshBVH;
   private readonly point=new T.Vector3();
@@ -19,6 +21,13 @@ export class LighthouseReef {
     if(localX<bounds.min.x||localX>bounds.max.x||localZ<bounds.min.z||localZ>bounds.max.z)return null;
     this.topRay.origin.set(localX,bounds.max.y+1,localZ);
     return this.tree.raycastFirst(this.topRay,T.DoubleSide)?.point.y??null;
+  }
+  /** Mesh top plus an authored submerged skirt, avoiding deep-ocean sentinel mixing. */
+  bottomHeight(x:number,z:number) {
+    const height=this.topHeight(x,z);if(height!==null)return height;
+    const p=this.point.set(x-this.x,-1,z-this.z),nearest=this.tree.closestPointToPoint(p,undefined,0,15);
+    if(!nearest)return -60;
+    return Math.max(-60,-1-4*Math.hypot(p.x-nearest.point.x,p.z-nearest.point.z));
   }
   contains(position:T.Vector3,padding=0.25) {
     const p=this.point.set(position.x-this.x,position.y,position.z-this.z),bounds=this.geometry.boundingBox!;

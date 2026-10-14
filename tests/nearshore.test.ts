@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {bathymetryData,COASTS,sampleBathymetry} from '../src/bathymetry';
+import {bathymetryData,COASTS,BATHY_COASTS,BATHY_SIZE,sampleBathymetry} from '../src/bathymetry';
+import {LighthouseReef,LIGHTHOUSE_COAST} from '../src/lighthouse-reef';
 import {nearshoreEnvelope} from '../src/nearshore';
 import {terrainSurfaceHeight} from '../src/terrain';
 import {SpectralSea} from '../src/spectrum';
@@ -32,13 +33,39 @@ test('uploaded coastal triangles give matching heights and independent spatial g
   }
 });
 
+test('reef depth channel follows rendered heights, grid gradients and deep outside boundaries',()=> {
+  const reef=new LighthouseReef(),data=bathymetryData(reef),coast=LIGHTHOUSE_COAST,step=coast.size*2.4/(BATHY_SIZE-1),stepZ=coast.sizeZ*2.4/(BATHY_SIZE-1),epsilon=0.0001;
+  assert.equal(BATHY_COASTS.length,4);
+  for(let i=0;i<180;i++) {
+    const ix=(i*31)%BATHY_SIZE,iz=(i*17)%BATHY_SIZE,x=coast.x-coast.size*1.2+ix*step,z=coast.z-coast.sizeZ*1.2+iz*stepZ;
+    const top=reef.topHeight(x,z),uploaded=data[(iz*BATHY_SIZE+ix)*4+3];
+    if(top!==null)assert.ok(Math.abs(uploaded-top)<0.000001);else assert.ok(uploaded<=-1&&uploaded>=-60);
+    const px=x+step*0.23,pz=z+stepZ*0.31,sample=sampleBathymetry(data,px,pz);
+    assert.ok(Math.abs(sample.dx-(sampleBathymetry(data,px+epsilon,pz).height-sampleBathymetry(data,px-epsilon,pz).height)/(2*epsilon))<0.00001);
+    assert.ok(Math.abs(sample.dz-(sampleBathymetry(data,px,pz+epsilon).height-sampleBathymetry(data,px,pz-epsilon).height)/(2*epsilon))<0.00001);
+  }
+  assert.ok(Math.abs(sampleBathymetry(data,175,-135).height-5.540271905)<0.04);
+  const edge=coast.size*1.2+0.001,edgeZ=coast.sizeZ*1.2+0.001;
+  for(const [x,z]of [[coast.x-edge,coast.z],[coast.x+edge,coast.z],[coast.x,coast.z-edgeZ],[coast.x,coast.z+edgeZ]]) {
+    assert.deepEqual(sampleBathymetry(data,x,z),{height:-60,dx:0,dz:0});
+    assert.deepEqual(nearshoreEnvelope(-sampleBathymetry(data,x,z).height),{value:1,derivative:0});
+  }
+  const dryPoint=sampleBathymetry(data,140.17,-160.89);
+  assert.ok(dryPoint.height>0,'deep outside samples must not turn the known dry mesh point into water');
+  for(const side of [-1,1])for(let i=0;i<12;i++) {
+    for(const [x,z]of [[coast.x+side*(coast.size*1.2+(i-6)*0.001),coast.z],[coast.x,coast.z+side*(coast.sizeZ*1.2+(i-6)*0.001)]]) {
+      assert.deepEqual(nearshoreEnvelope(-sampleBathymetry(data,x,z).height),{value:1,derivative:0});
+    }
+  }
+});
+
 test('contact heights sample the coastal envelope after inverse lateral displacement',()=> {
   const data=bathymetryData(),sea=new SpectralSea(),envelope=(x:number,z:number)=>nearshoreEnvelope(-sampleBathymetry(data,x,z).height).value;
   for(const scale of [0.55,1.15,2.15]) {
     sea.update(6,scale);
     for(const [index,c]of sea.cascades.entries())for(let i=0;i<c.displacement.length;i+=4){c.displacement[i]=2;c.displacement[i+1]=(index+1)*0.25;c.displacement[i+2]=-1;}
     let changed=0;
-    for(const coast of COASTS)for(let i=0;i<80;i++) {
+    for(const coast of BATHY_COASTS)for(let i=0;i<80;i++) {
       const x=coast.x-coast.size+(i*17.31)%(coast.size*2),z=coast.z-coast.size+(i*41.73)%(coast.size*2);
       const expected=1.5*scale*envelope(x-6*sea.horizontalScale,z+3*sea.horizontalScale);
       assert.ok(Math.abs(sea.heightAt(x,z,scale,envelope)-expected)<1e-10);
@@ -54,7 +81,7 @@ test('natural shoreline world points reconstruct contact heights within four mil
   const data=bathymetryData(),sea=new SpectralSea(),envelope=(x:number,z:number)=>nearshoreEnvelope(-sampleBathymetry(data,x,z).height).value;
   for(const scale of [0.55,1.15,2.15])for(const time of [6,12]) {
     sea.update(time,scale);let count=0;
-    for(const coast of COASTS)for(let i=0;i<2200;i++) {
+    for(const coast of BATHY_COASTS)for(let i=0;i<2200;i++) {
       const x=coast.x-coast.size+(i*17.31)%(coast.size*2),z=coast.z-coast.size+(i*41.73)%(coast.size*2),depth=-sampleBathymetry(data,x,z).height;
       if(depth<0||depth>=8)continue;
       const px=x+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,0),0)*sea.horizontalScale,pz=z+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,2),0)*sea.horizontalScale;
