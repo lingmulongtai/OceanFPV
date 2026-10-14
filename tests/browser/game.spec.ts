@@ -4,8 +4,10 @@ async function ready(page: Page) {
   await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
   await page.goto('/?test=1');
   await expect(page.locator('#start')).toBeEnabled({timeout:90000});
-  await page.evaluate(() => document.querySelector<HTMLSelectElement>('#quality')!.value='balanced');
-  await page.locator('#quality').dispatchEvent('input');
+  await page.evaluate(() => {
+    const quality=document.querySelector<HTMLSelectElement>('#quality')!;
+    if(quality.value!=='balanced') {quality.value='balanced';quality.dispatchEvent(new Event('input',{bubbles:true}));}
+  });
 }
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
   await page.setViewportSize({width:960,height:640});
@@ -32,18 +34,37 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
   expect(await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {detailed:!!w.rocks,contacts:w.fallbackRockObstacles.length,visible:w.rockPatches.every((patch:any)=>patch.fallback.parent===w.scene)};})).toEqual({detailed:false,contacts:270,visible:true});
   const first=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());
   await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.x)).not.toBe(first[0]);
-  await page.locator('#start').click();await page.keyboard.press('Escape');
-  await expect(page.locator('#pause-dialog')).toBeVisible();
-  const app=await page.evaluate(()=> {const a=(window as any).__OCEANFPV__,local=a.world.ship.worldToLocal(a.flight.position.clone());return {local:local.toArray(),time:a.getState().time};});
+  const app=await page.evaluate(()=> {
+    const a=(window as any).__OCEANFPV__,expected=a.world.launchPose(a.getState().time);
+    document.querySelector<HTMLButtonElement>('#start')!.click();
+    const local=a.world.ship.worldToLocal(a.flight.position.clone());
+    return {local:local.toArray(),positionError:a.flight.position.distanceTo(expected.position),velocityError:a.flight.velocity.distanceTo(expected.velocity)};
+  });
   expect(Math.abs(app.local[0])).toBeLessThan(1);expect(Math.abs(app.local[2]-38)).toBeLessThan(2);
+  expect(app.positionError).toBeLessThan(1e-6);expect(app.velocityError).toBeLessThan(1e-6);
+  await page.keyboard.press('Escape');await expect(page.locator('#pause-dialog')).toBeVisible();
   const stopped=await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};});await page.waitForTimeout(300);
   expect(await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};})).toEqual(stopped);
-  const mismatch=await page.evaluate(()=> {
-    const a=(window as any).__OCEANFPV__,t=a.getState().time,before=a.world.launchPose(t).position;
-    a.world.ocean.advance(t+0.05,'breeze');a.world.advanceVessels(t+0.05);
-    const after=a.world.launchPose(t+0.05);return after.position.clone().sub(before).divideScalar(0.05).distanceTo(after.velocity);
+  const motion=await page.evaluate(()=> {
+    const w=(window as any).__OCEANFPV__.world;
+    w.ocean.advance(0,'breeze');w.advanceVessels(0);
+    let error=0,held=0,refreshes=0;
+    for(let i=1;i<=24;i++) {
+      const previous=w.launchSample,velocity=w.launchVelocity?.clone(),t=i/120;
+      w.ocean.advance(t,'breeze');w.advanceVessels(t);const pose=w.launchPose(t);
+      if(w.launchSample.time!==previous.time) {
+        refreshes++;error=Math.max(error,pose.position.clone().sub(previous.position).divideScalar(t-previous.time).distanceTo(pose.velocity));
+      } else if(velocity) {held++;error=Math.max(error,velocity.distanceTo(pose.velocity));}
+    }
+    w.ocean.advance(0,'breeze');w.advanceVessels(0);
+    const rewindCleared=w.launchVelocity===null&&w.launchSample.time===0;
+    w.ocean.advance(0.05,'breeze');w.advanceVessels(0.05);
+    w.ocean.advance(0.05,'swell');w.advanceVessels(0.05);
+    const presetCleared=w.launchVelocity===null&&w.launchSample.time===0.05;
+    return {error,held,refreshes,rewindCleared,presetCleared,floatError:Math.abs(w.ship.position.y-w.ocean.heightAt(w.ship.position.x,w.ship.position.z)*0.45)};
   });
-  expect(mismatch).toBeLessThan(1e-6);
+  expect(motion.error).toBeLessThan(1e-6);expect(motion.held).toBeGreaterThan(10);expect(motion.refreshes).toBeGreaterThanOrEqual(5);
+  expect(motion.rewindCleared).toBe(true);expect(motion.presetCleared).toBe(true);expect(motion.floatError).toBeLessThan(1e-6);
   const reset=await page.evaluate(()=> {
     const w=(window as any).__OCEANFPV__.world;w.advanceVessels(100);
     const old=w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray());w.advanceVessels(0);
@@ -75,6 +96,37 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   await page.locator('[data-close="settings-dialog"]').last().click();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(true);
 });
+test('render delays keep world and flight coupled and unsafe gaps pause without a jump',async({page})=> {
+  test.setTimeout(300000);
+  await ready(page);await page.locator('#start').click();
+  const result=await page.evaluate(async()=> {
+    const app=(window as any).__OCEANFPV__,world=app.world,flight=app.flight;
+    flight.position.set(400,100,400);flight.previous.copy(flight.position);flight.velocity.set(0,0,0);
+    let ticks=0,mismatches=0;const original=flight.step;
+    flight.step=function(...args:any[]) {
+      const time=app.getState().time;
+      if(world.vesselTime!==time||world.ocean.material.uniforms.time.value!==time)mismatches++;
+      ticks++;return original.apply(this,args);
+    };
+    const waitFrame=()=>new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
+    const block=(milliseconds:number)=> {const start=performance.now();while(performance.now()-start<milliseconds){/* Actual main-thread stall. */}};
+    try {
+      const before=app.getState();block(350);await waitFrame();const after=app.getState();
+      const delayed={ticks,mismatches,worldElapsed:after.time-before.time,flightElapsed:after.flightTime-before.flightTime};
+      const stopped={time:after.time,flightTime:after.flightTime,position:flight.position.toArray(),ship:world.cruise.root.position.toArray()};
+      block(10100);await waitFrame();const state=app.getState();
+      return {delayed,stopped,afterGap:{time:state.time,flightTime:state.flightTime,position:flight.position.toArray(),ship:world.cruise.root.position.toArray()},paused:state.paused};
+    }finally {flight.step=original;}
+  });
+  expect(result.delayed.ticks).toBeGreaterThanOrEqual(42);
+  expect(result.delayed.mismatches).toBe(0);
+  expect(result.delayed.worldElapsed).toBeGreaterThanOrEqual(0.349);
+  expect(result.delayed.flightElapsed).toBeCloseTo(result.delayed.worldElapsed,8);
+  expect(result.paused).toBe(true);expect(result.afterGap).toEqual(result.stopped);
+  await expect(page.locator('#pause-copy')).toContainText('処理の遅れが10秒を超えました');
+  await page.locator('#resume').click();expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().paused)).toBe(false);
+});
+
 test('fixed dialog views stop GPU draws and redraw changed settings',async({page})=> {
   test.setTimeout(300000);
   await page.addInitScript(()=> {
@@ -124,8 +176,12 @@ test('race registers actual ordered gate crossing and saves a completed run', as
   test.setTimeout(300000);
   await ready(page);
   await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.getState().time),{timeout:60000}).toBeGreaterThan(2);
-  await page.locator('#race-mode').click();await page.locator('#start').click();
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().time)).toBeLessThan(1);
+  await page.locator('#race-mode').click();
+  const resetTime=await page.evaluate(()=> {
+    document.querySelector<HTMLButtonElement>('#start')!.click();
+    return (window as any).__OCEANFPV__.getState().time;
+  });
+  expect(resetTime).toBe(0);
   for(let i=0;i<18;i++) {
     const crossed=await page.evaluate(async(index)=> {
       const app=(window as any).__OCEANFPV__,g=app.world.gateMeshes[index%6];
@@ -151,9 +207,19 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
     Object.defineProperty(navigator,'getGamepads',{value:()=>[(window as any).__pad]});
   });
   await ready(page);await page.locator('#open-settings').click();await page.locator('[data-tab="controller"]').click();
-  await page.locator('#input-source').selectOption('xbox');await page.locator('[data-close="settings-dialog"]').last().click();await page.locator('#start').click();
-  await page.evaluate(()=> {(window as any).__pad.axes=[0,-1,0,-0.5];});await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(7);
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(6);
+  await page.locator('#input-source').selectOption('xbox');await page.locator('[data-close="settings-dialog"]').last().click();
+  const climbed=await page.evaluate(async()=> {
+    const app=(window as any).__OCEANFPV__;
+    document.querySelector<HTMLButtonElement>('#start')!.click();
+    const initial=app.flight.position.y,start=performance.now();
+    (window as any).__pad.axes=[0,-1,0,-0.5];
+    do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+    while((app.flight.position.y<=7||app.flight.position.y<=initial+1)&&performance.now()-start<20000);
+    return {initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks()};
+  });
+  expect(climbed.altitude).toBeGreaterThan(7);expect(climbed.altitude-climbed.initial).toBeGreaterThan(1);
+  expect(climbed.armed).toBe(true);expect(climbed.source).toBe('xbox');
+  expect(climbed.sticks.throttle).toBe(1);expect(climbed.sticks.pitch).toBeLessThan(0);expect(climbed.sticks.absoluteThrottle).toBe(false);
   await page.evaluate(()=> {(window as any).__pad=null;});await expect(page.locator('#pause-title')).toHaveText('コントローラー接続が切れました');
   await page.locator('#resume').click();await expect(page.locator('#pause-dialog')).toBeVisible();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().paused)).toBe(true);

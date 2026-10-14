@@ -12,6 +12,7 @@ import { type SeaState } from './sea';
 import { FlightAudio } from './audio';
 import { readStored, writeStored } from './storage';
 import { loadPhotographicSky } from './sky';
+import { SimulationClock } from './clock';
 
 const $ = <E extends HTMLElement = HTMLElement>(id:string) => document.getElementById(id) as E;
 const value = (id:string) => $<HTMLInputElement>(id).value;
@@ -44,7 +45,8 @@ async function boot() {
   const bloom=new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),0.035,0.35,2.4);composer.addPass(bloom);composer.addPass(new OutputPass());
   const flight=new Flight(),input=new Inputs(),race=new Race(),sound=new FlightAudio();
   let sea:SeaState='breeze', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0;
-  let accumulator=0,last=performance.now(),lastHUD=0,lastControllerUI=0,frameCount=0,fpsTime=last,toastUntil=0;
+  const clock=new SimulationClock();
+  let lastHUD=0,lastControllerUI=0,frameCount=0,fpsTime=performance.now(),toastUntil=0;
   let cameraMode='fpv',cameraTilt=12,fov=95,returnToPause=false;
   const cameraTiltQuaternion=new T.Quaternion();const desiredCamera=new T.Vector3();
   const renderedPosition=new T.Vector3(),renderedOrientation=new T.Quaternion();
@@ -140,7 +142,7 @@ async function boot() {
     if(!supported||$<HTMLButtonElement>('start').disabled)return;
     input.poll();if(!canArm()) {openDialog('settings-dialog');return;}
     if(selectedRace){time=0;world.ocean.advance(time,sea);}
-    flight.reset();race.reset(selectedRace);flightTime=0;playing=true;paused=false;accumulator=0;input.clear();
+    flight.reset();race.reset(selectedRace);flightTime=0;playing=true;paused=false;clock.reset(performance.now());input.clear();
     const launch=world.launchPose(time);flight.position.copy(launch.position);flight.previous.copy(launch.position);flight.velocity.copy(launch.velocity);flight.orientation.setFromAxisAngle(new T.Vector3(0,1,0),launch.heading);
     show('intro',false);show('intro-footer',false);show('scene-label',false);show('hud',hudVisible);document.body.classList.add('flying');
     flight.armed=true;world.updateGates(race.active,race.next);void sound.start();
@@ -153,7 +155,7 @@ async function boot() {
   function closeAll() {document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(d=>d.close());}
   function pause(title='フライトを一時停止',message='ひと息ついて、また海へ。') {
     if(!playing||paused) return;
-    paused=true;input.clear();document.exitPointerLock?.();sound.update(0,false);
+    paused=true;clock.reset(performance.now());input.clear();document.exitPointerLock?.();sound.update(0,false);
     $('pause-title').textContent=title;$('pause-copy').textContent=message;
     show('resume',!flight.crashed&&!race.finished);show('results',false);
     $<HTMLDialogElement>('pause-dialog').showModal();
@@ -161,10 +163,10 @@ async function boot() {
   function resume() {
     if(!supported||flight.crashed||race.finished) return;
     input.poll();if(!canArm()) return;
-    closeAll();paused=false;last=performance.now();accumulator=0;input.clear();void sound.start();
+    closeAll();paused=false;clock.reset(performance.now());input.clear();void sound.start();
   }
   function menu() {
-    closeAll();playing=false;paused=false;flight.reset();race.reset(false);input.clear();sound.update(0,false);document.exitPointerLock?.();
+    closeAll();playing=false;paused=false;clock.reset(performance.now());flight.reset();race.reset(false);input.clear();sound.update(0,false);document.exitPointerLock?.();
     show('intro',true);show('intro-footer',true);show('scene-label',true);show('hud',false);document.body.classList.remove('flying');world.updateGates(false,0);
   }
   function openDialog(id:string) {
@@ -172,11 +174,12 @@ async function boot() {
     returnToPause=$<HTMLDialogElement>('pause-dialog').open;
     if(returnToPause) $<HTMLDialogElement>('pause-dialog').close();
     if(playing) paused=true;
-    input.clear();document.exitPointerLock?.();sound.update(0,false);
+    clock.reset(performance.now());input.clear();document.exitPointerLock?.();sound.update(0,false);
     $<HTMLDialogElement>(id).showModal();
   }
   function closeDialog(id:string) {
     $<HTMLDialogElement>(id).close();
+    clock.reset(performance.now());
     if(input.calibrating) {input.finishCalibration();$<HTMLButtonElement>('save-calibration').disabled=true;}
     if(returnToPause&&playing) {$<HTMLDialogElement>('pause-dialog').showModal();returnToPause=false;}
     else if(playing&&!flight.crashed&&!race.finished) {
@@ -185,7 +188,7 @@ async function boot() {
         $('pause-title').textContent='入力デバイスを確認してください';$('pause-copy').textContent='接続とスロットルを確認して再開してください。';
         show('resume',true);$<HTMLDialogElement>('pause-dialog').showModal();return;
       }
-      paused=false;accumulator=0;input.clear();void sound.start();
+      paused=false;input.clear();void sound.start();
     }
   }
   ['settings-dialog','help-dialog'].forEach(id=>$<HTMLDialogElement>(id).addEventListener('cancel',e=> {e.preventDefault();closeDialog(id);}));
@@ -274,9 +277,9 @@ async function boot() {
       try {const result=canvas.requestPointerLock();if(result) void result.catch(()=>toast('マウス操作を開始できませんでした。キーボード操作も使用できます。'));} catch {toast('マウスロックを利用できません。');}
     }
   });
-  document.addEventListener('visibilitychange',()=> {sceneDirty=true;if(document.hidden) {pause('フライトを一時停止','別のタブに移動したため一時停止しました。');sound.suspend();input.clear();}});
-  window.addEventListener('blur',()=>pause('フライトを一時停止','画面から離れたため一時停止しました。'));
-  canvas.addEventListener('webglcontextlost',e=> {e.preventDefault();supported=false;paused=true;flight.armed=false;flight.motor=0;input.clear();input.enabled=false;closeAll();document.exitPointerLock?.();$<HTMLButtonElement>('start').disabled=true;show('unsupported',true);$('unsupported-reason').textContent='GPUの描画状態を失いました。再読み込みしてください。';$('unsupported').querySelector<HTMLButtonElement>('button')!.focus();sound.suspend();});
+  document.addEventListener('visibilitychange',()=> {sceneDirty=true;clock.reset(performance.now());if(document.hidden) {pause('フライトを一時停止','別のタブに移動したため一時停止しました。');sound.suspend();input.clear();}});
+  window.addEventListener('blur',()=>{clock.reset(performance.now());pause('フライトを一時停止','画面から離れたため一時停止しました。');});
+  canvas.addEventListener('webglcontextlost',e=> {e.preventDefault();supported=false;paused=true;clock.reset(performance.now());flight.armed=false;flight.motor=0;input.clear();input.enabled=false;closeAll();document.exitPointerLock?.();$<HTMLButtonElement>('start').disabled=true;show('unsupported',true);$('unsupported-reason').textContent='GPUの描画状態を失いました。再読み込みしてください。';$('unsupported').querySelector<HTMLButtonElement>('button')!.focus();sound.suspend();});
 
   const minimap=$<HTMLCanvasElement>('minimap').getContext('2d')!;
   function drawMinimap() {
@@ -317,32 +320,33 @@ async function boot() {
   }
   function frame(now:number) {
     requestAnimationFrame(frame);
-    const dt=Math.min((now-last)/1000,0.06);last=now;
     input.poll();
     if(now-lastControllerUI>180) {updateControllerUI();lastControllerUI=now;}
-    if(!supported||document.hidden) return;
-    const frozen=paused||!!document.querySelector('dialog[open]');
-    if(!frozen) time+=dt;
-    world.ocean.advance(time,sea);
-    world.advanceVessels(time);
-    if(playing&&!paused&&!flight.crashed&&!race.finished) {
-      accumulator+=dt;
+    if(!supported||document.hidden) {clock.reset(performance.now());return;}
+    if(paused||document.querySelector('dialog[open]')) clock.reset(performance.now());
+    else {
       const sticks=input.sticks();
-      while(accumulator>=1/120) {
-        const step=1/120;flight.step(step,sticks,sea==='swell'?0.65:sea==='breeze'?0.2:0);flightTime+=step;accumulator-=step;
+      // Sample after poll: a gamepad action can synchronously reset/resume the clock.
+      const advanced=clock.advance(performance.now(),step=> {
+        time+=step;world.ocean.advance(time,sea);world.advanceVessels(time);
+        if(!playing||flight.crashed||race.finished)return;
+        flight.step(step,sticks,sea==='swell'?0.65:sea==='breeze'?0.2:0);flightTime+=step;
         const collision=world.collision(flight.position,time,sea);
-        if(collision) {flight.crashed=true;flight.armed=false;flight.motor=0;pause('フライト終了',`${collision}。Rまたは「やり直す」で離陸地点へ。`);break;}
+        if(collision) {flight.crashed=true;flight.armed=false;flight.motor=0;pause('フライト終了',`${collision}。Rまたは「やり直す」で離陸地点へ。`);return false;}
         if(race.step(step,flight.previous,flight.position)) {
           world.updateGates(race.active,race.next);
           if(race.finished) {
             writeStored('best',race.best);pause('コース完走！','6ゲート × 3周を飛び切りました。');
             show('results',true);$('results').textContent=`TOTAL ${formatTime(race.elapsed)} · BEST ${formatTime(race.best!)}\nLAPS ${race.laps.map(formatTime).join(' / ')}`;
-            break;
+            return false;
           }
           toast(`GATE CLEAR · ${race.next===0?`LAP ${race.lap} / 3`:`NEXT ${race.next+1}`}`,1100);
         }
-      }
-    } else accumulator=0;
+      });
+      if(!advanced)pause('描画が長時間止まりました','処理の遅れが10秒を超えました。再開すると、この位置から飛行を続けられます。');
+    }
+    const frozen=paused||!!document.querySelector('dialog[open]');
+    world.ocean.advance(time,sea);world.advanceVessels(time);
     if(!playing) {
       const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
       const drift=reduced?0:Math.sin(time*0.045)*4;
@@ -390,6 +394,7 @@ async function boot() {
   if(import.meta.env.DEV&&new URLSearchParams(location.search).has('test')) {
     Object.assign(window,{__OCEANFPV__:{flight,race,input,world,camera,invalidate:()=>{sceneDirty=true;},getState:()=>({playing,paused,time,flightTime,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})}});
   }
+  clock.reset(performance.now());fpsTime=performance.now();
   requestAnimationFrame(frame);
 }
 void boot().catch(error=> {
