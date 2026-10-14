@@ -83,7 +83,11 @@ export function buildTenderModel() {
     return T.MathUtils.lerp(hp.getY(index*6),hp.getY((index+1)*6),station-index)+0.008;
   };
   const floor=new T.PlaneGeometry(2.9,6.8,8,64).rotateX(-Math.PI/2),fp=floor.attributes.position;
-  for(let i=0;i<fp.count;i++)fp.setY(i,floorAt(fp.getZ(i)));floor.computeVertexNormals();part(floor,'rubber','cabin floor');
+  for(let i=0;i<fp.count;i++) {
+    const station=(fp.getZ(i)+5.3)/10.6*128,index=Math.floor(station),halfWidth=T.MathUtils.lerp(Math.abs(hp.getX(index*6)),Math.abs(hp.getX((index+1)*6)),station-index)-0.02;
+    fp.setX(i,fp.getX(i)*Math.min(1,halfWidth/1.45));fp.setY(i,floorAt(fp.getZ(i)));
+  }
+  floor.computeVertexNormals();part(floor,'rubber','cabin floor');
   const helmY=floorAt(-3.45)+0.0175;
   box([1.8,0.045,0.9],[-0.1,helmY-0.0225,-3.45],'rubber','helm floor');
   const cushion=(size:number[],position:number[],name:string)=>part(new RoundedBoxGeometry(...size as [number,number,number],2,0.045).translate(...position as [number,number,number]),'upholstery',name);

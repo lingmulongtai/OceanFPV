@@ -128,3 +128,13 @@ test('rendered tender seating is visible through the actual side apertures',()=>
   }
   material.dispose();
 });
+
+test('every tender floor vertex stays over the actual tapered hull deck',()=> {
+  const model=buildTenderModel(),material=new T.MeshBasicMaterial({side:T.DoubleSide}),hull=new T.Mesh(model.hull,material);hull.updateMatrixWorld();
+  const p=model.parts.find(p=>p.name==='cabin floor')!.geometry.attributes.position;
+  for(let i=0;i<p.count;i++) {
+    const point=new T.Vector3().fromBufferAttribute(p,i),hit=new T.Raycaster(point.clone().add(new T.Vector3(0,1,0)),new T.Vector3(0,-1,0)).intersectObject(hull)[0];
+    assert.ok(hit);assert.ok(Math.abs(point.y-hit.point.y-0.008)<0.00002);
+  }
+  material.dispose();
+});
