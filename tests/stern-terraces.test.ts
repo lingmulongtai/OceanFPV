@@ -34,3 +34,11 @@ test('terrace support walls span to the previous deck without blocking open air'
   }
   for(const support of model.solids.slice(2,4)){assert.ok(support.min.x>=-13&&support.max.x<=13);assert.ok(support.min.z>=100&&support.max.z<=124);assert.ok(Math.abs(support.min.y-9.28)<1e-12);}
 });
+
+test('all terraces stay behind cabin glazing and their supports land on the deck below',()=> {
+  const model=buildSternTerraces(),glazingEnds=[101.07,101.07,98.07];
+  for(const [tier,deck]of STERN_TERRACES.entries()) {
+    assert.ok(deck.z-deck.depth/2>glazingEnds[tier]);
+    if(tier){const lower=STERN_TERRACES[tier-1],supports=model.solids.slice(tier*4+2,tier*4+4);for(const support of supports){assert.ok(support.min.x>=-lower.width/2&&support.max.x<=lower.width/2);assert.ok(support.min.z>=lower.z-lower.depth/2&&support.max.z<=lower.z+lower.depth/2);}}
+  }
+});

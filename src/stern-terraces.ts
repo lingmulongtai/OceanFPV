@@ -1,6 +1,6 @@
 import * as T from 'three';
 
-export const STERN_TERRACES=Array.from({length:3},(_,tier)=>({width:30-tier*3,depth:9,y:12.04+tier*5.7,z:106-tier*7}));
+export const STERN_TERRACES=Array.from({length:3},(_,tier)=>({width:30-tier*3,depth:9,y:12.04+tier*5.7,z:tier===2?103:106}));
 
 /** Timber is a thin walking surface above a painted structural slab. */
 export function buildSternTerraces() {
