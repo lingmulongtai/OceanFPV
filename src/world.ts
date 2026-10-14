@@ -60,7 +60,9 @@ export class World {
   light: LightPreset = 'golden';
   private propellers: T.Mesh[] = [];
   private vesselTime=-1;
+  private vesselSeaScale=NaN;
   private launchVelocity:T.Vector3|null=null;
+  private launchSample:{time:number;position:T.Vector3}|null=null;
   private surfaceGroups:SurfaceGroup[]=[];
   private groundCover=new T.MeshStandardMaterial();
   private groundMaterials:T.MeshStandardMaterial[]=[];
@@ -328,8 +330,11 @@ export class World {
     this.propellers.forEach((p,i)=>p.rotation.y=time*(i%2?-1:1)*motor*170);
   }
   advanceVessels(time:number) {
-    if(time===this.vesselTime)return;
-    const oldLaunch=this.ship.localToWorld(new T.Vector3(0,5.4,38)),dt=time-this.vesselTime;
+    const scale=this.ocean.material.uniforms.seaScale.value as number;
+    if(time===this.vesselTime&&scale===this.vesselSeaScale)return;
+    if(scale!==this.vesselSeaScale||time<this.vesselTime||time-this.vesselTime>=0.2) {
+      this.launchSample=null;this.launchVelocity=null;
+    }
     for(const [i,kind,root,length,width]of [[0,'explorer',this.ship,92,4.4],[1,'cruise',this.cruise.root,260,17],[2,'yacht',this.yacht,28,YACHT_BEAM/2]] as const) {
       const p=vesselPose(kind,time),forward=new T.Vector3(-Math.sin(p.heading),0,-Math.cos(p.heading));
       const h=this.ocean.heightAt(p.x,p.z)*(kind==='cruise'?0.2:0.45),half=length*0.3;
@@ -341,7 +346,14 @@ export class World {
       trail.forEach((point,j)=> {this.ocean.material.uniforms.wakePoints.value[i*WAKE_SAMPLES+j].set(point.x,point.z,point.age,point.speed);bounds.expandByPoint(new T.Vector2(point.x,point.z));});
       bounds.expandByScalar(padding);this.ocean.material.uniforms.wakeBounds.value[i].set(bounds.min.x,bounds.min.y,bounds.max.x,bounds.max.y);
     }
-    this.launchVelocity=dt>0&&dt<0.2?this.ship.localToWorld(new T.Vector3(0,5.4,38)).sub(oldLaunch).divideScalar(dt):null;this.vesselTime=time;
+    // A wave snapshot spans several physics ticks. Keep its full-interval deck
+    // velocity between snapshots instead of dividing the jump by one tick.
+    if(this.ocean.simulation.time===time&&time!==this.launchSample?.time) {
+      const position=this.ship.localToWorld(new T.Vector3(0,5.4,38)),dt=time-(this.launchSample?.time??time);
+      this.launchVelocity=this.launchSample&&dt>0&&dt<0.2?position.clone().sub(this.launchSample.position).divideScalar(dt):null;
+      this.launchSample={time,position};
+    }
+    this.vesselTime=time;this.vesselSeaScale=scale;
   }
   launchPose(time:number) {
     this.advanceVessels(time);const pose=vesselPose('explorer',time);
