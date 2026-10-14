@@ -8,7 +8,7 @@ import {buildTenderModel,TENDER_MOUNTS} from './tender';
 import {buildSternTerraces} from './stern-terraces';
 import {cruiseHullGeometry,cruiseHullSidePose} from './cruise-hull';
 import {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
-import {buildAftLounge} from './aft-lounge';
+import {buildAftLounge,buildAftLoungeFurniture} from './aft-lounge';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
 export {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
@@ -90,6 +90,10 @@ export function buildCruiseShip() {
     capture=false;
     add(windowRibbon(length+0.14,27.64,1.72,6.07,true,'bow'),[0,y+0.02,z],glass);
     for(const part of buildAftLounge(length).parts)add(part.geometry,[0,floor,z],part.finish==='glass'?cabinGlass:part.finish==='teak'?teak:white);
+    for(const part of buildAftLoungeFurniture(length).parts){
+      const material=part.finish==='fabric'?quilts[deck%quilts.length]:part.finish==='teak'?teak:chrome;add(part.geometry,[0,floor,z],material);
+      if(part.coarse){part.coarse.translate(0,floor,z);if(!coarseFurniture.has(material))coarseFurniture.set(material,[]);coarseFurniture.get(material)!.push(part.coarse.toNonIndexed());part.coarse.dispose();}
+    }
     for(const p of deckOutline(length+0.2,27.7,6.1).getPoints(4)) {
       if(Math.abs(p.y)>length/2-7)rod([p.x,y-0.85,z+p.y],[p.x,y+0.9,z+p.y],0.045,white);
     }
