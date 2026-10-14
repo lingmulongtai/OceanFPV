@@ -72,6 +72,7 @@ export class Ocean {
   private bottomData=bathymetryData();
   private coastalScale=(x:number,z:number)=>nearshoreEnvelope(-sampleBathymetry(this.bottomData,x,z).height).value;
   private textures:T.DataTexture[]=[];
+  private fieldsDirty=true;
   private quality='high';
   private state:SeaState='breeze';
   private reflectedView:T.Camera|null=null;
@@ -242,10 +243,11 @@ export class Ocean {
       this.material.uniforms.slopeMipCross.value[level].set(...this.waveMipmaps.map(f=>(f.tangentX.crossEnergy[level]+f.tangentZ.crossEnergy[level])*scale));
       this.material.uniforms.heightMipCross.value[level].set(...this.waveMipmaps.map(f=>f.displacement.crossEnergy[level]*scale));
     }
+    this.fieldsDirty=false;
   }
   advance(time:number,state:SeaState) {
     this.state=state;
-    if(this.simulation.update(time,SEA_SCALE[state]))this.refreshFields();
+    if(this.simulation.update(time,SEA_SCALE[state]))this.fieldsDirty=true;
     this.material.uniforms.time.value=time;this.material.uniforms.seaScale.value=SEA_SCALE[state];
     this.material.uniforms.chopScale.value=this.simulation.horizontalScale;
     this.material.uniforms.slopeVariance.value.set(...this.simulation.cascades.map(c=>c.slopeVariance*SEA_SCALE[state]**2));
@@ -253,7 +255,8 @@ export class Ocean {
   }
   update(time:number,camera:T.Vector3,state:SeaState) {
     this.reflectedView=null;
-    this.advance(time,state);this.material.uniforms.eye.value.copy(camera);this.mesh.position.x=camera.x;this.mesh.position.z=camera.z;
+    this.advance(time,state);if(this.fieldsDirty)this.refreshFields();
+    this.material.uniforms.eye.value.copy(camera);this.mesh.position.x=camera.x;this.mesh.position.z=camera.z;
   }
   setQuality(quality:string) {
     const size=quality==='ultra'?3072:quality==='high'?1536:512,target=this.mesh.getRenderTarget();if(target.width!==size)target.setSize(size,size);
