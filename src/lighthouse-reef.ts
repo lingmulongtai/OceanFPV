@@ -9,8 +9,16 @@ export class LighthouseReef {
   private readonly tree:MeshBVH;
   private readonly point=new T.Vector3();
   private readonly ray=new T.Ray(new T.Vector3(),new T.Vector3(0.431,0.557,0.709).normalize());
+  private readonly topRay=new T.Ray(new T.Vector3(),new T.Vector3(0,-1,0));
   constructor() {
     this.geometry.computeBoundingBox();this.tree=new MeshBVH(this.geometry,{indirect:true});
+  }
+  /** Highest rendered triangle at world X/Z, or null beyond the reef footprint. */
+  topHeight(x:number,z:number) {
+    const bounds=this.geometry.boundingBox!,localX=x-this.x,localZ=z-this.z;
+    if(localX<bounds.min.x||localX>bounds.max.x||localZ<bounds.min.z||localZ>bounds.max.z)return null;
+    this.topRay.origin.set(localX,bounds.max.y+1,localZ);
+    return this.tree.raycastFirst(this.topRay,T.DoubleSide)?.point.y??null;
   }
   contains(position:T.Vector3,padding=0.25) {
     const p=this.point.set(position.x-this.x,position.y,position.z-this.z),bounds=this.geometry.boundingBox!;

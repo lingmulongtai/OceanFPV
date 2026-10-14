@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 import * as T from 'three';
 import { LighthouseReef } from '../src/lighthouse-reef';
 
+test('reef top heights match independent rendered-triangle rays including footprint misses',()=> {
+  const reef=new LighthouseReef(),mesh=new T.Mesh(reef.geometry,new T.MeshBasicMaterial({side:T.DoubleSide}));
+  mesh.position.set(reef.x,0,reef.z);mesh.updateMatrixWorld();let hits=0,misses=0;
+  for(let x=105.13;x<=185;x+=3.4)for(let z=-171.17;z<=-98;z+=2.9) {
+    const hit=new T.Raycaster(new T.Vector3(x,40,z),new T.Vector3(0,-1,0)).intersectObject(mesh)[0],height=reef.topHeight(x,z);
+    if(hit){assert.ok(height!==null&&Math.abs(height-hit.point.y)<0.00000001);hits++;}
+    else {assert.equal(height,null);misses++;}
+  }
+  assert.ok(hits>250&&misses>250);
+  assert.ok(Math.abs(reef.topHeight(175,-135)!-5.540271905)<0.00001);
+});
+
 test('reef rendering retains the original scaled shape and frees air over its slopes',()=> {
   const reef=new LighthouseReef(),material=new T.MeshBasicMaterial({side:T.DoubleSide});
   const original=new T.Mesh(new T.IcosahedronGeometry(20,2),material);original.scale.set(1.8,0.65,1.35);original.position.set(145,-1,-135);original.updateMatrixWorld();
