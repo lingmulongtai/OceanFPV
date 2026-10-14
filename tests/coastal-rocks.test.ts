@@ -67,6 +67,23 @@ test('custom rock patches reject missing support feet and keep excluded world sp
   }
 });
 
+test('settled island rocks limit tilt while retaining visible captured geometry',()=> {
+  const shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),position=shape.geometry.attributes.position,point=new T.Vector3();let count=0;
+  for(const coast of COASTS) {
+    const ground=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile);
+    const placements=rockPatchPlacements(shape,{coast,sites:coastalRockSites(coast),embedFraction:0.45,maxTilt:Math.PI/12});
+    assert.equal(placements.length,90);
+    for(const placement of placements) {
+      const rotation=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().extractRotation(placement.matrix)),up=new T.Vector3(0,1,0).applyQuaternion(rotation);
+      assert.ok(Math.acos(up.y)<=Math.PI/12+0.0000001);assert.ok(placement.matrix.elements.every(Number.isFinite));
+      let exposed=false;
+      for(let i=0;i<position.count&&!exposed;i++){point.fromBufferAttribute(position,i).applyMatrix4(placement.matrix);exposed=point.y>ground(point.x,point.z)+0.3;}
+      assert.ok(exposed,'a settled rock must retain actual vertices above terrain');count++;
+    }
+  }
+  assert.equal(count,270);
+});
+
 test('lighthouse outcrops use real reef support and preserve tower and known free air',()=> {
   const shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),reef=new LighthouseReef(),patch=lighthouseRockPatch(reef),placements=rockPatchPlacements(shape,patch),point=new T.Vector3();
   assert.equal(placements.length,9);
