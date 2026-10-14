@@ -79,12 +79,14 @@ test('stern terrace walking surfaces and supports have matching flight contacts'
     const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),model=await import('/src/stern-terraces.ts' as string),samples=[];
     for(const deck of model.STERN_TERRACES.slice(0,2)) {
       const local=new T.Vector3(deck.width/2-.3,deck.y+.8,deck.z+3.6),origin=w.cruise.root.localToWorld(local),direction=new T.Vector3(0,-1,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(w.cruise.root,true)[0];
-      if(!hit)throw new Error('Missing terrace surface');const point=w.cruise.root.worldToLocal(hit.point.clone()),clear=point.clone().add(new T.Vector3(0,.55,0));
-      samples.push({teak:hit.object.material===w.cruise.teak,error:Math.abs(point.y-(deck.y+.2)),contact:w.collision(hit.point,a.getState().time,'breeze'),clear:w.collision(w.cruise.root.localToWorld(clear),a.getState().time,'breeze')});
+      if(!hit)throw new Error('Missing terrace surface');const point=w.cruise.root.worldToLocal(hit.point.clone()),clear=point.clone().add(new T.Vector3(-1,.55,0));
+      const aft=deck.z+deck.depth/2-.14,railOrigin=w.cruise.root.localToWorld(new T.Vector3(0,deck.y+1.25,aft+1)),railDirection=new T.Vector3(0,0,-1).transformDirection(w.cruise.root.matrixWorld),rail=new T.Raycaster(railOrigin,railDirection).intersectObject(w.cruise.root,true)[0];
+      if(!rail)throw new Error('Missing aft guardrail');const railPoint=w.cruise.root.worldToLocal(rail.point.clone());
+      samples.push({teak:hit.object.material===w.cruise.teak,error:Math.abs(point.y-(deck.y+.2)),contact:w.collision(hit.point,a.getState().time,'breeze'),clear:w.collision(w.cruise.root.localToWorld(clear),a.getState().time,'breeze'),railError:Math.abs(railPoint.z-aft-.032),railContact:w.collision(rail.point,a.getState().time,'breeze'),aboveRail:w.collision(w.cruise.root.localToWorld(railPoint.clone().add(new T.Vector3(0,.4,0))),a.getState().time,'breeze')});
     }
     return samples;
   });
-  expect(result).toHaveLength(2);for(const sample of result){expect(sample.teak).toBe(true);expect(sample.error).toBeLessThan(.00001);expect(sample.contact).toBeTruthy();expect(sample.clear).toBeNull();}
+  expect(result).toHaveLength(2);for(const sample of result){expect(sample.teak).toBe(true);expect(sample.error).toBeLessThan(.00001);expect(sample.contact).toBeTruthy();expect(sample.clear).toBeNull();expect(sample.railError).toBeLessThan(.00001);expect(sample.railContact).toBeTruthy();expect(sample.aboveRail).toBeNull();}
 });
 test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
   await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);

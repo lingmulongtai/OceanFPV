@@ -184,8 +184,7 @@ export function buildCruiseShip() {
       for(const dx of [-0.22,0.22])for(const dz of [-0.55,0.55])rod([side*6.4+dx,sunDeck+0.09,z+offset+dz],[side*6.4+dx,sunDeck+0.165,z+offset+dz],0.025);
     }
   }
-  const sternTerraces=buildSternTerraces();for(const part of sternTerraces.parts)add(part.geometry,[0,0,0],part.finish==='paint'?white:teak);
-  for(let tier=0;tier<3;tier++)for(const side of [-1,1])rod([side*(14-tier*1.5),13+tier*5.7,102-tier*7],[side*(14-tier*1.5),13+tier*5.7,110-tier*7]);
+  const sternTerraces=buildSternTerraces();for(const part of sternTerraces.parts)add(part.geometry,[0,0,0],part.finish==='paint'?white:part.finish==='teak'?teak:chrome);
   const tender=buildTenderModel(),tenderMaterials={orange,white,glass:cabinGlass,rubber:black,metal:chrome,upholstery:tenderUpholstery},hoists:{line:T.Line3;radius:number}[]=[],nearTender=new T.Vector3();
   const hoist=(a:T.Vector3,b:T.Vector3,radius:number,material:T.MeshStandardMaterial)=>{rod(a.toArray(),b.toArray(),radius,material);hoists.push({line:new T.Line3(a,b),radius});};
   for(const mount of TENDER_MOUNTS) {

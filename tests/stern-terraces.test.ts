@@ -7,10 +7,21 @@ test('stern terraces put timber above painted structure with real surface contac
   for(const deck of STERN_TERRACES) {
     const ray=new T.Raycaster(new T.Vector3(deck.width/2-.3,deck.y+1,deck.z+3.6),new T.Vector3(0,-1,0)),hit=ray.intersectObjects(meshes)[0];assert.ok(hit);
     assert.ok(Math.abs(hit.point.y-(deck.y+.2))<1e-5);assert.equal(model.contains(hit.point),true);
-    assert.equal(model.contains(hit.point.clone().add(new T.Vector3(0,.3,0))),false);
+    assert.equal(model.contains(new T.Vector3(0,deck.y+.5,deck.z+3.6)),false);
     assert.equal(model.contains(new T.Vector3(deck.width/2+.6,deck.y,deck.z+3.6)),false);
     const underside=new T.Raycaster(new T.Vector3(deck.width/2-.3,deck.y-1,deck.z+3.6),new T.Vector3(0,1,0)).intersectObjects(meshes)[0];assert.ok(underside);assert.ok(Math.abs(underside.point.y-(deck.y-.14))<1e-5);
     assert.equal(model.parts[meshes.findIndex(mesh=>mesh===underside.object)].finish,'paint');
+  }
+});
+
+test('terrace guardrails have supported posts and keep the space above them clear',()=> {
+  const model=buildSternTerraces();
+  for(const deck of STERN_TERRACES) {
+    const floor=deck.y+.2,aft=deck.z+deck.depth/2-.14,ray=new T.Raycaster(new T.Vector3(0,floor+1.05,aft+1),new T.Vector3(0,0,-1)),meshes=model.parts.map(part=>new T.Mesh(part.geometry,new T.MeshBasicMaterial()));
+    meshes.forEach(mesh=>mesh.updateMatrixWorld(true));const hit=ray.intersectObjects(meshes)[0];assert.ok(hit);assert.equal(model.contains(hit.point),true);
+    assert.equal(model.contains(new T.Vector3(0,floor+1.4,aft)),false);assert.equal(model.contains(new T.Vector3(0,floor+.8,aft+.5)),false);
+    const posts=model.rails.filter(r=>Math.abs(r.line.start.y-floor)<1e-9);assert.ok(posts.length>20);
+    for(const {line}of posts)assert.ok(Math.abs(line.end.y-floor-1.05)<1e-9);
   }
 });
 
