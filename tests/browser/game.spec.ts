@@ -72,6 +72,37 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   await page.locator('[data-close="settings-dialog"]').last().click();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(true);
 });
+test('render delays keep world and flight coupled and unsafe gaps pause without a jump',async({page})=> {
+  test.setTimeout(300000);
+  await ready(page);await page.locator('#start').click();
+  const result=await page.evaluate(async()=> {
+    const app=(window as any).__OCEANFPV__,world=app.world,flight=app.flight;
+    flight.position.set(400,100,400);flight.previous.copy(flight.position);flight.velocity.set(0,0,0);
+    let ticks=0,mismatches=0;const original=flight.step;
+    flight.step=function(...args:any[]) {
+      const time=app.getState().time;
+      if(world.vesselTime!==time||world.ocean.material.uniforms.time.value!==time)mismatches++;
+      ticks++;return original.apply(this,args);
+    };
+    const waitFrame=()=>new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
+    const block=(milliseconds:number)=> {const start=performance.now();while(performance.now()-start<milliseconds){/* Actual main-thread stall. */}};
+    try {
+      const before=app.getState();block(350);await waitFrame();const after=app.getState();
+      const delayed={ticks,mismatches,worldElapsed:after.time-before.time,flightElapsed:after.flightTime-before.flightTime};
+      const stopped={time:after.time,flightTime:after.flightTime,position:flight.position.toArray(),ship:world.cruise.root.position.toArray()};
+      block(10100);await waitFrame();const state=app.getState();
+      return {delayed,stopped,afterGap:{time:state.time,flightTime:state.flightTime,position:flight.position.toArray(),ship:world.cruise.root.position.toArray()},paused:state.paused};
+    }finally {flight.step=original;}
+  });
+  expect(result.delayed.ticks).toBeGreaterThanOrEqual(42);
+  expect(result.delayed.mismatches).toBe(0);
+  expect(result.delayed.worldElapsed).toBeGreaterThanOrEqual(0.349);
+  expect(result.delayed.flightElapsed).toBeCloseTo(result.delayed.worldElapsed,8);
+  expect(result.paused).toBe(true);expect(result.afterGap).toEqual(result.stopped);
+  await expect(page.locator('#pause-copy')).toContainText('処理の遅れが10秒を超えました');
+  await page.locator('#resume').click();expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().paused)).toBe(false);
+});
+
 test('fixed dialog views stop GPU draws and redraw changed settings',async({page})=> {
   test.setTimeout(300000);
   await page.addInitScript(()=> {
@@ -121,8 +152,12 @@ test('race registers actual ordered gate crossing and saves a completed run', as
   test.setTimeout(300000);
   await ready(page);
   await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.getState().time),{timeout:60000}).toBeGreaterThan(2);
-  await page.locator('#race-mode').click();await page.locator('#start').click();
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().time)).toBeLessThan(1);
+  await page.locator('#race-mode').click();
+  const resetTime=await page.evaluate(()=> {
+    document.querySelector<HTMLButtonElement>('#start')!.click();
+    return (window as any).__OCEANFPV__.getState().time;
+  });
+  expect(resetTime).toBe(0);
   for(let i=0;i<18;i++) {
     const crossed=await page.evaluate(async(index)=> {
       const app=(window as any).__OCEANFPV__,g=app.world.gateMeshes[index%6];
