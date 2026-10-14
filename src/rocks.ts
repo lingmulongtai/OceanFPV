@@ -7,7 +7,7 @@ import {LIGHTHOUSE_COAST,type LighthouseReef} from './lighthouse-reef';
 import { wetCoastalSurface } from './surfaces';
 
 export type RockSite={x:number;z:number;scale:number;yaw:number};
-export type RockPatch={sites:RockSite[];coast:Coast;fallback?:T.InstancedMesh;heightAt?:(x:number,z:number)=>number|null;avoid?:T.Box3[];embedFraction?:number;maxTilt?:number};
+export type RockPatch={sites:RockSite[];coast:Coast;fallback?:T.InstancedMesh;heightAt?:(x:number,z:number)=>number|null;avoid?:T.Box3[];embedFraction?:number;maxTilt?:number;minSupportFraction?:number};
 type RockPlacement={matrix:T.Matrix4;inverse:T.Matrix4;bounds:T.Box3;scale:number};
 
 /** Low coastal shelves support boulders without turning them upright on cliffs. */
@@ -88,7 +88,14 @@ export class CoastalRockShape {
 /** Custom mesh ground can reject unsupported feet; exclusions stay in world metres. */
 export function rockPatchPlacements(shape:CoastalRockShape,patch:RockPatch) {
   const {coast}=patch,heightAt=patch.heightAt??((x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile));
-  return patch.sites.map(site=>shape.place(site,heightAt,patch.embedFraction,patch.maxTilt)).filter((p):p is RockPlacement=>p!==null&&!patch.avoid?.some(bounds=>p.bounds.intersectsBox(bounds)));
+  const point=new T.Vector3();
+  return patch.sites.map(site=>shape.place(site,heightAt,patch.embedFraction,patch.maxTilt)).filter((p):p is RockPlacement=> {
+    if(p===null||patch.avoid?.some(bounds=>p.bounds.intersectsBox(bounds)))return false;
+    if(patch.minSupportFraction===undefined)return true;
+    let supported=0;
+    for(const foot of shape.feet){point.copy(foot).applyMatrix4(p.matrix);const height=heightAt(point.x,point.z);if(height!==null&&point.y<=height)supported++;}
+    return supported/shape.feet.length>=patch.minSupportFraction;
+  });
 }
 
 function disposeModel(source:T.Group,disposeTextures=true) {

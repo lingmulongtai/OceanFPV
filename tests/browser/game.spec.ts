@@ -26,7 +26,7 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await expect(page.locator('#unsupported')).toBeHidden();
   expect(render.triangles).toBeGreaterThan(30000);
   expect(forest).toBeGreaterThan(1000000);
-  expect(rocks.triangles).toBe(14844);expect(rocks.placements).toBe(279);expect(rocks.instances).toBe(279);expect(rocks.reef).toBe(9);
+  expect(rocks.triangles).toBe(14844);expect(rocks.placements).toBe(182);expect(rocks.instances).toBe(182);expect(rocks.reef).toBe(9);
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
 });

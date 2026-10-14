@@ -67,6 +67,23 @@ test('custom rock patches reject missing support feet and keep excluded world sp
   }
 });
 
+test('settled island rocks limit tilt while retaining visible captured geometry',()=> {
+  const shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),position=shape.geometry.attributes.position,point=new T.Vector3();let count=0;
+  for(const coast of COASTS) {
+    const ground=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile);
+    const placements=rockPatchPlacements(shape,{coast,sites:coastalRockSites(coast),embedFraction:0.45,maxTilt:Math.PI/12});
+    assert.equal(placements.length,90);
+    for(const placement of placements) {
+      const rotation=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().extractRotation(placement.matrix)),up=new T.Vector3(0,1,0).applyQuaternion(rotation);
+      assert.ok(Math.acos(up.y)<=Math.PI/12+0.0000001);assert.ok(placement.matrix.elements.every(Number.isFinite));
+      let exposed=false;
+      for(let i=0;i<position.count&&!exposed;i++){point.fromBufferAttribute(position,i).applyMatrix4(placement.matrix);exposed=point.y>ground(point.x,point.z)+0.3;}
+      assert.ok(exposed,'a settled rock must retain actual vertices above terrain');count++;
+    }
+  }
+  assert.equal(count,270);
+});
+
 test('lighthouse outcrops use real reef support and preserve tower and known free air',()=> {
   const shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),reef=new LighthouseReef(),patch=lighthouseRockPatch(reef),placements=rockPatchPlacements(shape,patch),point=new T.Vector3();
   assert.equal(placements.length,9);
@@ -80,6 +97,21 @@ test('lighthouse outcrops use real reef support and preserve tower and known fre
     assert.ok(Math.acos(up.y)<=patch.maxTilt!+0.0000001);
     assert.ok(gaps.filter(gap=>gap<=0).length>=gaps.length*0.8,'most support samples should be embedded in the reef');
   }
+});
+
+test('unsupported island ledges are rejected from the shared render and contact placements',()=> {
+  const shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),point=new T.Vector3();let accepted=0;
+  for(const coast of COASTS) {
+    const ground=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile),sites=coastalRockSites(coast);
+    const placements=rockPatchPlacements(shape,{coast,sites,embedFraction:0.45,maxTilt:Math.PI/12,minSupportFraction:0.8});
+    assert.ok(placements.length>0&&placements.length<sites.length);
+    for(const placement of placements) {
+      const embedded=shape.feet.filter(foot=>{point.copy(foot).applyMatrix4(placement.matrix);return point.y<=ground(point.x,point.z);}).length;
+      assert.ok(embedded>=shape.feet.length*0.8);accepted++;
+    }
+    if(coast===COASTS[0])assert.ok(!placements.some(p=>Math.abs(p.matrix.elements[12]-sites[16].x)<0.000001&&Math.abs(p.matrix.elements[14]-sites[16].z)<0.000001));
+  }
+  assert.ok(accepted>0&&accepted<270);
 });
 
 test('spatial batches retain every captured rock and conservative bounds for each render camera',()=> {

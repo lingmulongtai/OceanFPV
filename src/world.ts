@@ -313,7 +313,7 @@ export class World {
       rocks.setMatrixAt(i,new T.Matrix4().compose(new T.Vector3(x+tx,y+s*0.25,z+tz),new T.Quaternion().setFromEuler(new T.Euler(angle,angle*0.7,angle*0.3)),new T.Vector3(s*1.6,s*0.8,s)));
       this.fallbackRockObstacles.push({x:x+tx,z:z+tz,y:y-s*0.1,radius:s*1.3,height:s*1.1});}
     rocks.castShadow=rocks.receiveShadow=true;this.scene.add(rocks);
-    this.rockPatches.push({sites:rockSites,coast:{...coast},fallback:rocks});
+    this.rockPatches.push({sites:rockSites,coast:{...coast},fallback:rocks,embedFraction:0.45,maxTilt:Math.PI/12,minSupportFraction:0.8});
   }
   private terrain(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
     return terrainSurfaceHeight(x,z,size,height,profile);
