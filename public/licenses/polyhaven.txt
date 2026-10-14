@@ -8,11 +8,14 @@ Kloofendal 48d Partly Cloudy (Pure Sky) by Greg Zaal and Jarod Guest:
 https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky
 Island Tree 02 by Rob Tuytel and Rico Cilliers:
 https://polyhaven.com/a/island_tree_02
+Rock 07 by Jenelle van Heerden (4K glTF and textures):
+https://polyhaven.com/a/rock_07
 
 Asset license: https://polyhaven.com/license
 CC0 legal code: https://creativecommons.org/publicdomain/zero/1.0/legalcode
 Download provenance and hashes: textures/manifest.json
 Tree provenance and hashes: models/island_tree_02/manifest.json
+Rock provenance and hashes: models/rock_07/manifest.json
 
 Self-hosted assets. No Poly Haven API connection is required at runtime.
 OceanFPV is not made by or endorsed by Poly Haven.
