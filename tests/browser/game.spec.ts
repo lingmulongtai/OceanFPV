@@ -13,10 +13,10 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
-  const {gpu,render,forest,rocks}=await page.evaluate(()=> {
+  const {gpu,render,forest,rocks,cliff}=await page.evaluate(()=> {
     const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
     const rocks=app.world.rocks;
-    return {gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:app.world.forest?.sourceTriangles??0,
+    return {gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:app.world.forest?.sourceTriangles??0,cliff:app.world.cliff?.surface.geometry.index.count/3,
       rocks:{triangles:rocks?.shape.geometry.index.count/3,placements:rocks?.placements.length,instances:rocks?.group.children.reduce((sum:number,mesh:any)=>sum+mesh.count,0),reef:rocks?.placements.filter((p:any)=>Math.hypot(p.matrix.elements[12]-app.world.lighthouseReef.x,p.matrix.elements[14]-app.world.lighthouseReef.z)<50).length}};
   });
   console.log(`Renderer: ${gpu}`);
@@ -26,9 +26,43 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await expect(page.locator('#unsupported')).toBeHidden();
   expect(render.triangles).toBeGreaterThan(30000);
   expect(forest).toBeGreaterThan(1000000);
-  expect(rocks.triangles).toBe(14844);expect(rocks.placements).toBe(182);expect(rocks.instances).toBe(182);expect(rocks.reef).toBe(9);
+  expect(rocks.triangles).toBe(14844);expect(rocks.placements).toBeGreaterThan(150);expect(rocks.placements).toBeLessThan(182);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
+});
+
+test('photographed cliff contacts, joined ground and shared water depth agree',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(()=>{
+    const w=(window as any).__OCEANFPV__.world,scan=w.cliff.surface,ground=w.cliffGround,Vector=w.ship.position.constructor,Ray=w.lighthouseReef.topRay.constructor;
+    const ray=new Ray(new Vector(-350,2,-450),new Vector(-1,0,0)),hit=scan.tree.raycastFirst(ray,2);if(!hit)throw new Error('Missing photographed front face');
+    const front=hit.point.clone().add(new Vector(2,0,0)),back=hit.point.clone().add(new Vector(-2,0,0));
+    const contacts=[w.collision(back,0,'breeze',front),w.collision(front,0,'breeze',back)];
+    const position=ground.geometry.attributes.position,data=w.ocean.bottomData,texture=w.ocean.material.uniforms.bathymetry.value;
+    let error=0,scanVertices=0;
+    for(let i=0;i<position.count;i++) {const top=scan.topHeight(position.getX(i)-580,position.getZ(i)-420);if(top!==null)scanVertices++;error=Math.max(error,Math.abs(data[i*4]-position.getY(i)));}
+    const trees=w.treeSites.flatMap((site:any)=>site.matrices).filter((m:any)=>{const e=m.elements;return ground.excludes(e[12],e[14],5*Math.hypot(e[0],e[1],e[2]));}).length;
+    const rocks=w.rocks.placements.filter((p:any)=>ground.excludes(p.matrix.elements[12],p.matrix.elements[14])).length;
+    const depth=w.ocean.cliffDepth,detail=w.ocean.material.uniforms.cliffBathymetry.value;
+    return {contacts,error,scanVertices,sameDepth:data===texture.image.data,detailSame:detail.image.data===depth.data,detailSize:[detail.image.width,detail.image.height],shelf:depth.sample(-390,-441).height,clear:depth.sample(-391.5,-442.5).height,ground:ground.heightAt(-380,-450),trees,rocks};
+  });
+  expect(result.contacts).toEqual(['海岸の崖に接触しました','海岸の崖に接触しました']);expect(result.error).toBe(0);expect(result.scanVertices).toBeGreaterThan(0);expect(result.sameDepth).toBe(true);expect(result.ground).toBe(-7);expect(result.trees).toBe(0);expect(result.rocks).toBe(0);
+  expect(result.detailSame).toBe(true);expect(result.detailSize).toEqual([512,512]);expect(result.shelf).toBeGreaterThan(4);expect(result.clear).toBe(-7);
+});
+
+test('missing cliff leaves the original headland and its placements intact',async({page})=> {
+  await page.route('**/models/coastal_cliff_02/**',route=>route.abort());await ready(page);
+  const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {cliff:!!w.cliff,ground:!!w.cliffGround,rocks:w.rocks.placements.length,instances:w.rocks.group.children.reduce((n:number,mesh:any)=>n+mesh.count,0)};});
+  expect(state).toEqual({cliff:false,ground:false,rocks:182,instances:182});await expect(page.locator('#start-note')).toContainText('標準素材');
+});
+
+test('cliff join keeps fallback rock rendering and collision records together',async({page})=> {
+  await page.route('**/models/rock_07/**',route=>route.abort());await ready(page);
+  const state=await page.evaluate(()=>{
+    const w=(window as any).__OCEANFPV__.world,ground=w.cliffGround,matrices=w.rockPatches.filter((p:any)=>p.fallback).map((p:any)=>p.fallback.count);
+    return {cliff:!!w.cliff,rocks:!!w.rocks,visible:matrices.reduce((n:number,count:number)=>n+count,0),contacts:w.fallbackRockObstacles.length,inside:w.fallbackRockObstacles.filter((p:any)=>ground.excludes(p.x,p.z,p.radius)).length};
+  });
+  expect(state.cliff).toBe(true);expect(state.rocks).toBe(false);expect(state.contacts).toBeLessThan(270);expect(state.visible).toBe(state.contacts);expect(state.inside).toBe(0);
 });
 test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
   await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);

@@ -16,9 +16,12 @@ import { CoastalForest, type TreeSite } from './vegetation';
 import { CoastalRocks, coastalRockSites, lighthouseRockPatch, type RockPatch } from './rocks';
 import { LighthouseReef } from './lighthouse-reef';
 import { metricPaintGeometry } from './paint';
+import {CoastalCliff} from './coastal-cliff';
+import {CliffGround} from './cliff-ground';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
 type Collider = { min: T.Vector3; max: T.Vector3 };
+type NaturalObstacle={x:number;z:number;y:number;radius:number;height:number};
 
 function canvasTexture(paint: (ctx: CanvasRenderingContext2D) => void, size = 512) {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
@@ -69,15 +72,19 @@ export class World {
   private surfaceGroups:SurfaceGroup[]=[];
   private groundCover=new T.MeshStandardMaterial();
   private groundMaterials:T.MeshStandardMaterial[]=[];
-  private naturalObstacles:{x:number;z:number;y:number;radius:number;height:number}[]=[];
+  private naturalObstacles:NaturalObstacle[]=[];
   private rockMaterial=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});
   private lighthouseReef=new LighthouseReef();
   private shorelineWash={value:SEA_SCALE.breeze};
   private treeSites:TreeSite[]=[];
   private rockPatches:RockPatch[]=[];
-  private fallbackRockObstacles:{x:number;z:number;y:number;radius:number;height:number}[]=[];
+  private fallbackRockObstacles:NaturalObstacle[]=[];
+  private fallbackRockLists=new Map<T.InstancedMesh,NaturalObstacle[]>();
   forest:CoastalForest|null=null;
   rocks:CoastalRocks|null=null;
+  cliff:CoastalCliff|null=null;
+  private cliffGround:CliffGround|null=null;
+  private headlandMesh:T.Mesh<T.BufferGeometry,T.MeshStandardMaterial>|null=null;
   quality='high';
 
   constructor() {
@@ -110,7 +117,11 @@ export class World {
     this.scene.fog = new T.FogExp2(0x9facac,0.00019);
   }
   async loadSurfaceTextures(renderer:T.WebGLRenderer,lightingReady:Promise<unknown>) {
-    const [missing,forest,rocks]=await Promise.all([loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy()),CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady),CoastalRocks.load(renderer,this.rockPatches,this.shorelineWash)]);
+    const textures=loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy());
+    const cliff=await CoastalCliff.load(renderer,this.shorelineWash);
+    if(cliff&&this.headlandMesh){this.installCliff(cliff,this.headlandMesh);}else cliff?.dispose();
+    const [missing,forest,rocks]=await Promise.all([textures,CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady),CoastalRocks.load(renderer,this.rockPatches,this.shorelineWash)]);
+    if(!this.cliff)missing.push('coastal cliff');
     this.groundMaterials.forEach(material=>material.needsUpdate=true);
     if(forest) {
       this.forest=forest;this.scene.add(forest.group);
@@ -122,6 +133,28 @@ export class World {
       this.fallbackRockObstacles=[];
     }else missing.push('coastal rock');
     return missing;
+  }
+  private installCliff(cliff:CoastalCliff,mesh:T.Mesh<T.BufferGeometry,T.MeshStandardMaterial>) {
+    const ground=new CliffGround(mesh.geometry,COASTS[0]);
+    this.ocean.installIslandDepth(0,ground.geometry,cliff.surface);
+    const retain=(instances:T.InstancedMesh,indices:number[])=>{
+      const matrix=new T.Matrix4(),colour=new T.Color();
+      indices.forEach((index,i)=>{instances.getMatrixAt(index,matrix);instances.setMatrixAt(i,matrix);if(instances.instanceColor){instances.getColorAt(index,colour);instances.setColorAt(i,colour);}});
+      instances.count=indices.length;instances.instanceMatrix.needsUpdate=true;if(instances.instanceColor)instances.instanceColor.needsUpdate=true;
+      instances.computeBoundingBox();instances.computeBoundingSphere();
+    };
+    for(const site of this.treeSites) {
+      const keep=site.matrices.map((matrix,i)=>({matrix,i})).filter(({matrix})=>{const e=matrix.elements,scale=new T.Vector3().setFromMatrixScale(matrix).x;return !ground.excludes(e[12],e[14],5*scale);}).map(({i})=>i);
+      site.fallback.forEach(instances=>retain(instances,keep));site.matrices=keep.map(i=>site.matrices[i]);
+    }
+    this.naturalObstacles=this.naturalObstacles.filter(p=>!ground.excludes(p.x,p.z,p.radius));
+    for(const patch of this.rockPatches)if(patch.coast.x===COASTS[0].x&&patch.coast.z===COASTS[0].z) {
+      patch.sites=patch.sites.filter(site=>!ground.excludes(site.x,site.z,site.scale*3.2));
+      patch.heightAt=(x,z)=>ground.excludes(x,z)?null:ground.heightAt(x,z);
+      if(patch.fallback){const obstacles=this.fallbackRockLists.get(patch.fallback)!;const keep=obstacles.map((p,i)=>({p,i})).filter(({p})=>!ground.excludes(p.x,p.z,p.radius)).map(({i})=>i);retain(patch.fallback,keep);}
+    }
+    this.fallbackRockObstacles=this.fallbackRockObstacles.filter(p=>!ground.excludes(p.x,p.z,p.radius));
+    const old=mesh.geometry;mesh.geometry=ground.geometry;old.dispose();this.cliffGround=ground;this.cliff=cliff;this.scene.add(cliff.group);
   }
   setLight(preset: LightPreset) {
     this.light = preset;
@@ -293,6 +326,7 @@ export class World {
     const material=new T.MeshStandardMaterial({vertexColors:true,roughness:0.96});this.surfaceGroups.push({asset:'rocky_terrain',resolution:'2k',materials:[material],colour:true});
     blendGroundCover(material,this.groundCover);wetCoastalSurface(material,this.shorelineWash);this.groundMaterials.push(material);
     const mesh=new T.Mesh(geo,material);mesh.position.set(x,0,z);mesh.receiveShadow=mesh.castShadow=true;this.scene.add(mesh);
+    if(coast===COASTS[0])this.headlandMesh=mesh;
     const crownParts:T.BufferGeometry[]=[];
     for(let i=0;i<7;i++) {const g=new T.IcosahedronGeometry(1,2),p=g.attributes.position;for(let v=0;v<p.count;v++){const k=0.9+0.1*Math.sin(p.getX(v)*17+p.getY(v)*19+p.getZ(v)*11);p.setXYZ(v,p.getX(v)*k,p.getY(v)*k,p.getZ(v)*k);}g.scale(i?2.6:3.1,i?3:4,i?2.6:3.1);g.translate(i?Math.cos(i*2.4)*2.3:0,6+i*0.55,i?Math.sin(i*2.4)*2.3:0);g.computeVertexNormals();crownParts.push(g);}
     const crowns=new T.InstancedMesh(mergeGeometries(crownParts)!,new T.MeshStandardMaterial({color:0xffffff,roughness:0.9}),170);crownParts.forEach(g=>g.dispose());
@@ -309,9 +343,10 @@ export class World {
     this.treeSites.push({matrices,fallback:[crowns,trunks]});
     const rockSites=coastalRockSites(coast),fallbackSites=profile==='headland'?rockSites:null;
     const rocks=new T.InstancedMesh(new T.IcosahedronGeometry(1,2),this.rockMaterial,fallbackSites?.length??90);
+    const obstacles:NaturalObstacle[]=[];this.fallbackRockLists.set(rocks,obstacles);
     for(let i=0;i<rocks.count;i++) {const site=fallbackSites?.[i],angle=site?.yaw??i*2.399,r=size*(0.68+(i%9)*0.027),tx=site?site.x-x:Math.cos(angle)*r,tz=site?site.z-z:Math.sin(angle)*r,y=this.terrain(tx,tz,size,height,profile),s=site?site.scale*2:2+(i%7)*0.6;
       rocks.setMatrixAt(i,new T.Matrix4().compose(new T.Vector3(x+tx,y+s*0.25,z+tz),new T.Quaternion().setFromEuler(new T.Euler(angle,angle*0.7,angle*0.3)),new T.Vector3(s*1.6,s*0.8,s)));
-      this.fallbackRockObstacles.push({x:x+tx,z:z+tz,y:y-s*0.1,radius:s*1.3,height:s*1.1});}
+      const obstacle={x:x+tx,z:z+tz,y:y-s*0.1,radius:s*1.3,height:s*1.1};obstacles.push(obstacle);this.fallbackRockObstacles.push(obstacle);}
     rocks.castShadow=rocks.receiveShadow=true;this.scene.add(rocks);
     this.rockPatches.push({sites:rockSites,coast:{...coast},fallback:rocks,embedFraction:0.45,maxTilt:Math.PI/12,minSupportFraction:0.8});
   }
@@ -379,7 +414,8 @@ export class World {
     const offset=new T.Vector3(0,5.4,38).applyQuaternion(this.ship.quaternion);
     return {position:this.ship.localToWorld(new T.Vector3(0,5.4,38)),velocity:this.launchVelocity?.clone()??new T.Vector3(pose.vx+turn*offset.z,0,pose.vz-turn*offset.x),heading:pose.heading};
   }
-  collision(p:T.Vector3,_time:number,_state:SeaState):string|null {
+  collision(p:T.Vector3,_time:number,_state:SeaState,previous=p):string|null {
+    if(this.cliff?.surface.contacts(p,previous))return '海岸の崖に接触しました';
     if(p.y < this.ocean.heightAt(p.x,p.z)+0.18) return '海面に接触しました';
     if(p.y>500||Math.hypot(p.x,p.z)>1900) return '飛行エリアの外に出ました';
     const local=p.clone();this.ship.worldToLocal(local);
@@ -396,7 +432,7 @@ export class World {
     for(const c of this.cruise.boxes)if(vesselBoxContains(c,passenger))return '客船の構造物に接触しました';
     if(this.cruise.tenderContains(passenger))return '客船の救命艇・吊り機構に接触しました';
     for(const island of this.islands) {
-      const h=this.terrain(p.x-island.x,p.z-island.z,island.size,island.height,island.profile);
+      const h=this.cliffGround&&island.x===COASTS[0].x&&island.z===COASTS[0].z?this.cliffGround.heightAt(p.x,p.z):this.terrain(p.x-island.x,p.z-island.z,island.size,island.height,island.profile);
       if(p.y<h+0.25) return '島に接触しました';
     }
     for(const obstacle of this.naturalObstacles)if(p.y>obstacle.y&&p.y<obstacle.y+obstacle.height&&Math.hypot(p.x-obstacle.x,p.z-obstacle.z)<obstacle.radius)return '木・岩に接触しました';

@@ -331,7 +331,7 @@ async function boot() {
         time+=step;world.ocean.advance(time,sea);world.advanceVessels(time);
         if(!playing||flight.crashed||race.finished)return;
         flight.step(step,sticks,sea==='swell'?0.65:sea==='breeze'?0.2:0);flightTime+=step;
-        const collision=world.collision(flight.position,time,sea);
+        const collision=world.collision(flight.position,time,sea,flight.previous);
         if(collision) {flight.crashed=true;flight.armed=false;flight.motor=0;pause('フライト終了',`${collision}。Rまたは「やり直す」で離陸地点へ。`);return false;}
         if(race.step(step,flight.previous,flight.position)) {
           world.updateGates(race.active,race.next);

@@ -1,4 +1,5 @@
 import {BATHY_SIZE} from './bathymetry';
+import {CLIFF_DEPTH_SIZE} from './cliff-depth';
 
 /** Bounded artistic shelf amplification and waterline attenuation; not wave refraction. */
 export function nearshoreEnvelope(depth:number) {
@@ -10,6 +11,8 @@ export function nearshoreEnvelope(depth:number) {
 export const nearshoreCode=`
 uniform sampler2D bathymetry;
 uniform vec4 islands[4];
+uniform sampler2D cliffBathymetry;
+uniform vec4 cliffBounds;
 vec4 bottomAt(vec2 uv) {
   vec2 pixel=uv*${BATHY_SIZE-1}.0,base=min(floor(pixel),vec2(${BATHY_SIZE-2}.0)),f=pixel-base,a=(base+0.5)/${BATHY_SIZE}.0;
   vec4 h=texture2D(bathymetry,a),b=texture2D(bathymetry,a+vec2(0,1.0/${BATHY_SIZE}.0)),d=texture2D(bathymetry,a+vec2(1.0/${BATHY_SIZE}.0,0));
@@ -27,6 +30,17 @@ vec3 coastalBottom(vec2 p) {
     if(f.x+f.y<=1.0){height=h+(b-h)*f.y+(d-h)*f.x;gradient=vec2(d-h,b-h);}
     else {float c=texture2D(bathymetry,a+vec2(1.0/${BATHY_SIZE}.0))[i];height=c+(b-c)*(1.0-f.x)+(d-c)*(1.0-f.y);gradient=vec2(c-b,c-d);}
     if(height>result.x)result=vec3(height,gradient*${BATHY_SIZE-1}.0/(islands[i].zw*2.4));
+  }
+  if(cliffBounds.z>0.0&&cliffBounds.w>0.0) {
+    vec2 uv=(p-cliffBounds.xy)/cliffBounds.zw;
+    if(all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1)))) {
+      vec2 pixel=uv*${CLIFF_DEPTH_SIZE-1}.0,base=min(floor(pixel),vec2(${CLIFF_DEPTH_SIZE-2}.0)),f=pixel-base,a=(base+0.5)/${CLIFF_DEPTH_SIZE}.0;
+      float h=texture2D(cliffBathymetry,a).r,b=texture2D(cliffBathymetry,a+vec2(0,1.0/${CLIFF_DEPTH_SIZE}.0)).r,d=texture2D(cliffBathymetry,a+vec2(1.0/${CLIFF_DEPTH_SIZE}.0,0)).r;
+      float height;vec2 gradient;
+      if(f.x+f.y<=1.0){height=h+(b-h)*f.y+(d-h)*f.x;gradient=vec2(d-h,b-h);}
+      else {float c=texture2D(cliffBathymetry,a+vec2(1.0/${CLIFF_DEPTH_SIZE}.0)).r;height=c+(b-c)*(1.0-f.x)+(d-c)*(1.0-f.y);gradient=vec2(c-b,c-d);}
+      if(height>result.x)result=vec3(height,gradient*${CLIFF_DEPTH_SIZE-1}.0/cliffBounds.zw);
+    }
   }
   return result;
 }
