@@ -1,12 +1,26 @@
 import test from 'node:test';import assert from 'node:assert/strict';import * as T from 'three';
 import {AFT_ROOM,buildAftLounge,buildAftLoungeFurniture} from '../src/aft-lounge';
 import {windowRibbon} from '../src/ship-outline';
+import {bakeCabinOcclusion,roomOcclusionUV} from '../src/occlusion';
 
 test('separate end ribbons preserve the original glazing triangles and face outwards',()=> {
   const args=[196.14,27.64,1.72,6.07,true]as const,all=windowRibbon(...args),bow=windowRibbon(...args,'bow'),aft=windowRibbon(...args,'aft');
   assert.deepEqual([...bow.index!.array,...aft.index!.array].sort((a,b)=>a-b),[...all.index!.array].sort((a,b)=>a-b));
   for(const [geometry,side]of [[aft,1],[bow,-1]]as const){const mesh=new T.Mesh(geometry,new T.MeshBasicMaterial());mesh.updateMatrixWorld(true);assert.ok(new T.Raycaster(new T.Vector3(0,0,side*110),new T.Vector3(0,0,-side)).intersectObject(mesh)[0]);assert.equal(new T.Raycaster(new T.Vector3(0,0,-side*110),new T.Vector3(0,0,side)).intersectObject(mesh).length,0);mesh.material.dispose();}
   for(const geometry of [all,bow,aft])geometry.dispose();
+});
+
+test('aft room charts preserve photographed UVs and darken floor beneath real seating',()=> {
+  const room=buildAftLounge(196),furniture=buildAftLoungeFurniture(196),blockers=[...room.parts.filter(p=>p.finish!=='glass'),...furniture.parts].map(p=>p.geometry),texture=bakeCabinOcclusion([room.parts[0].geometry],0,0,{blockers,front:room.front});
+  assert.equal(texture.image.width,256);assert.equal(texture.image.height,384);
+  const data=texture.image.data as Uint8Array,sample=(x:number,z:number)=>{const px=Math.round(2+(x+13.82)/27.64*124),py=Math.round(256+2+(z-room.front)/6.07*60);return data[(py*256+px)*4]/255;};
+  assert.ok(sample(1,room.front+3.15)<sample(4,room.front+5.5)-.1);
+  for(const part of room.parts.filter(p=>p.surface)){
+    const positions=[...part.geometry.attributes.position.array],uv=[...part.geometry.attributes.uv.array];roomOcclusionUV(part.geometry,0,room.front,1,part.surface);
+    assert.deepEqual([...part.geometry.attributes.position.array],positions);assert.deepEqual([...part.geometry.attributes.uv.array],uv);
+    assert.ok([...part.geometry.attributes.uv1.array].every(Number.isFinite));
+  }
+  assert.equal(data[(383*256+255)*4],255);texture.dispose();for(const part of [...room.parts,...furniture.parts])part.geometry.dispose();for(const part of furniture.parts)part.coarse?.dispose();
 });
 
 test('lounge chair and pedestal feet land on actual timber and retain fabric at both quality levels',()=> {
