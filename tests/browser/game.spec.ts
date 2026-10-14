@@ -78,10 +78,14 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   test.setTimeout(300000);
   await ready(page);await page.locator('#start').click();
   await page.keyboard.down('Space');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(8);await page.keyboard.up('Space');
-  const altitude=await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y);
-  expect(altitude).toBeGreaterThan(6);
-  await page.keyboard.down('KeyW');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.velocity.z)).toBeLessThan(-0.8);await page.keyboard.up('KeyW');
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.velocity.z)).toBeLessThan(-0.5);
+  const beforePitch=await page.evaluate(()=> {
+    const flight=(window as any).__OCEANFPV__.flight,forward=flight.position.clone().set(0,0,-1).applyQuaternion(flight.orientation).setY(0).normalize();
+    return {altitude:flight.position.y,forward:forward.toArray(),speed:flight.velocity.dot(forward)};
+  });
+  expect(beforePitch.altitude).toBeGreaterThan(6);
+  const forwardSpeed=()=>page.evaluate((forward:number[])=> {const v=(window as any).__OCEANFPV__.flight.velocity;return v.x*forward[0]+v.z*forward[2];},beforePitch.forward);
+  await page.keyboard.down('KeyW');await expect.poll(forwardSpeed).toBeGreaterThan(Math.max(0.8,beforePitch.speed+0.8));await page.keyboard.up('KeyW');
+  expect(await forwardSpeed()).toBeGreaterThan(0.5);
   await page.keyboard.press('Escape');await expect(page.locator('#pause-dialog')).toBeVisible();
   const paused=await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray());
   await page.waitForTimeout(300);expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray())).toEqual(paused);
