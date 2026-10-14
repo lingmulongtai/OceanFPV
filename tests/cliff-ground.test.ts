@@ -12,6 +12,7 @@ test('cliff join retains distant vertices and samples its rendered triangles',()
   }
   assert.ok(changed>100&&changed<400);assert.deepEqual(positions.array,before);assert.deepEqual(ground.geometry.index!.array,source.index!.array);
   assert.equal(ground.heightAt(-380,-450),-7);assert.equal(ground.excludes(-390,-450),true);assert.equal(ground.excludes(-580,-420),false);
+  assert.ok(ground.heightAt(-400,-450)>0,'land behind the captured cliff must remain connected above water');
   for(let i=0;i<500;i++){const x=-420+(i*37%100)/100*100,z=-490+(i*53%100)/100*100;assert.ok(Math.abs(ground.heightAt(x,z)-sampleBathymetry(data,x,z).height)<1e-10);}
   for(let i=0;i<p.count;i++)for(let j=0;j<3;j++)assert.ok(Number.isFinite(ground.geometry.attributes.normal.array[i*3+j]));
 });

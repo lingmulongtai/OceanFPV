@@ -26,7 +26,7 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await expect(page.locator('#unsupported')).toBeHidden();
   expect(render.triangles).toBeGreaterThan(30000);
   expect(forest).toBeGreaterThan(1000000);
-  expect(rocks.triangles).toBe(14844);expect(rocks.placements).toBeGreaterThan(150);expect(rocks.placements).toBeLessThan(182);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
+  expect(rocks.triangles).toBe(14844);expect(rocks.placements).toBe(174);expect(rocks.instances).toBe(174);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
 });
@@ -44,10 +44,10 @@ test('photographed cliff contacts, joined ground and shared water depth agree',a
     const trees=w.treeSites.flatMap((site:any)=>site.matrices).filter((m:any)=>{const e=m.elements;return ground.excludes(e[12],e[14],5*Math.hypot(e[0],e[1],e[2]));}).length;
     const rocks=w.rocks.placements.filter((p:any)=>ground.excludes(p.matrix.elements[12],p.matrix.elements[14])).length;
     const depth=w.ocean.cliffDepth,detail=w.ocean.material.uniforms.cliffBathymetry.value;
-    return {contacts,error,scanVertices,sameDepth:data===texture.image.data,detailSame:detail.image.data===depth.data,detailSize:[detail.image.width,detail.image.height],shelf:depth.sample(-390,-441).height,clear:depth.sample(-391.5,-442.5).height,ground:ground.heightAt(-380,-450),trees,rocks};
+    return {contacts,error,scanVertices,sameDepth:data===texture.image.data,detailSame:detail.image.data===depth.data,detailSize:[detail.image.width,detail.image.height],shelf:depth.sample(-390,-441).height,clear:depth.sample(-391.5,-442.5).height,clearGround:ground.heightAt(-391.5,-442.5),ground:ground.heightAt(-380,-450),backGround:ground.heightAt(-400,-450),trees,rocks};
   });
   expect(result.contacts).toEqual(['海岸の崖に接触しました','海岸の崖に接触しました']);expect(result.error).toBe(0);expect(result.scanVertices).toBeGreaterThan(0);expect(result.sameDepth).toBe(true);expect(result.ground).toBe(-7);expect(result.trees).toBe(0);expect(result.rocks).toBe(0);
-  expect(result.detailSame).toBe(true);expect(result.detailSize).toEqual([512,512]);expect(result.shelf).toBeGreaterThan(4);expect(result.clear).toBe(-7);
+  expect(result.detailSame).toBe(true);expect(result.detailSize).toEqual([512,512]);expect(result.shelf).toBeGreaterThan(4);expect(result.clear).toBeCloseTo(result.clearGround,2);expect(result.backGround).toBeGreaterThan(0);
 });
 
 test('missing cliff leaves the original headland and its placements intact',async({page})=> {

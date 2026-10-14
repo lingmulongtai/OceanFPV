@@ -12,7 +12,7 @@ export class CliffGround {
     this.geometry=source.clone();const position=this.geometry.attributes.position,cover=this.geometry.attributes.groundCover;
     for(let i=0;i<position.count;i++) {
       const x=position.getX(i)+coast.x,z=position.getZ(i)+coast.z,y=position.getY(i);
-      const weight=(1-smooth(18,27,Math.abs(z+450)))*smooth(-408,-398,x)*(1-smooth(-366,-350,x));
+      const weight=(1-smooth(18,27,Math.abs(z+450)))*smooth(-402,-389,x)*(1-smooth(-366,-350,x));
       position.setY(i,y+(Math.min(y,-7)-y)*weight);if(weight>0&&cover)cover.setX(i,0);
     }
     position.needsUpdate=true;this.geometry.computeVertexNormals();this.geometry.computeBoundingBox();this.geometry.computeBoundingSphere();
