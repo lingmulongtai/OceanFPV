@@ -4,8 +4,10 @@ async function ready(page: Page) {
   await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
   await page.goto('/?test=1');
   await expect(page.locator('#start')).toBeEnabled({timeout:90000});
-  await page.evaluate(() => document.querySelector<HTMLSelectElement>('#quality')!.value='balanced');
-  await page.locator('#quality').dispatchEvent('input');
+  await page.evaluate(() => {
+    const quality=document.querySelector<HTMLSelectElement>('#quality')!;
+    if(quality.value!=='balanced') {quality.value='balanced';quality.dispatchEvent(new Event('input',{bubbles:true}));}
+  });
 }
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
   await page.setViewportSize({width:960,height:640});
@@ -205,9 +207,19 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
     Object.defineProperty(navigator,'getGamepads',{value:()=>[(window as any).__pad]});
   });
   await ready(page);await page.locator('#open-settings').click();await page.locator('[data-tab="controller"]').click();
-  await page.locator('#input-source').selectOption('xbox');await page.locator('[data-close="settings-dialog"]').last().click();await page.locator('#start').click();
-  await page.evaluate(()=> {(window as any).__pad.axes=[0,-1,0,-0.5];});await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(7);
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(6);
+  await page.locator('#input-source').selectOption('xbox');await page.locator('[data-close="settings-dialog"]').last().click();
+  const climbed=await page.evaluate(async()=> {
+    const app=(window as any).__OCEANFPV__;
+    document.querySelector<HTMLButtonElement>('#start')!.click();
+    const initial=app.flight.position.y,start=performance.now();
+    (window as any).__pad.axes=[0,-1,0,-0.5];
+    do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+    while((app.flight.position.y<=7||app.flight.position.y<=initial+1)&&performance.now()-start<20000);
+    return {initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks()};
+  });
+  expect(climbed.altitude).toBeGreaterThan(7);expect(climbed.altitude-climbed.initial).toBeGreaterThan(1);
+  expect(climbed.armed).toBe(true);expect(climbed.source).toBe('xbox');
+  expect(climbed.sticks.throttle).toBe(1);expect(climbed.sticks.pitch).toBeLessThan(0);expect(climbed.sticks.absoluteThrottle).toBe(false);
   await page.evaluate(()=> {(window as any).__pad=null;});await expect(page.locator('#pause-title')).toHaveText('コントローラー接続が切れました');
   await page.locator('#resume').click();await expect(page.locator('#pause-dialog')).toBeVisible();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().paused)).toBe(true);
