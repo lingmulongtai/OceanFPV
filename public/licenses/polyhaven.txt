@@ -12,12 +12,15 @@ Island Tree 02 by Rob Tuytel and Rico Cilliers:
 https://polyhaven.com/a/island_tree_02
 Rock 07 by Jenelle van Heerden (4K glTF and textures):
 https://polyhaven.com/a/rock_07
+Coastal Cliff 02 by Rob Tuytel (4K glTF and textures):
+https://polyhaven.com/a/coastal_cliff_02
 
 Asset license: https://polyhaven.com/license
 CC0 legal code: https://creativecommons.org/publicdomain/zero/1.0/legalcode
 Download provenance and hashes: textures/manifest.json
 Tree provenance and hashes: models/island_tree_02/manifest.json
 Rock provenance and hashes: models/rock_07/manifest.json
+Cliff provenance and hashes: models/coastal_cliff_02/manifest.json
 
 Self-hosted assets. No Poly Haven API connection is required at runtime.
 OceanFPV is not made by or endorsed by Poly Haven.
