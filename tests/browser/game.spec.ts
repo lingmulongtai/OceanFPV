@@ -261,12 +261,13 @@ test('settings persist, help is keyboard accessible and mobile panels fit', asyn
   test.setTimeout(300000);
   await ready(page);await page.locator('#open-settings').click();await page.locator('#light').selectOption('day');await page.locator('#sea').selectOption('calm');
   await page.keyboard.press('Escape');await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
-  expect(await page.locator('#light').inputValue()).toBe('day');expect(await page.locator('#sea').inputValue()).toBe('calm');
+  const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
+  expect(persisted).toEqual({light:'day',sea:'calm'});
   await page.setViewportSize({width:390,height:844});await page.locator('#open-help').click();await expect(page.locator('#help-dialog')).toBeVisible();
   const box=await page.locator('#help-dialog').boundingBox();expect(box!.width).toBeLessThan(390);
+  await page.screenshot({path:'test-results/oceanfpv-mobile-help.png'});
   await page.keyboard.press('Escape');await expect(page.locator('#help-dialog')).toBeHidden();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
-  await page.screenshot({path:'test-results/oceanfpv-mobile-menu.png'});
 });
 test('terrain projections preserve physical periods and normal direction on the GPU',async({page})=> {
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
@@ -287,6 +288,14 @@ test('headland bay matches rendered terrain, water depths and flight contacts',a
   });
   expect(coast.profile).toBe('headland');expect(coast.depthError).toBeLessThan(0.0001);
   expect(coast.bayContact).toBeNull();expect(coast.ridgeContact).toBe('島に接触しました');
+});
+test('nearshore displacement and geometric normals match CPU sampling on the GPU',async({page})=> {
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto('/tests/browser/fixtures/nearshore-probe.html');
+  await page.waitForFunction(()=>!!(window as any).__NEARSHORE_PROBE__,{},{timeout:60000});
+  const probe=await page.evaluate(()=>{const p=(window as any).__NEARSHORE_PROBE__;return {gpu:p.gpu,count:p.samples.length,heightError:p.heightError,normalError:p.normalError,varianceError:p.varianceError,contactError:p.contactError};});
+  console.log(`Nearshore probe: ${JSON.stringify(probe)}`);
+  expect(probe.count).toBeGreaterThanOrEqual(1554);expect(probe.heightError).toBeLessThan(0.003);expect(probe.normalError).toBeLessThan(0.003);expect(probe.varianceError).toBeLessThan(0.003);expect(probe.contactError).toBeLessThan(0.01);expect(errors).toEqual([]);
 });
 test('WebGL-unavailable browser gets a clear recovery screen', async ({page})=> {
   await page.addInitScript(()=> {

@@ -31,6 +31,7 @@ export class WaveCascade {
   readonly displacement: Float32Array;
   readonly tangentX: Float32Array;
   readonly tangentZ: Float32Array;
+  heightVariance=0;
   private readonly h0: Float64Array;
   private readonly omega: Float64Array;
   private readonly directionX: Float64Array;
@@ -80,11 +81,12 @@ export class WaveCascade {
     }
     this.fields.forEach(f=>inverseFFT(f.real,f.imaginary,n));
     const h=this.fields[0].real,dx=this.fields[1].real,dz=this.fields[2].real;
-    const derivative= n/(2*this.length);let slopeEnergy=0;
+    const derivative= n/(2*this.length);let slopeEnergy=0,heightEnergy=0;
     for(let z=0;z<n;z++) for(let x=0;x<n;x++) {
       const i=z*n+x,l=z*n+(x+n-1)%n,r=z*n+(x+1)%n,b=((z+n-1)%n)*n+x,t=((z+1)%n)*n+x;
       const hx=(h[r]-h[l])*derivative,hz=(h[t]-h[b])*derivative;
       slopeEnergy+=hx*hx+hz*hz;
+      heightEnergy+=h[i]*h[i];
       const dxx=(dx[r]-dx[l])*derivative,dxz=(dx[t]-dx[b])*derivative,dzx=(dz[r]-dz[l])*derivative,dzz=(dz[t]-dz[b])*derivative;
       this.displacement[i*4]=dx[i];this.displacement[i*4+1]=h[i];this.displacement[i*4+2]=dz[i];
       this.tangentX[i*4]=dxx;this.tangentX[i*4+1]=hx;this.tangentX[i*4+2]=dzx;
@@ -93,6 +95,7 @@ export class WaveCascade {
       this.compressionBound=Math.max(this.compressionBound,(Math.hypot(dxx-dzz,2*cross)-dxx-dzz)*0.5);
     }
     this.slopeVariance=slopeEnergy/count;
+    this.heightVariance=heightEnergy/count;
     // Imaginary residues are only round-off: Hermitian symmetry is preserved.
     if(count!==this.fields[0].real.length) throw new Error('Invalid ocean field');
   }
@@ -130,9 +133,10 @@ export class SpectralSea {
     this.horizontalScale=Math.min(scale,this.chopLimit);
     this.cascades.forEach(c=>c.updateFoam(time,scale,this.horizontalScale));return true;
   }
-  heightAt(x:number,z:number,scale=1) {
+  heightAt(x:number,z:number,scale=1,envelope?:(x:number,z:number)=>number) {
     let qx=x,qz=z;const horizontal=Math.min(scale,this.chopLimit);
-    for(let i=0;i<3;i++) {let dx=0,dz=0;for(const c of this.cascades){dx+=c.sample(qx,qz,0);dz+=c.sample(qx,qz,2);}qx=x-dx*horizontal;qz=z-dz*horizontal;}
-    return this.cascades.reduce((h,c)=>h+c.sample(qx,qz),0)*scale;
+    // Shore gradients amplify inverse-map error; refine before sampling their envelope.
+    for(let i=0;i<(envelope?6:3);i++) {let dx=0,dz=0;for(const c of this.cascades){dx+=c.sample(qx,qz,0);dz+=c.sample(qx,qz,2);}qx=x-dx*horizontal;qz=z-dz*horizontal;}
+    return this.cascades.reduce((h,c)=>h+c.sample(qx,qz),0)*scale*(envelope?.(qx,qz)??1);
   }
 }

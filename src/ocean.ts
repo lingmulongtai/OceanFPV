@@ -2,7 +2,8 @@ import * as T from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { SEA_SCALE, type SeaState } from './sea';
 import { SpectralSea } from './spectrum';
-import { bathymetryData, BATHY_SIZE, COASTS } from './bathymetry';
+import { bathymetryData, sampleBathymetry, BATHY_SIZE, COASTS } from './bathymetry';
+import { nearshoreCode, nearshoreEnvelope } from './nearshore';
 import { WAKE_SAMPLES, WAKE_STEP } from './navigation';
 
 function radialGeometry(quality='high') {
@@ -17,9 +18,11 @@ function radialGeometry(quality='high') {
 }
 
 const spectralCode=`
+${nearshoreCode}
 uniform sampler2D displacement0, displacement1, displacement2;
 uniform sampler2D tangentX0, tangentX1, tangentX2, tangentZ0, tangentZ1, tangentZ2;
 uniform float seaScale,chopScale;
+uniform vec3 slopeVariance,heightVariance;
 uniform bool manualInterpolation;
 vec2 cascadeUV(vec2 p,float length) {return fract(p/length)+vec2(0.5/128.0);}
 vec4 fieldSample(sampler2D field,vec2 uv) {
@@ -29,13 +32,20 @@ vec4 fieldSample(sampler2D field,vec2 uv) {
 }
 vec4 displacementAt(vec2 p) {
   vec4 a=fieldSample(displacement0,cascadeUV(p,433.0)),b=fieldSample(displacement1,cascadeUV(p,97.0)),c=fieldSample(displacement2,cascadeUV(p,23.3));
-  return vec4((a.xyz+b.xyz+c.xyz)*vec3(chopScale,seaScale,chopScale),max(max(a.w,b.w),c.w));
+  return vec4((a.xyz+b.xyz+c.xyz)*vec3(chopScale,seaScale*nearshoreAt(p).x,chopScale),max(max(a.w,b.w),c.w));
 }
 vec3 normalAt(vec2 p,vec3 resolved) {
   vec3 strength=vec3(chopScale,seaScale,chopScale);
   vec3 tx=vec3(1,0,0)+(fieldSample(tangentX0,cascadeUV(p,433.0)).xyz*resolved.x+fieldSample(tangentX1,cascadeUV(p,97.0)).xyz*resolved.y+fieldSample(tangentX2,cascadeUV(p,23.3)).xyz*resolved.z)*strength;
   vec3 tz=vec3(0,0,1)+(fieldSample(tangentZ0,cascadeUV(p,433.0)).xyz*resolved.x+fieldSample(tangentZ1,cascadeUV(p,97.0)).xyz*resolved.y+fieldSample(tangentZ2,cascadeUV(p,23.3)).xyz*resolved.z)*strength;
+  vec3 coast=nearshoreAt(p);
+  float height=(fieldSample(displacement0,cascadeUV(p,433.0)).y*resolved.x+fieldSample(displacement1,cascadeUV(p,97.0)).y*resolved.y+fieldSample(displacement2,cascadeUV(p,23.3)).y*resolved.z)*seaScale;
+  tx.y=tx.y*coast.x+height*coast.y;tz.y=tz.y*coast.x+height*coast.z;
   vec3 n=cross(tz,tx);return normalize(vec3(n.x,max(n.y,0.025),n.z));
+}
+float spectralVarianceAt(vec2 p,vec3 resolved) {
+  vec3 coast=nearshoreAt(p),missing=vec3(1.0)-resolved*resolved;
+  return 0.5*(dot(slopeVariance,missing)*coast.x*coast.x+dot(heightVariance,missing)*dot(coast.yz,coast.yz));
 }
 `;
 
@@ -43,6 +53,8 @@ export class Ocean {
   mesh:Reflector;
   material:T.ShaderMaterial;
   readonly simulation=new SpectralSea();
+  private bottomData=bathymetryData();
+  private coastalScale=(x:number,z:number)=>nearshoreEnvelope(-sampleBathymetry(this.bottomData,x,z).height).value;
   private textures:T.DataTexture[]=[];
   private quality='high';
   private state:SeaState='breeze';
@@ -62,11 +74,12 @@ export class Ocean {
       dusk:{value:0.4},foamEnabled:{value:true},vessels:{value:Array.from({length:3},()=>new T.Vector4())},headings:{value:[0,0,0]},vesselWidths:{value:[4.4,17,4.5]},vesselSpeeds:{value:[0,0,0]},
       chopScale:{value:this.simulation.horizontalScale},
       slopeVariance:{value:new T.Vector3()},
+      heightVariance:{value:new T.Vector3()},
       wakePoints:{value:Array.from({length:3*WAKE_SAMPLES},()=>new T.Vector4())},wakeBounds:{value:Array.from({length:3},()=>new T.Vector4())},
       reflectionSize:{value:1536},
       islands:{value:[...COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.height)),new T.Vector4(145,-135,36,27)]},
     });
-    const bottom=new T.DataTexture(bathymetryData(),BATHY_SIZE,BATHY_SIZE,T.RGBAFormat,T.FloatType);
+    const bottom=new T.DataTexture(this.bottomData,BATHY_SIZE,BATHY_SIZE,T.RGBAFormat,T.FloatType);
     bottom.magFilter=bottom.minFilter=T.NearestFilter;bottom.needsUpdate=true;this.material.uniforms.bathymetry={value:bottom};
     this.simulation.cascades.forEach((c,i)=> {
       for(const [name,data] of [['displacement',c.displacement],['tangentX',c.tangentX],['tangentZ',c.tangentZ]] as const) {
@@ -85,9 +98,8 @@ export class Ocean {
       }`;
     this.material.fragmentShader=`${spectralCode}
       uniform sampler2D mirrorSampler;
-      uniform sampler2D bathymetry;
-      uniform vec3 eye,sunDirection,sunColor,slopeVariance;uniform float time,dusk,reflectionSize;uniform bool foamEnabled;
-      uniform vec4 vessels[3],islands[4];uniform float headings[3],vesselWidths[3],vesselSpeeds[3];
+      uniform vec3 eye,sunDirection,sunColor;uniform float time,dusk,reflectionSize;uniform bool foamEnabled;
+      uniform vec4 vessels[3];uniform float headings[3],vesselWidths[3],vesselSpeeds[3];
       uniform vec4 wakePoints[${3*WAKE_SAMPLES}],wakeBounds[3];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
       float hash(vec2 p) {
@@ -114,12 +126,6 @@ export class Ocean {
         float strength=sqrt(clamp(seaScale/1.15,0.25,2.0));
         return ripple*vec3(strength,strength,strength*strength);
       }
-      vec4 bottomAt(vec2 uv) {
-        vec2 pixel=uv*${BATHY_SIZE-1}.0,base=min(floor(pixel),vec2(${BATHY_SIZE-2}.0)),f=pixel-base,a=(base+0.5)/${BATHY_SIZE}.0;
-        vec4 h=texture2D(bathymetry,a),b=texture2D(bathymetry,a+vec2(0,1.0/${BATHY_SIZE}.0)),d=texture2D(bathymetry,a+vec2(1.0/${BATHY_SIZE}.0,0));
-        if(f.x+f.y<=1.0)return h+(b-h)*f.y+(d-h)*f.x;
-        vec4 c=texture2D(bathymetry,a+vec2(1.0/${BATHY_SIZE}.0));return c+(b-c)*(1.0-f.x)+(d-c)*(1.0-f.y);
-      }
       void main() {
         vec3 view=normalize(eye-worldPosition);float distanceToEye=length(eye-worldPosition);vec2 p=worldPosition.xz;
         float footprint=max(length(dFdx(waveCoordinate)),length(dFdy(waveCoordinate)));
@@ -130,7 +136,7 @@ export class Ocean {
         vec3 ripple=ripplesAt(p,waterFootprint);
         normal=normalize(vec3(normal.x-ripple.x*normal.y,normal.y,normal.z-ripple.y*normal.y));
         vec3 normalFootprint=fwidth(normal);
-        float unresolvedVariance=0.5*dot(slopeVariance,vec3(1.0)-resolved*resolved)+ripple.z;
+        float unresolvedVariance=spectralVarianceAt(waveCoordinate,resolved)+ripple.z;
         // Resolve porous shoreline foam before hull discard; average subpixel pores.
         vec3 grain=vec3(noise(p*24.0),noise(p*52.08+8.6),noise(p*114.96));
         vec3 grainResolved=1.0-smoothstep(vec3(0.25),vec3(0.5),waterFootprint*vec3(24.0,52.08,114.96));
@@ -203,7 +209,7 @@ export class Ocean {
         #include <colorspace_fragment>
       }`;
   }
-  heightAt(x:number,z:number) {return this.simulation.heightAt(x,z,SEA_SCALE[this.state]);}
+  heightAt(x:number,z:number) {return this.simulation.heightAt(x,z,SEA_SCALE[this.state],this.coastalScale);}
   configureFiltering(floatLinear:boolean) {
     this.material.uniforms.manualInterpolation={value:!floatLinear};
     if(!floatLinear)this.textures.forEach(texture=>{texture.magFilter=texture.minFilter=T.NearestFilter;texture.needsUpdate=true;});
@@ -214,6 +220,7 @@ export class Ocean {
     this.material.uniforms.time.value=time;this.material.uniforms.seaScale.value=SEA_SCALE[state];
     this.material.uniforms.chopScale.value=this.simulation.horizontalScale;
     this.material.uniforms.slopeVariance.value.set(...this.simulation.cascades.map(c=>c.slopeVariance*SEA_SCALE[state]**2));
+    this.material.uniforms.heightVariance.value.set(...this.simulation.cascades.map(c=>c.heightVariance*SEA_SCALE[state]**2));
   }
   update(time:number,camera:T.Vector3,state:SeaState) {
     this.reflectedView=null;
