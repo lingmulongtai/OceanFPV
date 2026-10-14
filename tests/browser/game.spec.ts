@@ -288,6 +288,14 @@ test('headland bay matches rendered terrain, water depths and flight contacts',a
   expect(coast.profile).toBe('headland');expect(coast.depthError).toBeLessThan(0.0001);
   expect(coast.bayContact).toBeNull();expect(coast.ridgeContact).toBe('島に接触しました');
 });
+test('nearshore displacement and geometric normals match CPU sampling on the GPU',async({page})=> {
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto('/tests/browser/fixtures/nearshore-probe.html');
+  await page.waitForFunction(()=>!!(window as any).__NEARSHORE_PROBE__,{},{timeout:60000});
+  const probe=await page.evaluate(()=>{const p=(window as any).__NEARSHORE_PROBE__;return {gpu:p.gpu,count:p.samples.length,heightError:p.heightError,normalError:p.normalError,varianceError:p.varianceError,contactError:p.contactError};});
+  console.log(`Nearshore probe: ${JSON.stringify(probe)}`);
+  expect(probe.count).toBeGreaterThanOrEqual(1554);expect(probe.heightError).toBeLessThan(0.003);expect(probe.normalError).toBeLessThan(0.003);expect(probe.varianceError).toBeLessThan(0.003);expect(probe.contactError).toBeLessThan(0.01);expect(errors).toEqual([]);
+});
 test('WebGL-unavailable browser gets a clear recovery screen', async ({page})=> {
   await page.addInitScript(()=> {
     const original=HTMLCanvasElement.prototype.getContext;

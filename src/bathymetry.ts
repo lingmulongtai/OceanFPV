@@ -12,3 +12,17 @@ export function bathymetryData() {
   }
   return data;
 }
+
+/** Height and world-space gradient of the same Float32 triangles uploaded to WebGL. */
+export function sampleBathymetry(data:Float32Array,x:number,z:number) {
+  let height=-60,dx=0,dz=0;
+  for(const [channel,coast]of COASTS.entries()) {
+    const u=(x-coast.x)/(coast.size*2.4)+0.5,v=(z-coast.z)/(coast.size*2.4)+0.5;
+    if(u<0||u>1||v<0||v>1)continue;
+    const px=u*TERRAIN_SEGMENTS,pz=v*TERRAIN_SEGMENTS,ix=Math.min(Math.floor(px),TERRAIN_SEGMENTS-1),iz=Math.min(Math.floor(pz),TERRAIN_SEGMENTS-1),fx=px-ix,fz=pz-iz;
+    const at=(i:number,j:number)=>data[(j*BATHY_SIZE+i)*4+channel],a=at(ix,iz),b=at(ix,iz+1),d=at(ix+1,iz),c=at(ix+1,iz+1),step=coast.size*2.4/TERRAIN_SEGMENTS;
+    const lower=fx+fz<=1,h=lower?a+(b-a)*fz+(d-a)*fx:c+(b-c)*(1-fx)+(d-c)*(1-fz);
+    if(h>height){height=h;dx=(lower?d-a:c-b)/step;dz=(lower?b-a:c-d)/step;}
+  }
+  return {height,dx,dz};
+}
