@@ -1,4 +1,32 @@
 import * as T from 'three';
+import {MeshBVH} from 'three-mesh-bvh';
+
+/** An open scan blocks motion across its surface without inventing an interior. */
+export class CliffSurface {
+  readonly tree:MeshBVH;
+  readonly bounds:T.Box3;
+  private readonly ray=new T.Ray();
+  private readonly segment=new T.Box3();
+  constructor(readonly geometry:T.BufferGeometry) {
+    geometry.computeBoundingBox();this.bounds=geometry.boundingBox!.clone();
+    this.tree=new MeshBVH(geometry,{indirect:true});
+  }
+  contacts(position:T.Vector3,previous=position,padding=0.25) {
+    this.segment.setFromPoints([previous,position]).expandByScalar(padding);
+    if(!this.bounds.intersectsBox(this.segment))return false;
+    const nearest=this.tree.closestPointToPoint(position,undefined,0,padding);
+    if(nearest&&nearest.distance<=padding)return true;
+    // Distance from the swept centre line to each nearby triangle also catches
+    // grazing contact and steps whose endpoints both lie clear of the scan.
+    const line=new T.Line3(previous,position);
+    return this.tree.shapecast({intersectsBounds:box=>box.intersectsBox(this.segment),intersectsTriangle:triangle=>triangle.closestPointToSegment(line)<=padding});
+  }
+  topHeight(x:number,z:number) {
+    if(x<this.bounds.min.x||x>this.bounds.max.x||z<this.bounds.min.z||z>this.bounds.max.z)return null;
+    this.ray.origin.set(x,this.bounds.max.y+1,z);this.ray.direction.set(0,-1,0);
+    return this.tree.raycastFirst(this.ray,T.DoubleSide)?.point.y??null;
+  }
+}
 
 /** Trace the physical boundary across captured UV/normal seams without altering source faces. */
 export function cliffBoundary(geometry:T.BufferGeometry) {
