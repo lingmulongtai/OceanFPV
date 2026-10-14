@@ -1,6 +1,27 @@
 import * as T from 'three';
 
 export type SurfaceGroup={asset:string;resolution:'1k'|'2k'|'4k';materials:T.MeshStandardMaterial[];colour:boolean;roughness?:number};
+/** Large photographed colour variation keeps metre-scale rock detail from reading as a tiled sheet. */
+export function blendRockScale(material:T.MeshStandardMaterial,macro:T.MeshStandardMaterial) {
+  const available=()=>!!(material.map&&macro.map);
+  material.customProgramCacheKey=()=>`rock-scale-${available()}`;
+  material.onBeforeCompile=shader=> {
+    if(!available())return;
+    shader.uniforms.rockMacroMap={value:macro.map};
+    shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vRockPosition,vRockNormal;')
+      .replace('#include <project_vertex>',`#include <project_vertex>
+        vRockPosition=(modelMatrix*vec4(transformed,1.0)).xyz;
+        vRockNormal=transformNormalByInverseViewMatrix(transformedNormal,viewMatrix);`);
+    shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>
+      uniform sampler2D rockMacroMap;varying vec3 vRockPosition,vRockNormal;
+      vec4 rockMacroColour(){
+        vec3 w=pow(abs(normalize(vRockNormal)),vec3(4.0));w/=max(dot(w,vec3(1.0)),0.0001);
+        return texture2D(rockMacroMap,vRockPosition.zy/90.0)*w.x+texture2D(rockMacroMap,vRockPosition.xz/90.0)*w.y+texture2D(rockMacroMap,vRockPosition.xy/90.0)*w.z;
+      }`);
+    shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`diffuseColor*=rockMacroColour();
+      diffuseColor.rgb*=mix(vec3(1.0),texture2D(map,vMapUv).rgb,0.15);`);
+  };
+}
 /** World-space projections keep photographed scale on ground and steep cliffs. */
 export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshStandardMaterial) {
   const available=()=>!!(material.map&&material.normalMap&&material.roughnessMap&&cover.map&&cover.normalMap&&cover.roughnessMap);

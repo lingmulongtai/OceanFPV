@@ -9,7 +9,7 @@ import { closedHullGeometry } from './hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { buildMotorYacht,YACHT_BEAM } from './yacht';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
-import { blendGroundCover, wetCoastalSurface, loadSurfaces, type SurfaceGroup } from './surfaces';
+import { blendGroundCover, blendRockScale, wetCoastalSurface, loadSurfaces, type SurfaceGroup } from './surfaces';
 import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain';
 import { COASTS, type Coast } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
@@ -321,7 +321,8 @@ export class World {
   private buildLighthouse() {
     const root=new T.Group();root.position.set(this.lighthouseReef.x,0,this.lighthouseReef.z);
     const stone=this.rockMaterial;
-    const reefStone=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});wetCoastalSurface(reefStone,this.shorelineWash);
+    const reefStone=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});blendRockScale(reefStone,stone);wetCoastalSurface(reefStone,this.shorelineWash);
+    this.groundMaterials.push(reefStone);
     this.surfaceGroups.push({asset:'seaside_rock',resolution:'4k',materials:[reefStone],colour:true});
     const rock=new T.Mesh(metricPaintGeometry(this.lighthouseReef.geometry,2),reefStone);root.add(rock);
     const tower=new T.Mesh(new T.CylinderGeometry(2.1,3.2,24,24),new T.MeshStandardMaterial({color:0xe0ddd0,roughness:0.7}));tower.position.y=21;root.add(tower);
