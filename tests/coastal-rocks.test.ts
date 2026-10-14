@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import * as T from 'three';
-import { CoastalRockShape,coastalRockSites,normaliseRockGeometry,buildRockBatches,rockPatchPlacements } from '../src/rocks';
+import { CoastalRockShape,coastalRockSites,normaliseRockGeometry,buildRockBatches,rockPatchPlacements,lighthouseRockPatch } from '../src/rocks';
+import {LighthouseReef} from '../src/lighthouse-reef';
 import { COASTS } from '../src/bathymetry';
 import { terrainSlope,terrainSurfaceHeight } from '../src/terrain';
 
@@ -63,6 +64,18 @@ test('custom rock patches reject missing support feet and keep excluded world sp
     const placements=rockPatchPlacements(shape,{coast:c,sites:coastalRockSites(c)});
     assert.equal(placements.length,90);
     for(const placement of placements)assert.ok(placement.matrix.elements.every(Number.isFinite));
+  }
+});
+
+test('lighthouse outcrops use real reef support and preserve tower and known free air',()=> {
+  const shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),reef=new LighthouseReef(),patch=lighthouseRockPatch(reef),placements=rockPatchPlacements(shape,patch),point=new T.Vector3();
+  assert.equal(placements.length,9);
+  for(const placement of placements) {
+    assert.equal(shape.contains(new T.Vector3(175,10,-135),placement),false);
+    assert.ok(patch.avoid!.every(bounds=>!placement.bounds.intersectsBox(bounds)));
+    const gaps=shape.feet.map(foot=> {point.copy(foot).applyMatrix4(placement.matrix);const height=reef.topHeight(point.x,point.z);assert.notEqual(height,null);return point.y-height!;});
+    const embed=shape.geometry.boundingBox!.getSize(new T.Vector3()).y*placement.scale*0.2;
+    assert.ok(Math.abs(Math.min(...gaps)+embed)<0.00001);
   }
 });
 

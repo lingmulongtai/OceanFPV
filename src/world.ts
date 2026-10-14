@@ -13,7 +13,7 @@ import { blendGroundCover, wetCoastalSurface, loadSurfaces, type SurfaceGroup } 
 import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain';
 import { COASTS, type Coast } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
-import { CoastalRocks, coastalRockSites, type RockPatch } from './rocks';
+import { CoastalRocks, coastalRockSites, lighthouseRockPatch, type RockPatch } from './rocks';
 import { LighthouseReef } from './lighthouse-reef';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
@@ -327,6 +327,7 @@ export class World {
     const roof=new T.Mesh(new T.ConeGeometry(3.5,3,24),stone);roof.position.y=37;root.add(roof);
     const balcony=new T.Mesh(new T.CylinderGeometry(3.4,3.4,0.3,32),stone);balcony.position.y=32.5;root.add(balcony);
     this.scene.add(root);
+    this.rockPatches.push(lighthouseRockPatch(this.lighthouseReef));
   }
   private buildYacht() {
     const model=buildMotorYacht();this.yacht.add(model.root);this.yachtContact=model.contains;

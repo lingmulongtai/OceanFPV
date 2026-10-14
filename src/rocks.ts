@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshBVH } from 'three-mesh-bvh';
 import { terrainSlope, terrainSurfaceHeight } from './terrain';
 import { type Coast } from './bathymetry';
+import {LIGHTHOUSE_COAST,type LighthouseReef} from './lighthouse-reef';
 import { wetCoastalSurface } from './surfaces';
 
 export type RockSite={x:number;z:number;scale:number;yaw:number};
@@ -20,6 +21,15 @@ export function coastalRockSites(coast:RockPatch['coast']) {
     sites.push({x:coast.x+x,z:coast.z+z,scale,yaw:angle});
   }
   return sites;
+}
+
+/** Scanned outcrops sit on the actual reef, with tower and known flight space clear. */
+export function lighthouseRockPatch(reef:LighthouseReef):RockPatch {
+  const sites=[[-24,-7,2.2,0.4],[-8,-18,2.8,1.9],[12,-15,3.2,0.8],[22,-7,2.8,2.3],[20,10,2.7,1.4],[5,18,2.8,2.8],[-13,16,2.4,0.1],[-24,2,2.2,1.2],[-8,8,2.6,1.8]]
+    .map(([x,z,scale,yaw])=>({x:reef.x+x,z:reef.z+z,scale,yaw})).filter(site=>(reef.topHeight(site.x,site.z)??-60)>0);
+  const tower=new T.Box3(new T.Vector3(reef.x-3.5,9,reef.z-3.5),new T.Vector3(reef.x+3.5,39,reef.z+3.5)).expandByScalar(0.25);
+  const flightSpace=new T.Box3().setFromCenterAndSize(new T.Vector3(reef.x+30,10,reef.z),new T.Vector3(1,1,1));
+  return {sites,coast:LIGHTHOUSE_COAST,heightAt:(x,z)=>reef.topHeight(x,z),avoid:[tower,flightSpace]};
 }
 
 /** Rigid transforms retain photographed UVs, seams and captured normals. */
