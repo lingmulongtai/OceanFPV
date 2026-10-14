@@ -4,8 +4,10 @@ async function ready(page: Page) {
   await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
   await page.goto('/?test=1');
   await expect(page.locator('#start')).toBeEnabled({timeout:90000});
-  await page.evaluate(() => document.querySelector<HTMLSelectElement>('#quality')!.value='balanced');
-  await page.locator('#quality').dispatchEvent('input');
+  await page.evaluate(() => {
+    const quality=document.querySelector<HTMLSelectElement>('#quality')!;
+    if(quality.value!=='balanced') {quality.value='balanced';quality.dispatchEvent(new Event('input',{bubbles:true}));}
+  });
 }
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
   await page.setViewportSize({width:960,height:640});
