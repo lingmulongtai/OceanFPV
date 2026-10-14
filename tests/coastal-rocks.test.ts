@@ -74,8 +74,11 @@ test('lighthouse outcrops use real reef support and preserve tower and known fre
     assert.equal(shape.contains(new T.Vector3(175,10,-135),placement),false);
     assert.ok(patch.avoid!.every(bounds=>!placement.bounds.intersectsBox(bounds)));
     const gaps=shape.feet.map(foot=> {point.copy(foot).applyMatrix4(placement.matrix);const height=reef.topHeight(point.x,point.z);assert.notEqual(height,null);return point.y-height!;});
-    const embed=shape.geometry.boundingBox!.getSize(new T.Vector3()).y*placement.scale*0.2;
+    const embed=shape.geometry.boundingBox!.getSize(new T.Vector3()).y*placement.scale*patch.embedFraction!;
     assert.ok(Math.abs(Math.min(...gaps)+embed)<0.00001);
+    const rotation=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().extractRotation(placement.matrix)),up=new T.Vector3(0,1,0).applyQuaternion(rotation);
+    assert.ok(Math.acos(up.y)<=patch.maxTilt!+0.0000001);
+    assert.ok(gaps.filter(gap=>gap<=0).length>=gaps.length*0.8,'most support samples should be embedded in the reef');
   }
 });
 
