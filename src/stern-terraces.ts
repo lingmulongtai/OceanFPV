@@ -17,7 +17,8 @@ export function buildSternTerraces() {
     box([deck.width,.28,deck.depth],[0,deck.y,deck.z],'paint');
     box([deck.width-.12,.06,deck.depth-.12],[0,deck.y+.17,deck.z],'teak');
     const foot=tier?STERN_TERRACES[tier-1].y+.2:9.28,bottom=deck.y-.14,z=tier?deck.z+3.3:deck.z-3.3;
-    for(const side of [-1,1])box([.38,bottom-foot,1.2],[side*(deck.width/2-1.1),(foot+bottom)/2,z],'paint');
+    const supportX=tier?deck.width/2-1.1:12.4;
+    for(const side of [-1,1])box([.38,bottom-foot,1.2],[side*supportX,(foot+bottom)/2,z],'paint');
     const floor=deck.y+.2,x=deck.width/2-.14,front=deck.z-deck.depth/2+.14,aft=deck.z+deck.depth/2-.14,posts=new Map<string,T.Vector3>();
     const railing=(a:T.Vector3,b:T.Vector3)=>{
       for(const lift of [.55,1.05])rod(a.clone().add(new T.Vector3(0,lift,0)),b.clone().add(new T.Vector3(0,lift,0)),lift===1.05?.032:.022,'metal');

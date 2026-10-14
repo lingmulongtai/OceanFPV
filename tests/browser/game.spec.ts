@@ -84,9 +84,12 @@ test('stern terrace walking surfaces and supports have matching flight contacts'
       if(!rail)throw new Error('Missing aft guardrail');const railPoint=w.cruise.root.worldToLocal(rail.point.clone());
       samples.push({teak:hit.object.material===w.cruise.teak,error:Math.abs(point.y-(deck.y+.2)),contact:w.collision(hit.point,a.getState().time,'breeze'),clear:w.collision(w.cruise.root.localToWorld(clear),a.getState().time,'breeze'),railError:Math.abs(railPoint.z-aft-.032),railContact:w.collision(rail.point,a.getState().time,'breeze'),aboveRail:w.collision(w.cruise.root.localToWorld(railPoint.clone().add(new T.Vector3(0,.4,0))),a.getState().time,'breeze')});
     }
-    return samples;
+    const proxies=w.cruise.root.children.filter((mesh:any)=>mesh.isMesh&&mesh.material===w.cruise.teak).map((mesh:any)=>{const proxy=new T.Mesh(mesh.geometry,new T.MeshBasicMaterial({side:T.DoubleSide}));proxy.matrixAutoUpdate=false;proxy.matrixWorld.copy(mesh.matrixWorld);return proxy;});
+    const supports=model.buildSternTerraces().solids.slice(2,4),foundations=supports.map((support:any)=>{const centre=support.getCenter(new T.Vector3()),origin=w.cruise.root.localToWorld(new T.Vector3(centre.x,9.279,centre.z)),direction=new T.Vector3(0,-1,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObjects(proxies)[0];return hit?w.cruise.root.worldToLocal(hit.point.clone()).y:null;});
+    proxies.forEach((mesh:any)=>mesh.material.dispose());return {samples,foundations};
   });
-  expect(result).toHaveLength(2);for(const sample of result){expect(sample.teak).toBe(true);expect(sample.error).toBeLessThan(.00001);expect(sample.contact).toBeTruthy();expect(sample.clear).toBeNull();expect(sample.railError).toBeLessThan(.00001);expect(sample.railContact).toBeTruthy();expect(sample.aboveRail).toBeNull();}
+  expect(result.samples).toHaveLength(2);for(const sample of result.samples){expect(sample.teak).toBe(true);expect(sample.error).toBeLessThan(.00001);expect(sample.contact).toBeTruthy();expect(sample.clear).toBeNull();expect(sample.railError).toBeLessThan(.00001);expect(sample.railContact).toBeTruthy();expect(sample.aboveRail).toBeNull();}
+  for(const y of result.foundations){expect(y).not.toBeNull();expect(y).toBeGreaterThan(9.1);expect(y).toBeLessThan(9.28);}
 });
 test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
   await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);

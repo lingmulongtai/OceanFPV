@@ -29,7 +29,8 @@ test('terrace support walls span to the previous deck without blocking open air'
   const model=buildSternTerraces();
   for(const [tier,deck]of STERN_TERRACES.entries()) {
     const foot=tier?STERN_TERRACES[tier-1].y+.2:9.28,top=deck.y-.14,z=tier?deck.z+3.3:deck.z-3.3;
-    for(const side of [-1,1]) {const x=side*(deck.width/2-1.1);assert.equal(model.contains(new T.Vector3(x,(foot+top)/2,z),0),true);assert.equal(model.contains(new T.Vector3(x,foot+.001,z),0),true);}
+    for(const side of [-1,1]) {const x=side*(tier?deck.width/2-1.1:12.4);assert.equal(model.contains(new T.Vector3(x,(foot+top)/2,z),0),true);assert.equal(model.contains(new T.Vector3(x,foot+.001,z),0),true);}
     assert.equal(model.contains(new T.Vector3(0,(foot+top)/2,z),.1),false);
   }
+  for(const support of model.solids.slice(2,4)){assert.ok(support.min.x>=-13&&support.max.x<=13);assert.ok(support.min.z>=100&&support.max.z<=124);assert.ok(Math.abs(support.min.y-9.28)<1e-12);}
 });
