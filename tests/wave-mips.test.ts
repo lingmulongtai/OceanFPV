@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WaveMipmaps,sampleWaveMip} from '../src/wave-mips';
+import {WaveMipmaps,sampleWaveMip,retainedWaveEnergy} from '../src/wave-mips';
 
 test('wave mip levels reuse full-resolution data and update without replacing storage',()=> {
   const data=new Float32Array(8*8*4);for(let i=0;i<data.length;i++)data[i]=i;
@@ -9,6 +9,19 @@ test('wave mip levels reuse full-resolution data and update without replacing st
   for(let channel=0;channel<4;channel++)assert.equal(mips.levels[1].data[channel],(data[channel]+data[4+channel]+data[32+channel]+data[36+channel])/4);
   data.fill(3.5);mips.update();for(const [i,level]of mips.levels.entries()){assert.equal(level.data,references[i]);assert.ok(level.data.every(value=>value===3.5));}
   assert.throws(()=>new WaveMipmaps(new Float32Array(6*6*4),6));
+});
+
+test('retained energy matches independent integration of bilinear and trilinear fields',()=> {
+  const n=8,data=new Float32Array(n*n*4);
+  for(let z=0;z<n;z++)for(let x=0;x<n;x++)data[(z*n+x)*4+1]=Math.sin(x*1.73+z*0.31)+Math.cos(z*2.19-x*0.47);
+  const mips=new WaveMipmaps(data,n),steps=256;
+  for(const lod of [0,0.37,1,1.61,2.49,3]) {
+    let measured=0;
+    for(let z=0;z<steps;z++)for(let x=0;x<steps;x++)measured+=sampleWaveMip(mips,(x+0.5)/steps,(z+0.5)/steps,lod,1)**2;
+    assert.ok(Math.abs(retainedWaveEnergy(mips,lod)-measured/(steps*steps))<0.0004,`energy at LOD ${lod}`);
+    assert.ok(retainedWaveEnergy(mips,lod)<=mips.energy[0]+1e-12);
+  }
+  data.fill(2);mips.update();for(const lod of [0,0.73,1.2,2.7,3])assert.ok(Math.abs(retainedWaveEnergy(mips,lod)-4)<1e-12);
 });
 
 test('pixel averaging removes a subpixel wave while keeping a long wave in the same field',()=> {
