@@ -7,6 +7,8 @@ import {LighthouseReef} from './lighthouse-reef';
 import { nearshoreCode, nearshoreEnvelope } from './nearshore';
 import { WAKE_SAMPLES, WAKE_STEP } from './navigation';
 import { WaveMipmaps } from './wave-mips';
+import {type CliffSurface} from './cliff';
+import {CliffDepth,CLIFF_DEPTH_SIZE} from './cliff-depth';
 
 function radialGeometry(quality='high') {
   const segments=quality==='ultra'?512:quality==='high'?384:192,rings=quality==='ultra'?360:quality==='high'?280:170;
@@ -72,12 +74,27 @@ export class Ocean {
   readonly simulation=new SpectralSea();
   readonly waveMipmaps=this.simulation.cascades.map(c=>({displacement:new WaveMipmaps(c.displacement,c.size),tangentX:new WaveMipmaps(c.tangentX,c.size),tangentZ:new WaveMipmaps(c.tangentZ,c.size)}));
   private bottomData:Float32Array;
-  private coastalScale=(x:number,z:number)=>nearshoreEnvelope(-sampleBathymetry(this.bottomData,x,z).height).value;
+  private cliffDepth:CliffDepth|null=null;
+  private coastalScale=(x:number,z:number)=>nearshoreEnvelope(-this.bottomAt(x,z).height).value;
   private textures:T.DataTexture[]=[];
   private fieldsDirty=true;
   private quality='high';
   private state:SeaState='breeze';
   private reflectedView:T.Camera|null=null;
+  bottomAt(x:number,z:number) {
+    const ground=sampleBathymetry(this.bottomData,x,z),scan=this.cliffDepth?.sample(x,z);return scan&&scan.height>ground.height?scan:ground;
+  }
+  /** One atomic upload serves CPU wave/contact sampling and the water shader. */
+  installIslandDepth(channel:number,geometry:T.BufferGeometry,scan:CliffSurface) {
+    const position=geometry.attributes.position;
+    if(channel<0||channel>=3||position.count!==BATHY_SIZE*BATHY_SIZE)throw new Error('Invalid island depth grid');
+    const data=this.bottomData.slice();
+    for(let i=0;i<position.count;i++)data[i*4+channel]=position.getY(i);
+    const depth=new CliffDepth(scan,(x,z)=>sampleBathymetry(data,x,z).height);
+    const detail=new T.DataTexture(depth.data,CLIFF_DEPTH_SIZE,CLIFF_DEPTH_SIZE,T.RedFormat,T.FloatType);detail.magFilter=detail.minFilter=T.NearestFilter;detail.needsUpdate=true;
+    this.bottomData=data;const texture=this.material.uniforms.bathymetry.value as T.DataTexture;texture.image.data=data;texture.needsUpdate=true;
+    this.cliffDepth=depth;(this.material.uniforms.cliffBathymetry.value as T.Texture).dispose();this.material.uniforms.cliffBathymetry.value=detail;this.material.uniforms.cliffBounds.value.copy(depth.bounds);
+  }
   constructor(sun:T.Vector3,reef=new LighthouseReef()) {
     this.bottomData=bathymetryData(reef);
     this.mesh=new Reflector(radialGeometry(),{textureWidth:1536,textureHeight:1536,multisample:0,clipBias:0.012});
@@ -101,6 +118,8 @@ export class Ocean {
       reflectionSize:{value:1536},
       islands:{value:BATHY_COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.sizeZ??c.size))},
     });
+    const cliffBottom=new T.DataTexture(new Float32Array([-60]),1,1,T.RedFormat,T.FloatType);cliffBottom.needsUpdate=true;
+    this.material.uniforms.cliffBathymetry={value:cliffBottom};this.material.uniforms.cliffBounds={value:new T.Vector4()};
     const bottom=new T.DataTexture(this.bottomData,BATHY_SIZE,BATHY_SIZE,T.RGBAFormat,T.FloatType);
     bottom.magFilter=bottom.minFilter=T.NearestFilter;bottom.needsUpdate=true;this.material.uniforms.bathymetry={value:bottom};
     this.simulation.cascades.forEach((c,i)=> {
