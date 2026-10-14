@@ -1,11 +1,12 @@
 import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { closedHullGeometry, foredeckGeometry, hullDeckHeight, hullHalfWidth, hullNameGeometry, upperHullSidePose } from './hull';
+import { foredeckGeometry, hullDeckHeight, hullHalfWidth, hullNameGeometry } from './hull';
 import { metricPaintGeometry } from './paint';
 import { bakeCabinOcclusion,roomOcclusionUV,type RoomSurface } from './occlusion';
 import {buildTenderModel,TENDER_MOUNTS} from './tender';
 import {buildSternTerraces} from './stern-terraces';
+import {cruiseHullGeometry,cruiseHullSidePose} from './cruise-hull';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
 export function deckOutline(length:number,beam:number,radius=6) {
@@ -88,7 +89,7 @@ export function buildCruiseShip() {
     shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 shipPosition;').replace('#include <begin_vertex>','#include <begin_vertex>\nshipPosition=position;');
     shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 shipPosition;').replace('#include <color_fragment>','#include <color_fragment>\nfloat stripe=1.0-smoothstep(2.9,3.15,abs(shipPosition.y-3.6));\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.022,0.054,0.091),stripe*0.95);\ndiffuseColor.rgb*=mix(0.28,1.0,smoothstep(-0.8,0.15,shipPosition.y));');
   };
-  const hullSource=closedHullGeometry(260,34,9,7,true),hull=new T.Mesh(metricPaintGeometry(hullSource),hullMat);hullSource.dispose();hull.castShadow=hull.receiveShadow=true;root.add(hull);
+  const hullSource=cruiseHullGeometry(),hull=new T.Mesh(metricPaintGeometry(hullSource),hullMat);hullSource.dispose();hull.castShadow=hull.receiveShadow=true;root.add(hull);
   // Tall sheer hull, recessed balcony walls and overhanging deck slabs.
   for(let deck=0;deck<8;deck++) {
     const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3,floor=y-1.27;
@@ -212,15 +213,15 @@ export function buildCruiseShip() {
   }
   // Hull portholes, seam bands, anchor recesses and bow mooring machinery.
   for(const side of [-1,1])for(let z=-85;z<99;z+=3.4) {
-    const pose=upperHullSidePose(7.6,z,side),position=pose.point.addScaledVector(pose.normal,0.026);
+    const pose=cruiseHullSidePose(7.6,z,side),position=pose.point.addScaledVector(pose.normal,0.026);
     const rotation=new T.Euler().setFromQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),pose.normal));
     add(new T.CylinderGeometry(0.25,0.25,0.06,16),position.toArray(),black,rotation);
   }
   for(const side of [-1,1]) {
-    const pose=upperHullSidePose(7,-113,side),position=pose.point.addScaledVector(pose.normal,0.035);
+    const pose=cruiseHullSidePose(7,-113,side),position=pose.point.addScaledVector(pose.normal,0.035);
     const rotation=new T.Euler().setFromQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(1,0,0),pose.normal));
     add(new T.BoxGeometry(0.07,2.4,3.3),position.toArray(),navy,rotation);
-    const top=upperHullSidePose(7.2,-113,side),bottom=upperHullSidePose(4.8,-113,side);
+    const top=cruiseHullSidePose(7.2,-113,side),bottom=cruiseHullSidePose(4.8,-113,side);
     rod(top.point.addScaledVector(top.normal,0.12).toArray(),bottom.point.addScaledVector(bottom.normal,0.12).toArray(),0.1,chrome);
   }
   for(const x of [-5,5])for(const z of [-113,116]) {const y=hullDeckHeight((z+130)/260,260,9)+0.15;add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,y+0.45,z],chrome);box([1.9,0.12,1.2],[x,y,z],navy);}

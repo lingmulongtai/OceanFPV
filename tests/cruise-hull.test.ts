@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import * as T from 'three';
-import {cruiseHullGeometry,cruiseHullHalfWidth,cruiseHullSection,cruiseHullSidePose} from '../src/cruise-hull';
+import {cruiseHullContains,cruiseHullGeometry,cruiseHullHalfWidth,cruiseHullSection,cruiseHullSidePose} from '../src/cruise-hull';
 import {closedHullGeometry,hullHalfWidth} from '../src/hull';
 
 test('cruise aft shoulder tapers continuously to the transom and supports its promenade',()=> {
@@ -7,6 +7,17 @@ test('cruise aft shoulder tapers continuously to the transom and supports its pr
   for(const z of [100,112,124])assert.ok(cruiseHullSection(z).width>13.3);
   assert.ok(Math.abs(cruiseHullHalfWidth(1)-12.24)<1e-12);
   for(let i=0;i<=64;i++)assert.equal(cruiseHullHalfWidth(i/128),hullHalfWidth(i/128,34));
+});
+
+test('closed cruise contact follows actual side triangles and leaves outside air clear',()=> {
+  const geometry=cruiseHullGeometry(),material=new T.MeshBasicMaterial(),mesh=new T.Mesh(geometry,material);mesh.updateMatrixWorld(true);
+  for(const side of [-1,1])for(const z of [-129,-110,-50,0,80,100,110,120,125,129])for(const y of [-6,-3,1,4.2,7.6]) {
+    const hit=new T.Raycaster(new T.Vector3(side*30,y,z),new T.Vector3(-side,0,0)).intersectObject(mesh)[0];assert.ok(hit);
+    assert.equal(cruiseHullContains(hit.point),true);assert.equal(cruiseHullContains(hit.point.clone().add(new T.Vector3(side*.25,0,0))),false);
+    assert.equal(cruiseHullContains(hit.point.clone().add(new T.Vector3(-side*.01,0,0)),0),true);
+  }
+  for(const z of [-130,0,130]){const {top}=cruiseHullSection(z);assert.equal(cruiseHullContains(new T.Vector3(0,top,z)),true);assert.equal(cruiseHullContains(new T.Vector3(0,top+.25,z)),false);}
+  assert.equal(cruiseHullContains(new T.Vector3(0,5,130.3)),false);geometry.dispose();material.dispose();
 });
 
 test('cruise profile keeps closed outward triangles and leaves legacy vessels unchanged',()=> {

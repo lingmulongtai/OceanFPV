@@ -6,6 +6,7 @@ import { Ocean } from './ocean';
 import { SEA_SCALE, type SeaState } from './sea';
 import { GATES } from './race';
 import { closedHullGeometry } from './hull';
+import {cruiseHullContains} from './cruise-hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { buildMotorYacht,YACHT_BEAM } from './yacht';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
@@ -425,10 +426,7 @@ export class World {
     }
     for(const c of this.colliders) if(local.x>c.min.x-0.2&&local.x<c.max.x+0.2&&local.y>c.min.y-0.2&&local.y<c.max.y+0.2&&local.z>c.min.z-0.2&&local.z<c.max.z+0.2) return '船の構造物に接触しました';
     const passenger=this.cruise.root.worldToLocal(p.clone());
-    if(passenger.z>-130&&passenger.z<130) {
-      const u=(passenger.z+130)/260,w=17*(u>0.78?T.MathUtils.lerp(Math.pow(Math.max(Math.sin(Math.PI*u),0.001),0.42),0.72,T.MathUtils.smoothstep(u,0.78,1)):Math.pow(Math.max(Math.sin(Math.PI*u),0.001),0.42));
-      if(Math.abs(passenger.x)<w+0.2&&passenger.y<9.2+2.12*Math.pow(1-u,4))return '客船の船体・甲板に接触しました';
-    }
+    if(cruiseHullContains(passenger))return '客船の船体・甲板に接触しました';
     for(const c of this.cruise.boxes)if(vesselBoxContains(c,passenger))return '客船の構造物に接触しました';
     if(this.cruise.tenderContains(passenger))return '客船の救命艇・吊り機構に接触しました';
     if(this.cruise.terraceContains(passenger))return '客船のテラスに接触しました';

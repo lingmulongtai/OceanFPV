@@ -73,6 +73,19 @@ test('detailed cliff water height gradient and attenuation agree on the GPU',asy
   console.log(`Cliff depth probe: ${JSON.stringify(result)}`);expect(result.count).toBe(77);expect(result.heightError).toBeLessThan(.003);expect(result.gradientError).toBeLessThan(.003);expect(result.envelopeError).toBeLessThan(.003);expect(errors).toEqual([]);
 });
 
+test('cruise aft hull surfaces have matching flight contacts and clear surrounding air',async({page})=> {
+  await ready(page);
+  const samples=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),hull=w.cruise.root.children.find((mesh:any)=>mesh.material===w.cruise.paint[1]),samples=[];
+    for(const side of [-1,1])for(const z of [80,100,110,120,125,129])for(const y of [4.2,7.6]) {
+      const origin=w.cruise.root.localToWorld(new T.Vector3(side*30,y,z)),direction=new T.Vector3(-side,0,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(hull)[0];if(!hit)throw new Error('Missing aft hull');
+      const outside=hit.point.clone().addScaledVector(direction,-.3);samples.push({z,y,width:Math.abs(w.cruise.root.worldToLocal(hit.point.clone()).x),contact:w.collision(hit.point,a.getState().time,'breeze'),clear:w.collision(outside,a.getState().time,'breeze')});
+    }
+    return samples;
+  });
+  expect(samples).toHaveLength(24);for(const sample of samples){expect(sample.contact).toContain('船体');expect(sample.clear).toBeNull();if(sample.z<=120)expect(sample.width).toBeGreaterThan(15);}
+});
+
 test('stern terrace walking surfaces and supports have matching flight contacts',async({page})=> {
   await ready(page);
   const result=await page.evaluate(async()=>{
