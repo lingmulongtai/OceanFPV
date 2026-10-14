@@ -214,6 +214,7 @@ export class Ocean {
           float wash=0.65+0.35*sin(time*1.2+bottomHeight*1.8);
           shoreFoam=max(shoreFoam,(1.0-smoothstep(0.4,3.2,depth))*wash*smoothstep(0.23,0.65,n));
         }
+        shoreFoam=max(shoreFoam,smoothstep(0.3,0.7,1.0-normal.y)*(1.0-smoothstep(0.5,4.0,max(-coastalBottom(waveCoordinate).x,0.0))));
         shoreFoam*=shoreDetail;
         vec3 absorption=mix(vec3(0.006,0.045,0.082),vec3(0.016,0.17,0.145),shallow);
         float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);absorption+=vec3(0.018,0.11,0.078)*crestLight;
