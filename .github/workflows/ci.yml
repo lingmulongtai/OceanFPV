@@ -27,7 +27,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- --fully-parallel --shard=${{ matrix.shard }}/3
+      - run: npm run test:browser -- --fully-parallel --shard=${{ matrix.shard }}/3 --max-failures=1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
