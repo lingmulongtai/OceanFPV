@@ -1,3 +1,5 @@
+import {drainageCuts} from './drainage';
+
 function hash(x:number,z:number) {let h=Math.imul(x,374761393)+Math.imul(z,668265263);h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;}
 function noise(x:number,z:number) {
   const ix=Math.floor(x),iz=Math.floor(z),u=x-ix,v=z-iz,fx=u*u*(3-2*u),fz=v*v*(3-2*v);
@@ -5,7 +7,7 @@ function noise(x:number,z:number) {
 }
 export const TERRAIN_SEGMENTS=192;
 export type TerrainProfile='radial'|'headland';
-export function terrainHeight(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
+function baseTerrainHeight(x:number,z:number,size:number,height:number,profile:TerrainProfile) {
   const coast=1+(noise(x*0.013+3,z*0.013-7)-0.5)*0.35;
   const r=Math.hypot(x,z*1.06)/size*coast;
   let mask=Math.pow(Math.max(0,1-r*r),1.65);
@@ -25,6 +27,25 @@ export function terrainHeight(x:number,z:number,size:number,height:number,profil
   for(let octave=0;octave<5;octave++){ridges+=(1-Math.abs(noise(x*frequency+12,z*frequency-5)*2-1))*weight;frequency*=2.13;weight*=0.48;}
   const cliffs= Math.pow(Math.max(0,noise(x*0.021-8,z*0.018+4)-0.25),1.3)*height*0.25;
   return Math.max(-9,mask*(height*(0.3+ridges*0.85)+cliffs)-9);
+}
+const headlandCuts=new Map<string,Float64Array>();
+function headlandDrainage(size:number,height:number) {
+  const key=`${size}:${height}`,cached=headlandCuts.get(key);if(cached)return cached;
+  const width=TERRAIN_SEGMENTS+1,extent=size*1.2,step=extent*2/TERRAIN_SEGMENTS,heights=new Float64Array(width*width),weights=new Float64Array(width*width);
+  for(let z=0;z<width;z++)for(let x=0;x<width;x++) {
+    const px=-extent+x*step,pz=-extent+z*step,i=z*width+x,u=px/size,v=pz/size,y=baseTerrainHeight(px,pz,size,height,'headland');heights[i]=y;
+    weights[i]=fade(30,55,y)*(1-fade(height*0.82,height,y))*fade(-0.95,-0.8,u)*(1-fade(0,0.2,u))*fade(-1,-0.85,v)*(1-fade(-0.12,0.02,v));
+  }
+  const {cuts}=drainageCuts(heights,width,weights,8,3.25);headlandCuts.set(key,cuts);return cuts;
+}
+export function terrainHeight(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
+  const base=baseTerrainHeight(x,z,size,height,profile),extent=size*1.2;
+  if(profile!=='headland'||base<=30||Math.abs(x)>extent||Math.abs(z)>extent)return base;
+  const cuts=headlandDrainage(size,height),width=TERRAIN_SEGMENTS+1,step=extent*2/TERRAIN_SEGMENTS,gx=(x+extent)/step,gz=(z+extent)/step;
+  const ix=Math.min(TERRAIN_SEGMENTS-1,Math.floor(gx)),iz=Math.min(TERRAIN_SEGMENTS-1,Math.floor(gz)),u=gx-ix,v=gz-iz,i=iz*width+ix;
+  const cut=(cuts[i]*(1-u)+cuts[i+1]*u)*(1-v)+(cuts[i+width]*(1-u)+cuts[i+width+1]*u)*v;
+  // Preserve coastal shelves exactly, including between grid vertices.
+  return base-cut*fade(30,31,base);
 }
 /** The same diagonal interpolation as the 192×192 rendered terrain grid. */
 export function terrainSurfaceHeight(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
