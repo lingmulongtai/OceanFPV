@@ -13,3 +13,13 @@ The optional layer requires all three detail maps. One missing map leaves macro 
 - Eight fixed-camera baseline/adjustment comparisons and six final production captures use the actual main renderer, RTX 4050, ULTRA 1920 x 1280 buffer, and sea/vessel time 120. Day/evening views include the northern face, wider island and a close drainage face. All capture runs report no browser errors. Large slab cues are weaker and fine grain remains, but the material is darker and the underlying smooth heightfield is more apparent.
 
 The broad photographed pattern still repeats at reduced contrast. A comparison that strongly blurred macro colour and removed macro normals produced uniformly brown, smooth slopes and was rejected. This layer does not solve repetition, add rock silhouette geometry, or establish physical-controller acceptance, sustained frame rate, or parity on every GPU/browser.
+
+## Complete loading and bounded recovery
+
+Linux CI recorded a Seaside Rock roughness response failing during body retrieval with `TimeoutError`: total elapsed 25,000 ms, body elapsed 10,736 ms, and an aborted deadline signal. Its diffuse and normal images had completed. The loader previously discarded that entire material group and kept the standard surface.
+
+A confirmed deadline during fetch or body retrieval now retries only that image once, with the same 25-second acquisition deadline for each attempt. Completed peer images stay loaded. Decode errors and unrelated failures do not retry. A second failure retains coherent group fallback and disposes any completed textures. Diagnostic records retain phase, error, elapsed time, attempt and recovery status; complete-scene checks require all three maps and no unresolved failure or fallback note.
+
+The production loader records 15 controlled failures covering fetch/body/decode failures and two persistent deadline attempts per map, plus a recovery case that verifies diffuse/normal are each requested once and roughness twice. A native RTX 4050 full-scene regression deliberately aborts the actual 4K roughness response after HTTP headers: the next request restores all three maps and a normal startup note (normal/recovery scenes 2/2, 1.4 minutes). Existing native scene/fallback/GPU checks also passed 3/3, and the updated fixture passed under SwiftShader. The strict build and 113 unit tests pass. The complete updated 26-test CI suite and public deployment remain pending.
+
+This recovers one expired request; persistent failures still use standard materials. It does not establish a universal network or startup-time guarantee.
