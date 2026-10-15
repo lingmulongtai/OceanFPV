@@ -10,7 +10,7 @@ import {cruiseHullContains} from './cruise-hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { buildMotorYacht,YACHT_BEAM } from './yacht';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
-import { blendGroundCover, blendRockScale, wetCoastalSurface, loadSurfaces, type SurfaceGroup } from './surfaces';
+import { blendGroundCover, blendRockScale, wetCoastalSurface, loadSurfaces, type SurfaceGroup, type SurfaceFailure } from './surfaces';
 import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain';
 import { COASTS, type Coast } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
@@ -71,6 +71,7 @@ export class World {
   private launchVelocity:T.Vector3|null=null;
   private launchSample:{time:number;position:T.Vector3}|null=null;
   private surfaceGroups:SurfaceGroup[]=[];
+  readonly surfaceFailures:SurfaceFailure[]=[];
   private groundCover=new T.MeshStandardMaterial();
   private coastalRockDetail=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});
   private groundMaterials:T.MeshStandardMaterial[]=[];
@@ -119,7 +120,7 @@ export class World {
     this.scene.fog = new T.FogExp2(0x9facac,0.00019);
   }
   async loadSurfaceTextures(renderer:T.WebGLRenderer,lightingReady:Promise<unknown>) {
-    const textures=loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy());
+    const textures=loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy(),this.surfaceFailures);
     const cliff=await CoastalCliff.load(renderer,this.shorelineWash);
     if(cliff&&this.headlandMesh){this.installCliff(cliff,this.headlandMesh);}else cliff?.dispose();
     const [missing,forest,rocks]=await Promise.all([textures,CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady),CoastalRocks.load(renderer,this.rockPatches,this.shorelineWash)]);

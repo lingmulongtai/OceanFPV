@@ -1,6 +1,7 @@
 import * as T from 'three';
 
 export type SurfaceGroup={asset:string;resolution:'1k'|'2k'|'4k';materials:T.MeshStandardMaterial[];colour:boolean;roughness?:number};
+export type SurfaceFailure={asset:string;map:string;phase:'fetch'|'body'|'decode';elapsedMs:number;phaseElapsedMs:number;name:string;message:string;aborted:boolean;abortReason:string|null};
 /** Large photographed colour variation keeps metre-scale rock detail from reading as a tiled sheet. */
 export function blendRockScale(material:T.MeshStandardMaterial,macro:T.MeshStandardMaterial) {
   const available=()=>!!(material.map&&macro.map);
@@ -97,15 +98,22 @@ export function wetCoastalSurface(material:T.MeshStandardMaterial,wash:{value:nu
   };
 }
 /** Optional local assets fail as one coherent material group, retaining fallback. */
-export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number) {
+export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number,failures:SurfaceFailure[]=[]) {
   const unique=new Map<string,SurfaceGroup>();
   for(const group of groups){const key=`${group.asset}:${group.resolution}:${group.colour}:${group.roughness??''}`;const existing=unique.get(key);if(existing)existing.materials.push(...group.materials);else unique.set(key,{...group,materials:[...group.materials]});}
   const results=await Promise.all(Array.from(unique.values()).map(async group=> {
     const names=group.colour?['diff','nor_gl','rough']:['nor_gl','rough'];
     const loaded=await Promise.allSettled(names.map(async name=> {
       const url=new URL(`${import.meta.env.BASE_URL}textures/${group.asset}_${name}_${group.resolution}.jpg`,document.baseURI);
-      const response=await fetch(url,{signal:AbortSignal.timeout(25000)});if(!response.ok)throw new Error(`Texture ${response.status}`);
-      const bitmap=await createImageBitmap(await response.blob(),{imageOrientation:'flipY',premultiplyAlpha:'none'});
+      const started=performance.now(),signal=AbortSignal.timeout(25000);let phase:SurfaceFailure['phase']='fetch',phaseStarted=started,bitmap:ImageBitmap;
+      try {
+        const response=await fetch(url,{signal});if(!response.ok)throw new Error(`Texture ${response.status}`);
+        phase='body';phaseStarted=performance.now();const blob=await response.blob();
+        phase='decode';phaseStarted=performance.now();bitmap=await createImageBitmap(blob,{imageOrientation:'flipY',premultiplyAlpha:'none'});
+      }catch(error) {
+        const now=performance.now(),failure:SurfaceFailure={asset:group.asset,map:name,phase,elapsedMs:Math.round(now-started),phaseElapsedMs:Math.round(now-phaseStarted),name:error instanceof Error?error.name:'UnknownError',message:error instanceof Error?error.message:String(error),aborted:signal.aborted,abortReason:signal.aborted?String(signal.reason?.name??signal.reason):null};
+        failures.push(failure);console.warn('Coastal surface load failed',failure);throw error;
+      }
       const texture=new T.Texture(bitmap);texture.flipY=false;texture.wrapS=texture.wrapT=T.RepeatWrapping;texture.anisotropy=Math.min(16,anisotropy);
       if(name==='diff')texture.colorSpace=T.SRGBColorSpace;texture.needsUpdate=true;return {name,texture};
     }));

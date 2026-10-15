@@ -1,5 +1,5 @@
 import * as T from 'three';
-import {blendGroundCover,wetCoastalSurface} from '../../../src/surfaces.ts';
+import {blendGroundCover,wetCoastalSurface,loadSurfaces} from '../../../src/surfaces.ts';
 window.addEventListener('error',event=>{window.__GROUND_PROBE_ERROR__=event.message;});
 const renderer=new T.WebGLRenderer();renderer.setSize(64,64);renderer.toneMapping=T.NoToneMapping;document.body.append(renderer.domElement);
 if(!renderer.getContext().getExtension('EXT_color_buffer_float'))throw new Error('Float target unavailable');
@@ -85,4 +85,16 @@ for(const field of detailFields)for(const kind of ['colour','normal','roughness'
   }
  }
 }
-const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');if(gl.getError()!==gl.NO_ERROR)throw new Error('Ground probe WebGL error');window.__GROUND_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,maximum,detailSamples,detailMaximum};
+const loadingFailures=[],originalFetch=globalThis.fetch,originalBitmap=globalThis.createImageBitmap,originalTimeout=AbortSignal.timeout;
+try {
+ for(const phase of ['fetch','body','decode','timeout']) {
+  const material=new T.MeshStandardMaterial();
+  AbortSignal.timeout=phase==='timeout'?()=>originalTimeout.call(AbortSignal,1):originalTimeout;
+  globalThis.fetch=async(_url,{signal})=>{if(phase==='fetch')throw new TypeError('Probe fetch failure');return {ok:true,blob:async()=>{if(phase==='body')throw new DOMException('Probe body failure','AbortError');if(phase==='timeout')return new Promise((_,reject)=>{if(signal.aborted)reject(signal.reason);else signal.addEventListener('abort',()=>reject(signal.reason),{once:true});});return new Blob();}};};
+  globalThis.createImageBitmap=async()=>{throw new DOMException('Probe decode failure','InvalidStateError');};
+  const before=loadingFailures.length,missing=await loadSurfaces([{asset:'probe',resolution:'1k',materials:[material],colour:true}],1,loadingFailures),failures=loadingFailures.slice(before);
+  if(missing.length!==1||missing[0]!=='probe'||failures.length!==3||failures.some(failure=>failure.phase!==(phase==='timeout'?'body':phase)||failure.elapsedMs<failure.phaseElapsedMs||failure.aborted!==(phase==='timeout')||failure.abortReason!==(phase==='timeout'?'TimeoutError':null))||material.map||material.normalMap||material.roughnessMap)throw new Error(`Invalid ${phase} failure diagnostics`);
+  material.dispose();
+ }
+}finally{globalThis.fetch=originalFetch;globalThis.createImageBitmap=originalBitmap;AbortSignal.timeout=originalTimeout;}
+const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');if(gl.getError()!==gl.NO_ERROR)throw new Error('Ground probe WebGL error');window.__GROUND_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,maximum,detailSamples,detailMaximum,loadingFailures};
