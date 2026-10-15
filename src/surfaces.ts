@@ -56,22 +56,17 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
           vec3 w=groundWeights();
           return normalize(normalize(getTangentFrame(eyePosition,baseNormal,ux)*nx)*w.x+normalize(getTangentFrame(eyePosition,baseNormal,uy)*ny)*w.y+normalize(getTangentFrame(eyePosition,baseNormal,uz)*nz)*w.z);
         }
-        ${detailed()?`vec3 groundDetailNormal(vec3 baseNormal,vec3 macroNormal,vec3 fineNormal){
-          vec3 rotation=cross(baseNormal,macroNormal);
-          return normalize(fineNormal+cross(rotation,fineNormal)+cross(rotation,cross(rotation,fineNormal))/max(1.0+dot(baseNormal,macroNormal),0.0001));
-        }`:''}
       #endif`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`vec3 groundBase=diffuseColor.rgb;
-      diffuseColor*=groundSample(map,90.0);
-      ${detailed()?'diffuseColor.rgb*=mix(vec3(1.0),groundSample(groundDetailMap,2.0).rgb,0.2);':''}
+      ${detailed()?`vec3 groundMacroMean=max(textureLod(map,vec2(0.5),16.0).rgb,vec3(0.04));
+      diffuseColor.rgb*=groundSample(groundDetailMap,2.0).rgb*mix(vec3(1.0),groundSample(map,90.0).rgb/groundMacroMean,0.35);`:'diffuseColor*=groundSample(map,90.0);'}
       diffuseColor.rgb=mix(diffuseColor.rgb,groundBase*groundSample(coverMap,15.0).rgb,vGroundCover);`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>',`float groundRockRoughness=groundSample(roughnessMap,90.0).g;
       ${detailed()?'groundRockRoughness=mix(groundRockRoughness,groundSample(groundDetailRoughnessMap,2.0).g,0.65);':''}
       float roughnessFactor=roughness*mix(groundRockRoughness,groundSample(coverRoughnessMap,15.0).g,vGroundCover);`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <normal_fragment_maps>',`
       #if defined(USE_NORMALMAP_TANGENTSPACE) && !defined(USE_TANGENT)
-        vec3 groundRockNormal=groundNormal(normalMap,90.0,normalScale,nonPerturbedNormal,-vViewPosition);
-        ${detailed()?'groundRockNormal=groundDetailNormal(nonPerturbedNormal,groundRockNormal,groundNormal(groundDetailNormalMap,2.0,groundDetailNormalScale,nonPerturbedNormal,-vViewPosition));':''}
+        vec3 groundRockNormal=${detailed()?'groundNormal(groundDetailNormalMap,2.0,groundDetailNormalScale,nonPerturbedNormal,-vViewPosition)':'groundNormal(normalMap,90.0,normalScale,nonPerturbedNormal,-vViewPosition)'};
         normal=normalize(mix(groundRockNormal,groundNormal(coverNormalMap,15.0,normalScale,nonPerturbedNormal,-vViewPosition),vGroundCover));
       #else
         #include <normal_fragment_maps>

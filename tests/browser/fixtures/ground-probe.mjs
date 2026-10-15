@@ -45,11 +45,16 @@ for(let y=0;y<8;y++)for(let x=0;x<8;x++) {
  const nx=x%2?0.28:-0.18,ny=y%3?0.16:-0.25,n=[nx,ny,Math.sqrt(1-nx*nx-ny*ny)];detailVectors.push(n);detailData.push(...n.map(v=>v*0.5+0.5),1);
 }
 const patternedNormal=dataTexture(detailData,8,8),detailRough=colour;
+// Distinct known coarse mips prove the production shader reads the macro mean.
+const macroColour=dataTexture(gradient,64,64),macroMean=[0.43,0.61,0.29];
+macroColour.mipmaps=[{data:new Float32Array(gradient),width:64,height:64}];
+for(let size=32;size>=1;size/=2){const data=new Float32Array(size*size*4);for(let i=0;i<data.length;i+=4)data.set([...macroMean,1],i);macroColour.mipmaps.push({data,width:size,height:size});}
+macroColour.minFilter=T.NearestMipmapNearestFilter;macroColour.needsUpdate=true;
 const detailSamples=[];let detailMaximum=0;
 const detailFields=[{name:'flat-macro',rock:flat,fine:patternedNormal,pattern:true},{name:'flat-fine',rock:rockTilt,fine:normalTexture(flat),pattern:false},{name:'both-tilted',rock:rockTilt,fine:patternedNormal,pattern:true}];
 for(const field of detailFields)for(const kind of ['colour','normal','roughness']) {
  const carrier=new T.MeshStandardMaterial();carrier.normalScale.set(0.65,0.65);
- const material=new T.MeshStandardMaterial({map:colour,normalMap:normalTexture(field.rock),roughnessMap:rough});material.normalScale.set(0.65,0.65);
+ const material=new T.MeshStandardMaterial({map:macroColour,normalMap:normalTexture(field.rock),roughnessMap:rough});material.normalScale.set(0.65,0.65);
  blendGroundCover(material,new T.MeshStandardMaterial({map:colour,normalMap:normalTexture(coverTilt),roughnessMap:rough}),carrier);wetCoastalSurface(material,{value:1.15});
  const compile=material.onBeforeCompile,key=material.customProgramCacheKey.bind(material);
  material.onBeforeCompile=(shader,renderer)=>{compile.call(material,shader,renderer);shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',`gl_FragColor=vec4(${kind==='normal'?'normal':kind==='roughness'?'vec3(roughnessFactor)':'diffuseColor.rgb'},1.0);`);};material.customProgramCacheKey=()=>key()+kind;
@@ -70,11 +75,11 @@ for(const field of detailFields)for(const kind of ['colour','normal','roughness'
     let rock=mappedNormal(normal,field.rock);
     if(complete) {
      const fineSamples=[[point.z,point.y],[point.x,point.z],[point.x,point.y]].map(uv=>{const [x,y]=uv.map(v=>Math.floor(((v/2)%1+1)%1*8));return field.pattern?detailVectors[y*8+x]:flat;});
-     const fine=mappedNormal(normal,fineSamples),rotation=new T.Quaternion().setFromUnitVectors(normal,rock);rock=fine.applyQuaternion(rotation);
+     rock=mappedNormal(normal,fineSamples);
     }
     expected=rock.multiplyScalar(1-cover).addScaledVector(mappedNormal(normal,coverTilt),cover).normalize().transformDirection(camera.matrixWorldInverse).toArray();
    }else if(kind==='roughness')expected=Array(3).fill(((complete?0.7*0.35+sampleColour(point,2,normal)[1]*0.65:0.7)*(1-cover)+0.7*cover)*wetRoughness);
-   else {const macro=sampleColour(point,90,normal),fine=sampleColour(point,2,normal),grass=sampleColour(point,15,normal);expected=macro.map((v,i)=>(v*(complete?0.8+0.2*fine[i]:1)*(1-cover)+grass[i]*cover)*wetColour);}
+   else {const macro=sampleColour(point,90,normal),fine=sampleColour(point,2,normal),grass=sampleColour(point,15,normal);expected=macro.map((v,i)=>((complete?fine[i]*(0.65+0.35*v/macroMean[i]):v)*(1-cover)+grass[i]*cover)*wetColour);}
    const error=Math.max(...expected.map((v,i)=>Math.abs(v-actual[i])));detailMaximum=Math.max(detailMaximum,error);detailSamples.push({field:field.name,kind,state,normal:normal.toArray(),cover,position,actual:[...actual],expected,error});
    if(!Number.isFinite(error)||error>0.002)throw new Error(`Detail projection mismatch ${JSON.stringify(detailSamples.at(-1))}`);
   }
