@@ -21,9 +21,11 @@ try {
   if(response?.status()!==200) throw new Error(`HTTP ${response?.status()}`);
   await page.waitForFunction(()=>!document.querySelector('#start')?.disabled||!document.querySelector('#unsupported')?.classList.contains('hidden'),{},{timeout:120000});
   if(await page.locator('#unsupported').isVisible()) throw new Error(`WebGL initialization failed: ${await page.locator('#unsupported-reason').textContent()}\n${errors.join('\n')}`);
+  const surfaceNote=await page.locator('#start-note').textContent();
+  if(surfaceNote?.includes('一部の素材を読み込めませんでした'))throw new Error(`Incomplete surface delivery: ${surfaceNote}`);
   console.log(`Ready: ${quality} ${page.url()}`);
   await page.screenshot({path:path.join(output,`oceanfpv-${quality}-day.png`),timeout:120000});
-  const checks=['render','photographic assets'];
+  const checks=['render','photographic assets','surface materials without fallback'];
   if(!visualOnly){
     await page.locator('#open-settings').click();await page.locator('#light').selectOption('golden');await page.locator('[data-close="settings-dialog"]').last().click();
     await page.screenshot({path:path.join(output,'oceanfpv-golden.png')});
@@ -52,5 +54,5 @@ try {
   if(drawing.width!==Math.round(drawing.cssWidth*ratio)||drawing.height!==Math.round(drawing.cssHeight*ratio))throw new Error('Quality framebuffer size mismatch');
   if(assets.some(a=>a.status!==200)||!assets.some(a=>a.url.endsWith('.hdr'))||!assets.some(a=>a.url.endsWith('island_tree_02.bin')))throw new Error('Photographic asset delivery incomplete');
   if(errors.length) throw new Error(errors.join('\n'));
-  console.log(JSON.stringify({url:page.url(),status:response.status(),title:await page.title(),quality,drawing,gpu,checks,screenshots:output,assetResponses:assets.length,errors},null,2));
+  console.log(JSON.stringify({url:page.url(),status:response.status(),title:await page.title(),quality,surfaceNote,drawing,gpu,checks,screenshots:output,assetResponses:assets.length,errors},null,2));
 } finally {await browser.close();}

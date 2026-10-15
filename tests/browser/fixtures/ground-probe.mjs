@@ -1,5 +1,6 @@
 import * as T from 'three';
 import {blendGroundCover,wetCoastalSurface} from '../../../src/surfaces.ts';
+window.addEventListener('error',event=>{window.__GROUND_PROBE_ERROR__=event.message;});
 const renderer=new T.WebGLRenderer();renderer.setSize(64,64);renderer.toneMapping=T.NoToneMapping;document.body.append(renderer.domElement);
 if(!renderer.getContext().getExtension('EXT_color_buffer_float'))throw new Error('Float target unavailable');
 const target=new T.WebGLRenderTarget(64,64,{type:T.FloatType}),camera=new T.OrthographicCamera(-2,2,2,-2,0.1,20),scene=new T.Scene();
@@ -27,7 +28,7 @@ const sampleColour=(point,metres,normal)=>{
 // Analytical gradients of planar coordinate fields, independent of screen derivatives.
 const mappedNormal=(normal,mapNormal)=>{
  const axes=[[new T.Vector3(0,0,1),new T.Vector3(0,1,0)],[new T.Vector3(1,0,0),new T.Vector3(0,0,1)],[new T.Vector3(1,0,0),new T.Vector3(0,1,0)]],weights=normal.toArray().map(v=>Math.abs(v)**4),sum=weights.reduce((a,b)=>a+b),result=new T.Vector3();
- axes.forEach(([u,v],i)=>{u.addScaledVector(normal,-u.dot(normal));v.addScaledVector(normal,-v.dot(normal));const scale=Math.sqrt(Math.max(u.lengthSq(),v.lengthSq()));const n=normal.clone().multiplyScalar(mapNormal[2]);if(scale>0)n.addScaledVector(u,mapNormal[0]*0.65/scale).addScaledVector(v,mapNormal[1]*0.65/scale);result.addScaledVector(n.normalize(),weights[i]/sum);});return result.normalize();
+ axes.forEach(([u,v],i)=>{const sample=Array.isArray(mapNormal[0])?mapNormal[i]:mapNormal;u.addScaledVector(normal,-u.dot(normal));v.addScaledVector(normal,-v.dot(normal));const scale=Math.sqrt(Math.max(u.lengthSq(),v.lengthSq()));const n=normal.clone().multiplyScalar(sample[2]);if(scale>0)n.addScaledVector(u,sample[0]*0.65/scale).addScaledVector(v,sample[1]*0.65/scale);result.addScaledVector(n.normalize(),weights[i]/sum);});return result.normalize();
 };
 const samples=[];let maximum=0;
 for(const {field,kind,material}of materials)for(const normal of axes)for(const cover of [0,0.5,1]) {
@@ -39,4 +40,44 @@ for(const {field,kind,material}of materials)for(const normal of axes)for(const c
  const error=Math.max(...expected.map((v,i)=>Math.abs(v-actual[i])));maximum=Math.max(maximum,error);samples.push({field:field.name,kind,normal:normal.toArray(),cover,actual:[...actual],expected,error});
  if(!Number.isFinite(error)||error>(kind==='normal'?0.002:0.02))throw new Error(`Projection mismatch ${JSON.stringify(samples.at(-1))}`);
 }
-const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');window.__GROUND_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,maximum};
+const detailData=[],detailVectors=[];
+for(let y=0;y<8;y++)for(let x=0;x<8;x++) {
+ const nx=x%2?0.28:-0.18,ny=y%3?0.16:-0.25,n=[nx,ny,Math.sqrt(1-nx*nx-ny*ny)];detailVectors.push(n);detailData.push(...n.map(v=>v*0.5+0.5),1);
+}
+const patternedNormal=dataTexture(detailData,8,8),detailRough=colour;
+const detailSamples=[];let detailMaximum=0;
+const detailFields=[{name:'flat-macro',rock:flat,fine:patternedNormal,pattern:true},{name:'flat-fine',rock:rockTilt,fine:normalTexture(flat),pattern:false},{name:'both-tilted',rock:rockTilt,fine:patternedNormal,pattern:true}];
+for(const field of detailFields)for(const kind of ['colour','normal','roughness']) {
+ const carrier=new T.MeshStandardMaterial();carrier.normalScale.set(0.65,0.65);
+ const material=new T.MeshStandardMaterial({map:colour,normalMap:normalTexture(field.rock),roughnessMap:rough});material.normalScale.set(0.65,0.65);
+ blendGroundCover(material,new T.MeshStandardMaterial({map:colour,normalMap:normalTexture(coverTilt),roughnessMap:rough}),carrier);wetCoastalSurface(material,{value:1.15});
+ const compile=material.onBeforeCompile,key=material.customProgramCacheKey.bind(material);
+ material.onBeforeCompile=(shader,renderer)=>{compile.call(material,shader,renderer);shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',`gl_FragColor=vec4(${kind==='normal'?'normal':kind==='roughness'?'vec3(roughnessFactor)':'diffuseColor.rgb'},1.0);`);};material.customProgramCacheKey=()=>key()+kind;
+ mesh.material=material;
+ // Re-enter the complete state on this same material to exercise program cache changes.
+ for(const state of ['complete','incomplete','missing','restored']) {
+  const complete=state==='complete'||state==='restored';carrier.map=state==='missing'?null:colour;carrier.normalMap=state==='missing'?null:field.fine;carrier.roughnessMap=complete?detailRough:null;material.needsUpdate=true;
+  for(const normal of axes)for(const cover of [0,0.5,1])for(const position of [[137.13,41.37,211.29],[137.57,0.1,211.67]]) {
+   mesh.position.set(...position);mesh.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),normal);coverAttribute.array.fill(cover);coverAttribute.needsUpdate=true;
+   camera.up.set(...(Math.abs(normal.y)>0.99?[0,0,1]:[0,1,0]));camera.position.copy(mesh.position).addScaledVector(normal,6);camera.lookAt(mesh.position);camera.updateMatrixWorld(true);mesh.updateMatrixWorld(true);
+   renderer.setRenderTarget(target);renderer.render(scene,camera);const actual=new Float32Array(4);renderer.readRenderTargetPixels(target,32,32,1,1,actual);
+   const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2(2*32.5/64-1,2*32.5/64-1),camera);const point=ray.ray.intersectPlane(new T.Plane().setFromNormalAndCoplanarPoint(normal,mesh.position),new T.Vector3());
+   // This fixture's low sample is below the wet-shore lower threshold; the high one is dry.
+   const reach=1.15*1.5*(0.9+0.1*Math.sin(point.x*0.19+Math.sin(point.z*0.23)*2)*Math.sin(point.z*0.13));
+   const t=T.MathUtils.clamp((point.y-0.15)/(reach-0.15),0,1),wet=1-t*t*(3-2*t),wetColour=1-0.38*wet,wetRoughness=1-0.55*wet;
+   let expected;
+   if(kind==='normal') {
+    let rock=mappedNormal(normal,field.rock);
+    if(complete) {
+     const fineSamples=[[point.z,point.y],[point.x,point.z],[point.x,point.y]].map(uv=>{const [x,y]=uv.map(v=>Math.floor(((v/2)%1+1)%1*8));return field.pattern?detailVectors[y*8+x]:flat;});
+     const fine=mappedNormal(normal,fineSamples),rotation=new T.Quaternion().setFromUnitVectors(normal,rock);rock=fine.applyQuaternion(rotation);
+    }
+    expected=rock.multiplyScalar(1-cover).addScaledVector(mappedNormal(normal,coverTilt),cover).normalize().transformDirection(camera.matrixWorldInverse).toArray();
+   }else if(kind==='roughness')expected=Array(3).fill(((complete?0.7*0.35+sampleColour(point,2,normal)[1]*0.65:0.7)*(1-cover)+0.7*cover)*wetRoughness);
+   else {const macro=sampleColour(point,90,normal),fine=sampleColour(point,2,normal),grass=sampleColour(point,15,normal);expected=macro.map((v,i)=>(v*(complete?0.8+0.2*fine[i]:1)*(1-cover)+grass[i]*cover)*wetColour);}
+   const error=Math.max(...expected.map((v,i)=>Math.abs(v-actual[i])));detailMaximum=Math.max(detailMaximum,error);detailSamples.push({field:field.name,kind,state,normal:normal.toArray(),cover,position,actual:[...actual],expected,error});
+   if(!Number.isFinite(error)||error>0.002)throw new Error(`Detail projection mismatch ${JSON.stringify(detailSamples.at(-1))}`);
+  }
+ }
+}
+const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');if(gl.getError()!==gl.NO_ERROR)throw new Error('Ground probe WebGL error');window.__GROUND_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,maximum,detailSamples,detailMaximum};

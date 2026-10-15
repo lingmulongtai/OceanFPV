@@ -72,6 +72,7 @@ export class World {
   private launchSample:{time:number;position:T.Vector3}|null=null;
   private surfaceGroups:SurfaceGroup[]=[];
   private groundCover=new T.MeshStandardMaterial();
+  private coastalRockDetail=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});
   private groundMaterials:T.MeshStandardMaterial[]=[];
   private naturalObstacles:NaturalObstacle[]=[];
   private rockMaterial=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});
@@ -325,7 +326,7 @@ export class World {
     }
     geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.setAttribute('groundCover',new T.Float32BufferAttribute(cover,1));geo.computeVertexNormals();
     const material=new T.MeshStandardMaterial({vertexColors:true,roughness:0.96});this.surfaceGroups.push({asset:'rocky_terrain',resolution:'2k',materials:[material],colour:true});
-    blendGroundCover(material,this.groundCover);wetCoastalSurface(material,this.shorelineWash);this.groundMaterials.push(material);
+    blendGroundCover(material,this.groundCover,this.coastalRockDetail);wetCoastalSurface(material,this.shorelineWash);this.groundMaterials.push(material);
     const mesh=new T.Mesh(geo,material);mesh.position.set(x,0,z);mesh.receiveShadow=mesh.castShadow=true;this.scene.add(mesh);
     if(coast===COASTS[0])this.headlandMesh=mesh;
     const crownParts:T.BufferGeometry[]=[];
@@ -357,7 +358,7 @@ export class World {
   private buildLighthouse() {
     const root=new T.Group();root.position.set(this.lighthouseReef.x,0,this.lighthouseReef.z);
     const stone=this.rockMaterial;
-    const reefStone=new T.MeshStandardMaterial({color:0xc7c8af,roughness:0.95});blendRockScale(reefStone,stone);wetCoastalSurface(reefStone,this.shorelineWash);
+    const reefStone=this.coastalRockDetail;blendRockScale(reefStone,stone);wetCoastalSurface(reefStone,this.shorelineWash);
     this.groundMaterials.push(reefStone);
     this.surfaceGroups.push({asset:'seaside_rock',resolution:'4k',materials:[reefStone],colour:true});
     const rock=new T.Mesh(metricPaintGeometry(this.lighthouseReef.geometry,2),reefStone);root.add(rock);
