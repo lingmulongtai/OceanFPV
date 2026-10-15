@@ -6,7 +6,8 @@ import { DEFAULT_RADIO, Inputs, mapGamepad, normalizeAxis } from '../src/input';
 import { crossedGate, GATES, Race } from '../src/race';
 import { seaHeight } from '../src/sea';
 import { inverseFFT, SpectralSea } from '../src/spectrum';
-import { closedHullGeometry, foredeckGeometry, hullNameGeometry, upperHullSidePose } from '../src/hull';
+import { closedHullGeometry, foredeckGeometry, hullNameGeometry } from '../src/hull';
+import {cruiseHullGeometry,cruiseHullSidePose} from '../src/cruise-hull';
 import { deckGeometry, vesselBoxContains, windowRibbon } from '../src/cruise';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES, WAKE_STEP } from '../src/navigation';
 import { coastalTreeSites, terrainHeight, terrainSurfaceHeight, TERRAIN_SEGMENTS } from '../src/terrain';
@@ -38,7 +39,7 @@ test('end glazing leaves straight cabin sides open for individual panes',()=> {
 });
 
 test('hull paint charts cover both sides and end caps without changing triangles',()=> {
-  const source=closedHullGeometry(260,34,9,7,true),original=source.toNonIndexed(),mapped=metricPaintGeometry(source);
+  const source=cruiseHullGeometry(),original=source.toNonIndexed(),mapped=metricPaintGeometry(source);
   const p=mapped.attributes.position,uv=mapped.attributes.uv;
   assert.deepEqual([...p.array],[...original.attributes.position.array]);
   assert.deepEqual([...mapped.attributes.normal.array],[...original.attributes.normal.array]);
@@ -91,7 +92,7 @@ test('coastal trees root on dry rendered triangles below 35 degrees',()=> {
 });
 
 test('ship names follow the curved hull at a small offset on both sides',()=> {
-  const hull=closedHullGeometry(260,34,9,7,true),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(hull,material);mesh.updateMatrixWorld();
+  const hull=cruiseHullGeometry(),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(hull,material);mesh.updateMatrixWorld();
   for(const side of [-1,1]) {
     const name=hullNameGeometry(side),p=name.attributes.position,n=name.attributes.normal;
     for(let i=0;i<p.count;i++) {
@@ -104,9 +105,9 @@ test('ship names follow the curved hull at a small offset on both sides',()=> {
 });
 
 test('hull fixtures touch actual rendered side triangles and face outwards',()=> {
-  const geometry=closedHullGeometry(260,34,9,7,true),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(geometry,material);mesh.updateMatrixWorld();
+  const geometry=cruiseHullGeometry(),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(geometry,material);mesh.updateMatrixWorld();
   for(const side of [-1,1])for(const y of [4.2,7.6])for(const z of [-120,-113,-96,-85,0,85,99,120]) {
-    const pose=upperHullSidePose(y,z,side),ray=new Raycaster(pose.point.clone().addScaledVector(pose.normal,2),pose.normal.clone().negate()),hits=ray.intersectObject(mesh);
+    const pose=cruiseHullSidePose(y,z,side),ray=new Raycaster(pose.point.clone().addScaledVector(pose.normal,2),pose.normal.clone().negate()),hits=ray.intersectObject(mesh);
     assert.ok(hits.length>0);assert.ok(Math.abs(hits[0].distance-2)<0.00002);
     assert.ok(hits[0].point.distanceTo(pose.point)<0.00002);assert.ok(pose.normal.x*side>0);
   }
@@ -114,7 +115,7 @@ test('hull fixtures touch actual rendered side triangles and face outwards',()=>
 });
 
 test('bow planking stays on the hull instead of cutting through or extending beyond it',()=> {
-  const hull=closedHullGeometry(260,34,9,7,true),wood=foredeckGeometry(),hp=hull.attributes.position,wp=wood.attributes.position;
+  const hull=cruiseHullGeometry(),wood=foredeckGeometry(),hp=hull.attributes.position,wp=wood.attributes.position;
   for(let i=0;i<wp.count;i++) {
     const station=Math.round((wp.getZ(i)/260+0.5)*128),top=hp.getY(station*6),halfWidth=hp.getX(station*6+1);
     assert.ok(wp.getY(i)-top>0.04&&wp.getY(i)-top<0.05);
@@ -229,7 +230,7 @@ test('vessel routes move continuously and the bow follows the travel direction',
 });
 
 test('bow and stern are closed with every hull edge shared by two faces',()=> {
-  for(const geo of [closedHullGeometry(),closedHullGeometry(260,34,9,7,true)]) {
+  for(const geo of [closedHullGeometry(),cruiseHullGeometry()]) {
     const edges=new Map<string,number>(),index=geo.index!;
     for(let i=0;i<index.count;i+=3)for(let j=0;j<3;j++) {const a=index.getX(i+j),b=index.getX(i+(j+1)%3),key=a<b?`${a}:${b}`:`${b}:${a}`;edges.set(key,(edges.get(key)??0)+1);}
     assert.ok(Array.from(edges.values()).every(count=>count===2));assert.ok(Array.from(geo.attributes.position.array).every(Number.isFinite));geo.dispose();

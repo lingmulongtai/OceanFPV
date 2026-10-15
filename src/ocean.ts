@@ -9,6 +9,7 @@ import { WAKE_SAMPLES, WAKE_STEP } from './navigation';
 import { WaveMipmaps } from './wave-mips';
 import {type CliffSurface} from './cliff';
 import {CliffDepth,CLIFF_DEPTH_SIZE} from './cliff-depth';
+import {cruiseHullCode} from './cruise-hull';
 
 function radialGeometry(quality='high') {
   const segments=quality==='ultra'?512:quality==='high'?384:192,rings=quality==='ultra'?360:quality==='high'?280:170;
@@ -23,6 +24,7 @@ function radialGeometry(quality='high') {
 
 const spectralCode=`
 ${nearshoreCode}
+${cruiseHullCode}
 uniform sampler2D displacement0, displacement1, displacement2;
 uniform sampler2D tangentX0, tangentX1, tangentX2, tangentZ0, tangentZ1, tangentZ2;
 uniform float seaScale,chopScale;
@@ -194,7 +196,8 @@ export class Ocean {
           float u=(local.y+length*0.5)/length;
           if(u>0.0&&u<1.0) {
             float shape=pow(max(sin(u*3.14159),0.001),0.42);
-            if(i>0&&u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
+            if(i==1)shape=cruiseHullWidth(u,width)/width;
+            else if(i>0&&u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
             if(abs(local.x)<width*shape*0.98)hullCutout=true;
           }
           float safeAft=max(aft,0.0);

@@ -6,9 +6,9 @@ export function hullHalfWidth(u:number,beam:number,transom=false) {
 }
 export function hullDeckHeight(u:number,length=92,deck=1.6) {return deck+length/92*0.75*Math.pow(1-u,4);}
 /** Position and outward normal on the rendered upper side triangles. */
-export function upperHullSidePose(y:number,z:number,side:number,length=260,beam=34,deck=9,draft=7,transom=true) {
+export function upperHullSidePose(y:number,z:number,side:number,length=260,beam=34,deck=9,draft=7,transom=true,widthAt=hullHalfWidth) {
   const u=T.MathUtils.clamp(z/length+0.5,0,1),station=Math.min(127,Math.floor(u*128)),f=u*128-station,a=station/128,b=(station+1)/128,low=-draft*0.48;
-  const w0=hullHalfWidth(a,beam,transom),w1=hullHalfWidth(b,beam,transom),top0=hullDeckHeight(a,length,deck),top1=hullDeckHeight(b,length,deck);
+  const w0=widthAt(a,beam,transom),w1=widthAt(b,beam,transom),top0=hullDeckHeight(a,length,deck),top1=hullDeckHeight(b,length,deck);
   const p0=new T.Vector3(w0,top0,(a-0.5)*length),p1=new T.Vector3(w1,top1,(b-0.5)*length),p2=new T.Vector3(w0*0.94,low,p0.z),p3=new T.Vector3(w1*0.94,low,p1.z);
   let point:T.Vector3,normal:T.Vector3;
   if(side<0&&y<=top0-(top0-low)*f) {
@@ -49,10 +49,10 @@ export function foredeckGeometry(length=260,beam=34,deck=9) {
   const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
 }
 /** Closed station hull adapted from OceanLab. End caps share boundary vertices. */
-export function closedHullGeometry(length=92,beam=8.8,deck=1.6,draft=2.7,transom=false) {
+export function closedHullGeometry(length=92,beam=8.8,deck=1.6,draft=2.7,transom=false,widthAt=hullHalfWidth) {
   const positions:number[]=[],uvs:number[]=[],indices:number[]=[],stations=128;
   for(let i=0;i<=stations;i++) {
-    const u=i/stations,z=(u-0.5)*length,w=hullHalfWidth(u,beam,transom),top=hullDeckHeight(u,length,deck);
+    const u=i/stations,z=(u-0.5)*length,w=widthAt(u,beam,transom),top=hullDeckHeight(u,length,deck);
     const section=[[-w,top],[w,top],[w*0.94,-draft*0.48],[w*0.48,-draft],[-w*0.48,-draft],[-w*0.94,-draft*0.48]];
     section.forEach(([x,y],j)=>{positions.push(x,y,z);uvs.push(u*length/4,j/6);});
   }
