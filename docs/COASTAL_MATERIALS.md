@@ -15,3 +15,7 @@ This changes material sampling only. Terrain vertices, cover weights, placement,
 - After integrating exact-source spatial rock culling, 47 units, the strict build and the native scene/fallback/GPU checks passed (3/3, 36.4 s). The complete native suite passed 11/11 in 2.7 minutes. Eighteen fresh fixed-camera/time ULTRA comparisons had no page/console errors and unchanged geometry/draw counts; new day cliff/close-rock and golden shore views were inspected. Aggregate GitHub CI and public deployment remain pending.
 
 The source photographs still repeat. This does not add terrain displacement, captured island geometry, new contact shadowing or physical breaking waves. Acceptance on other GPUs, browsers and physical controllers remains separate.
+
+## Metre-scale rock detail
+
+The current island material also includes an optional 2 m Seaside Rock layer, shared with the lighthouse reef. It adds three sampler uniforms while retaining the 90 m macro and 15 m grass periods. See [composition, fallback, GPU checks and remaining limits](COASTAL_GROUND_DETAIL.md).
