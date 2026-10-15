@@ -93,8 +93,18 @@ try {
   globalThis.fetch=async(_url,{signal})=>{if(phase==='fetch')throw new TypeError('Probe fetch failure');return {ok:true,blob:async()=>{if(phase==='body')throw new DOMException('Probe body failure','AbortError');if(phase==='timeout')return new Promise((_,reject)=>{if(signal.aborted)reject(signal.reason);else signal.addEventListener('abort',()=>reject(signal.reason),{once:true});});return new Blob();}};};
   globalThis.createImageBitmap=async()=>{throw new DOMException('Probe decode failure','InvalidStateError');};
   const before=loadingFailures.length,missing=await loadSurfaces([{asset:'probe',resolution:'1k',materials:[material],colour:true}],1,loadingFailures),failures=loadingFailures.slice(before);
-  if(missing.length!==1||missing[0]!=='probe'||failures.length!==3||failures.some(failure=>failure.phase!==(phase==='timeout'?'body':phase)||failure.elapsedMs<failure.phaseElapsedMs||failure.aborted!==(phase==='timeout')||failure.abortReason!==(phase==='timeout'?'TimeoutError':null))||material.map||material.normalMap||material.roughnessMap)throw new Error(`Invalid ${phase} failure diagnostics`);
+  if(missing.length!==1||missing[0]!=='probe'||failures.length!==(phase==='timeout'?6:3)||failures.some(failure=>failure.phase!==(phase==='timeout'?'body':phase)||failure.elapsedMs<failure.phaseElapsedMs||failure.aborted!==(phase==='timeout')||failure.abortReason!==(phase==='timeout'?'TimeoutError':null)||failure.recovered)||material.map||material.normalMap||material.roughnessMap)throw new Error(`Invalid ${phase} failure diagnostics`);
+  for(const map of ['diff','nor_gl','rough'])if(failures.filter(failure=>failure.map===map).map(failure=>failure.attempt).join(',')!==(phase==='timeout'?'1,2':'1'))throw new Error(`Unexpected ${phase} retry count`);
   material.dispose();
  }
+ const requests=new Map(),recoveryFailures=[],material=new T.MeshStandardMaterial();
+ globalThis.fetch=async(url,{signal})=>{
+  const map=/probe_(diff|nor_gl|rough)_1k/.exec(url.href)[1],attempt=(requests.get(map)??0)+1;requests.set(map,attempt);
+  return {ok:true,blob:async()=>map==='rough'&&attempt===1?new Promise((_,reject)=>{if(signal.aborted)reject(signal.reason);else signal.addEventListener('abort',()=>reject(signal.reason),{once:true});}):new Blob()};
+ };
+ globalThis.createImageBitmap=async()=>{const canvas=new OffscreenCanvas(1,1);canvas.getContext('2d').fillRect(0,0,1,1);return canvas.transferToImageBitmap();};
+ const missing=await loadSurfaces([{asset:'probe',resolution:'1k',materials:[material],colour:true}],1,recoveryFailures);
+ if(missing.length||!material.map||!material.normalMap||!material.roughnessMap||requests.get('diff')!==1||requests.get('nor_gl')!==1||requests.get('rough')!==2||recoveryFailures.length!==1||!recoveryFailures[0].recovered||recoveryFailures[0].attempt!==1)throw new Error(`Timeout recovery did not retain successful maps: ${JSON.stringify({missing,requests:[...requests],recoveryFailures})}`);
+ for(const texture of [material.map,material.normalMap,material.roughnessMap]){texture.dispose();texture.image.close();}material.dispose();
 }finally{globalThis.fetch=originalFetch;globalThis.createImageBitmap=originalBitmap;AbortSignal.timeout=originalTimeout;}
 const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');if(gl.getError()!==gl.NO_ERROR)throw new Error('Ground probe WebGL error');window.__GROUND_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,maximum,detailSamples,detailMaximum,loadingFailures};

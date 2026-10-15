@@ -1,7 +1,7 @@
 import * as T from 'three';
 
 export type SurfaceGroup={asset:string;resolution:'1k'|'2k'|'4k';materials:T.MeshStandardMaterial[];colour:boolean;roughness?:number};
-export type SurfaceFailure={asset:string;map:string;phase:'fetch'|'body'|'decode';elapsedMs:number;phaseElapsedMs:number;name:string;message:string;aborted:boolean;abortReason:string|null};
+export type SurfaceFailure={asset:string;map:string;phase:'fetch'|'body'|'decode';attempt:number;recovered:boolean;elapsedMs:number;phaseElapsedMs:number;name:string;message:string;aborted:boolean;abortReason:string|null};
 /** Large photographed colour variation keeps metre-scale rock detail from reading as a tiled sheet. */
 export function blendRockScale(material:T.MeshStandardMaterial,macro:T.MeshStandardMaterial) {
   const available=()=>!!(material.map&&macro.map);
@@ -105,17 +105,23 @@ export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number,failu
     const names=group.colour?['diff','nor_gl','rough']:['nor_gl','rough'];
     const loaded=await Promise.allSettled(names.map(async name=> {
       const url=new URL(`${import.meta.env.BASE_URL}textures/${group.asset}_${name}_${group.resolution}.jpg`,document.baseURI);
-      const started=performance.now(),signal=AbortSignal.timeout(25000);let phase:SurfaceFailure['phase']='fetch',phaseStarted=started,bitmap:ImageBitmap;
-      try {
-        const response=await fetch(url,{signal});if(!response.ok)throw new Error(`Texture ${response.status}`);
-        phase='body';phaseStarted=performance.now();const blob=await response.blob();
-        phase='decode';phaseStarted=performance.now();bitmap=await createImageBitmap(blob,{imageOrientation:'flipY',premultiplyAlpha:'none'});
-      }catch(error) {
-        const now=performance.now(),failure:SurfaceFailure={asset:group.asset,map:name,phase,elapsedMs:Math.round(now-started),phaseElapsedMs:Math.round(now-phaseStarted),name:error instanceof Error?error.name:'UnknownError',message:error instanceof Error?error.message:String(error),aborted:signal.aborted,abortReason:signal.aborted?String(signal.reason?.name??signal.reason):null};
-        failures.push(failure);console.warn('Coastal surface load failed',failure);throw error;
+      let retryFailure:SurfaceFailure|null=null;
+      for(let attempt=1;attempt<=2;attempt++) {
+        const started=performance.now(),signal=AbortSignal.timeout(25000);let phase:SurfaceFailure['phase']='fetch',phaseStarted=started,bitmap:ImageBitmap;
+        try {
+          const response=await fetch(url,{signal});if(!response.ok)throw new Error(`Texture ${response.status}`);
+          phase='body';phaseStarted=performance.now();const blob=await response.blob();
+          phase='decode';phaseStarted=performance.now();bitmap=await createImageBitmap(blob,{imageOrientation:'flipY',premultiplyAlpha:'none'});
+        }catch(error) {
+          const now=performance.now(),failure:SurfaceFailure={asset:group.asset,map:name,phase,attempt,recovered:false,elapsedMs:Math.round(now-started),phaseElapsedMs:Math.round(now-phaseStarted),name:error instanceof Error?error.name:'UnknownError',message:error instanceof Error?error.message:String(error),aborted:signal.aborted,abortReason:signal.aborted?String(signal.reason?.name??signal.reason):null};
+          failures.push(failure);console.warn('Coastal surface load failed',failure);
+          if(attempt===1&&phase!=='decode'&&failure.aborted&&failure.abortReason==='TimeoutError'){retryFailure=failure;continue;}
+          throw error;
+        }
+        const texture=new T.Texture(bitmap);texture.flipY=false;texture.wrapS=texture.wrapT=T.RepeatWrapping;texture.anisotropy=Math.min(16,anisotropy);
+        if(name==='diff')texture.colorSpace=T.SRGBColorSpace;texture.needsUpdate=true;if(retryFailure)retryFailure.recovered=true;return {name,texture};
       }
-      const texture=new T.Texture(bitmap);texture.flipY=false;texture.wrapS=texture.wrapT=T.RepeatWrapping;texture.anisotropy=Math.min(16,anisotropy);
-      if(name==='diff')texture.colorSpace=T.SRGBColorSpace;texture.needsUpdate=true;return {name,texture};
+      throw new Error('Surface retry exhausted');
     }));
     if(loaded.some(result=>result.status==='rejected')) {
       loaded.forEach(result=>{if(result.status==='fulfilled'){result.value.texture.dispose();(result.value.texture.image as ImageBitmap).close();}});return group.asset;
