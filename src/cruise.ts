@@ -7,25 +7,11 @@ import { bakeCabinOcclusion,roomOcclusionUV,type RoomSurface } from './occlusion
 import {buildTenderModel,TENDER_MOUNTS} from './tender';
 import {buildSternTerraces} from './stern-terraces';
 import {cruiseHullGeometry,cruiseHullSidePose} from './cruise-hull';
+import {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
+import {buildAftLounge,buildAftLoungeFurniture} from './aft-lounge';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
-export function deckOutline(length:number,beam:number,radius=6) {
-  const w=beam/2,l=length/2,r=Math.min(radius,w,l),shape=new T.Shape();
-  shape.moveTo(-w+r,-l);shape.lineTo(w-r,-l);shape.absarc(w-r,-l+r,r,-Math.PI/2,0,false);
-  shape.lineTo(w,l-r);shape.absarc(w-r,l-r,r,0,Math.PI/2,false);
-  shape.lineTo(-w+r,l);shape.absarc(-w+r,l-r,r,Math.PI/2,Math.PI,false);
-  shape.lineTo(-w,-l+r);shape.absarc(-w+r,-l+r,r,Math.PI,Math.PI*1.5,false);
-  return shape;
-}
-export function deckGeometry(length:number,beam:number,height:number,radius=6) {
-  const geometry=new T.ExtrudeGeometry(deckOutline(length,beam,radius),{depth:height,bevelEnabled:false,curveSegments:12});
-  geometry.rotateX(Math.PI/2);geometry.translate(0,height/2,0);return geometry;
-}
-export function windowRibbon(length:number,beam:number,height:number,radius=6,endsOnly=false) {
-  const points=deckOutline(length,beam,radius).getPoints(12),positions:number[]=[],uvs:number[]=[],indices:number[]=[];
-  for(let i=0;i<points.length;i++) {const p=points[i];positions.push(p.x,-height/2,p.y,p.x,height/2,p.y);uvs.push(i/points.length,0,i/points.length,1);if(i){const a=(i-1)*2,b=i*2,previous=points[i-1],longSide=Math.abs(p.x-previous.x)<1e-7&&Math.abs(Math.abs(p.x)-beam/2)<1e-7;if(!endsOnly||!longSide)indices.push(a,a+1,b,a+1,b+1,b);}}
-  const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
-}
+export {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
 export function vesselBoxContains(box:VesselBox,p:T.Vector3,padding=0.2) {
   if(p.y<=box.min.y-padding||p.y>=box.max.y+padding)return false;
   const halfX=(box.max.x-box.min.x)/2+padding,halfZ=(box.max.z-box.min.z)/2+padding;
@@ -55,7 +41,7 @@ export function buildCruiseShip() {
   tenderUpholstery.name='Tender upholstery';
   const boxes:VesselBox[]=[],buckets=new Map<T.Material,T.BufferGeometry[]>();
   const furnitureMaterials=new Set<T.Material>([linen,...quilts]),coarseFurniture=new Map<T.Material,T.BufferGeometry[]>();
-  const blockers:T.BufferGeometry[]=[];let capture=false,aoFloor=0,aoCabin=0,aoSide=1;
+  const blockers:T.BufferGeometry[]=[],aftBlockers:T.BufferGeometry[]=[];let capture=false,aoFloor=0,aoCabin=0,aoSide=1;
   const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1),surface?:RoomSurface)=> {
     g.applyMatrix4(new T.Matrix4().compose(new T.Vector3(...p),new T.Quaternion().setFromEuler(rotation),scale));
     if(m===teak){const position=g.attributes.position,uv=g.attributes.uv;for(let i=0;i<position.count;i++)uv.setXY(i,position.getX(i)/1.8,position.getZ(i)/1.8);}
@@ -95,12 +81,22 @@ export function buildCruiseShip() {
     const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3,floor=y-1.27;
     capture=deck===0;
     if(deck===0)deckPlate(length+3,32.6,0.28,floor-0.14,z,8);
-    deckPlate(length,15.2,2.56,y,z);
+    // Recess the visual core while preserving the original closed flight envelope.
+    // The back wall occupies the final 12 cm; leave 4 cm behind it to avoid coplanar caps.
+    add(deckGeometry(length-6.16,15.2,2.56),[0,y,z-3.08],white);
+    boxes.push({min:new T.Vector3(-7.6,y-1.28,z-length/2),max:new T.Vector3(7.6,y+1.28,z+length/2),radius:6});
     // Keep the closed external glazing envelope solid to drone contacts.
     boxes.at(-1)!.min.x=-13.75;boxes.at(-1)!.max.x=13.75;
     deckPlate(length+3,32.6,0.28,y+1.44,z,8);
     capture=false;
-    add(windowRibbon(length+0.14,27.64,1.72,6.07,true),[0,y+0.02,z],glass);
+    add(windowRibbon(length+0.14,27.64,1.72,6.07,true,'bow'),[0,y+0.02,z],glass);
+    const lounge=buildAftLounge(length);aoFloor=floor;aoCabin=lounge.front+z;
+    for(const part of lounge.parts){if(deck===0&&part.finish!=='glass')aftBlockers.push(part.geometry.clone());add(part.geometry,[0,floor,z],part.finish==='glass'?cabinGlass:part.finish==='teak'?teak:white,new T.Euler(),new T.Vector3(1,1,1),part.surface);}
+    for(const part of buildAftLoungeFurniture(length).parts){
+      if(deck===0)aftBlockers.push(part.geometry.clone());
+      const material=part.finish==='fabric'?quilts[deck%quilts.length]:part.finish==='teak'?teak:chrome;add(part.geometry,[0,floor,z],material);
+      if(part.coarse){part.coarse.translate(0,floor,z);if(!coarseFurniture.has(material))coarseFurniture.set(material,[]);coarseFurniture.get(material)!.push(part.coarse.toNonIndexed());part.coarse.dispose();}
+    }
     for(const p of deckOutline(length+0.2,27.7,6.1).getPoints(4)) {
       if(Math.abs(p.y)>length/2-7)rod([p.x,y-0.85,z+p.y],[p.x,y+0.9,z+p.y],0.045,white);
     }
@@ -225,7 +221,7 @@ export function buildCruiseShip() {
     rod(top.point.addScaledVector(top.normal,0.12).toArray(),bottom.point.addScaledVector(bottom.normal,0.12).toArray(),0.1,chrome);
   }
   for(const x of [-5,5])for(const z of [-113,116]) {const y=hullDeckHeight((z+130)/260,260,9)+0.15;add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,y+0.45,z],chrome);box([1.9,0.12,1.2],[x,y,z],navy);}
-  const bakeStarted=performance.now(),ao=bakeCabinOcclusion(blockers,9.33,-87),occlusionBakeMs=performance.now()-bakeStarted;blockers.forEach(g=>g.dispose());white.aoMap=teak.aoMap=ao;white.aoMapIntensity=teak.aoMapIntensity=0.75;
+  const bakeStarted=performance.now(),ao=bakeCabinOcclusion(blockers,9.33,-87,{blockers:aftBlockers,front:92}),occlusionBakeMs=performance.now()-bakeStarted;[...blockers,...aftBlockers].forEach(g=>g.dispose());white.aoMap=teak.aoMap=ao;white.aoMapIntensity=teak.aoMapIntensity=0.75;
   const furnitureLods:{mesh:T.Mesh;fine:T.BufferGeometry;coarse:T.BufferGeometry}[]=[];
   for(const [m,geometries]of buckets) {
     const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=m!==cabinGlass;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());

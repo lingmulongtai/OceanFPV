@@ -2,8 +2,8 @@ import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MeshBVH } from 'three-mesh-bvh';
 
-export type RoomSurface='floor'|'ceiling'|'back'|'partition'|'front'|'balcony';
-const WIDTH=256,HEIGHT=256,TILE_X=128,TILE_Y=64,PAD=2;
+export type RoomSurface='floor'|'ceiling'|'back'|'partition'|'front'|'balcony'|'aft-floor'|'aft-ceiling'|'aft-back';
+const WIDTH=256,HEIGHT=384,TILE_X=128,TILE_Y=64,PAD=2;
 const atlasUV=(chart:number,u:number,v:number)=>[(chart%2*TILE_X+PAD+T.MathUtils.clamp(u,0,1)*(TILE_X-2*PAD))/WIDTH,(Math.floor(chart/2)*TILE_Y+PAD+T.MathUtils.clamp(v,0,1)*(TILE_Y-2*PAD))/HEIGHT];
 
 /** Dedicated charts leave photographed UV0, positions and normals intact. */
@@ -17,6 +17,9 @@ export function roomOcclusionUV(geometry:T.BufferGeometry,floor=0,cabin=0,side=1
     if(surface==='partition'&&Math.abs(n.getZ(i))>0.9){chart=n.getZ(i)>0?3:4;u=(x-7.6)/6.22;v=(y-floor-0.06)/2.49;}
     if(surface==='front'&&n.getX(i)*side<-0.9){chart=5;u=(z-cabin-0.04)/3.42;v=(y-floor-0.06)/2.49;}
     if(surface==='balcony'&&n.getY(i)<-0.9){chart=6;u=(x-13.76)/2.4;v=(z-cabin-0.04)/3.42;}
+    if(surface==='aft-floor'&&n.getY(i)>.9){chart=8;u=(p.getX(i)+13.82)/27.64;v=(z-cabin)/6.07;}
+    if(surface==='aft-ceiling'&&n.getY(i)<-.9){chart=9;u=(p.getX(i)+13.82)/27.64;v=(z-cabin)/6.07;}
+    if(surface==='aft-back'&&n.getZ(i)>.9){chart=10;u=(p.getX(i)+13.82)/27.64;v=(y-floor-.06)/2.49;}
     const a=chart<0?[0.999,0.999]:atlasUV(chart,u,v);uv.setXY(i,a[0],a[1]);
   }
   geometry.setAttribute('uv1',uv);return geometry;
@@ -46,7 +49,7 @@ export class ContactOcclusion {
 }
 
 /** One rigid cabin template; neighbouring floor/roof/walls are included by caller. */
-export function bakeCabinOcclusion(blockers:T.BufferGeometry[],floor:number,cabin:number) {
+export function bakeCabinOcclusion(blockers:T.BufferGeometry[],floor:number,cabin:number,aft?:{blockers:T.BufferGeometry[];front:number}) {
   const sampler=new ContactOcclusion(blockers),pixels=new Uint8Array(WIDTH*HEIGHT*4).fill(255),point=new T.Vector3();
   const charts=[
     [[7.6,floor+0.06,cabin+0.04],[6.22,0,0],[0,0,3.42],[0,1,0]],
@@ -65,5 +68,16 @@ export function bakeCabinOcclusion(blockers:T.BufferGeometry[],floor:number,cabi
       const offset=((Math.floor(index/2)*TILE_Y+y)*WIDTH+index%2*TILE_X+x)*4;pixels[offset]=pixels[offset+1]=pixels[offset+2]=value;
     }
   });sampler.dispose();
+  if(aft){
+    const room=new ContactOcclusion(aft.blockers),charts=[
+      [[-13.82,.06,aft.front],[27.64,0,0],[0,0,6.07],[0,1,0]],
+      [[-13.82,2.55,aft.front],[27.64,0,0],[0,0,6.07],[0,-1,0]],
+      [[-13.82,.06,aft.front],[27.64,0,0],[0,2.49,0],[0,0,1]]
+    ];
+    charts.forEach((chart,offset)=>{const index=offset+8,[origin,u,v,normal]=chart.map(a=>new T.Vector3(...a));for(let y=0;y<TILE_Y;y++)for(let x=0;x<TILE_X;x++){
+      const s=T.MathUtils.clamp((x-PAD+.5)/(TILE_X-2*PAD),.0001,.9999),t=T.MathUtils.clamp((y-PAD+.5)/(TILE_Y-2*PAD),.0001,.9999);point.copy(origin).addScaledVector(u,s).addScaledVector(v,t);const value=Math.round(255*room.visibility(point,normal,8));
+      const pixel=((Math.floor(index/2)*TILE_Y+y)*WIDTH+index%2*TILE_X+x)*4;pixels[pixel]=pixels[pixel+1]=pixels[pixel+2]=value;
+    }});room.dispose();
+  }
   const texture=new T.DataTexture(pixels,WIDTH,HEIGHT,T.RGBAFormat);texture.channel=1;texture.magFilter=T.LinearFilter;texture.minFilter=T.LinearFilter;texture.generateMipmaps=false;texture.needsUpdate=true;return texture;
 }
