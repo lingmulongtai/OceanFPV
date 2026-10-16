@@ -2,7 +2,9 @@ import grid from './data/hornoya.json';
 
 export const HORNOYA_SIZE=grid.extentMetres/2.4;
 export const HORNOYA_HEIGHT=67;
+export const HORNOYA_SEGMENTS=grid.width-1;
 const last=grid.width-1,half=grid.extentMetres/2,heights=Float32Array.from(grid.heights,value=>value*grid.unitMetres);
+export function hornoyaDepthData(){return heights.slice();}
 
 /** Metres and southward source rows map directly to local X/Z. */
 export function hornoyaHeight(x:number,z:number) {

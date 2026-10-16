@@ -11,7 +11,7 @@ import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { buildMotorYacht,YACHT_BEAM } from './yacht';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
 import { blendGroundCover, blendRockScale, wetCoastalSurface, loadSurfaces, type SurfaceGroup, type SurfaceFailure } from './surfaces';
-import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain';
+import { coastalTreeSites, terrainCover, terrainSurfaceHeight, terrainSegments, type TerrainProfile } from './terrain';
 import { COASTS, type Coast } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
 import { CoastalRocks, coastalRockSites, lighthouseRockPatch, type RockPatch } from './rocks';
@@ -319,7 +319,7 @@ export class World {
   }
   private buildIsland(coast:Coast) {
     const {x,z,size,height,profile}=coast;this.islands.push({...coast});
-    const geo=new T.PlaneGeometry(size*2.4,size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geo.rotateX(-Math.PI/2);
+    const segments=terrainSegments(profile),geo=new T.PlaneGeometry(size*2.4,size*2.4,segments,segments);geo.rotateX(-Math.PI/2);
     const pos=geo.attributes.position;const colors:number[]=[],cover:number[]=[];
     for(let i=0;i<pos.count;i++) {
       const px=pos.getX(i),pz=pos.getZ(i);const y=this.terrain(px,pz,size,height,profile);pos.setY(i,y);

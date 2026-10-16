@@ -10,8 +10,8 @@ import { closedHullGeometry, foredeckGeometry, hullNameGeometry } from '../src/h
 import {cruiseHullGeometry,cruiseHullSidePose} from '../src/cruise-hull';
 import { deckGeometry, vesselBoxContains, windowRibbon } from '../src/cruise';
 import { vesselPose, vesselWakeTrail, WAKE_SAMPLES, WAKE_STEP } from '../src/navigation';
-import { coastalTreeSites, terrainHeight, terrainSurfaceHeight, TERRAIN_SEGMENTS } from '../src/terrain';
-import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
+import { coastalTreeSites, terrainHeight, terrainSurfaceHeight, terrainSegments } from '../src/terrain';
+import { bathymetryData, sampleBathymetry, BATHY_SIZE, COASTS } from '../src/bathymetry';
 import { metricPaintGeometry } from '../src/paint';
 
 test('passenger glazing faces outwards on every side without DoubleSide correction',()=> {
@@ -80,7 +80,7 @@ test('coastal trees root on dry rendered triangles below 35 degrees',()=> {
     const measured=coast.profile==='measured-islet'||coast.profile==='hornoya';
     const sites=coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile);assert.ok(sites.length>(measured?0:60)&&sites.length<=170);
     assert.deepEqual(sites,coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile));
-    const geometry=new PlaneGeometry(coast.size*2.4,coast.size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geometry.rotateX(-Math.PI/2);
+    const geometry=new PlaneGeometry(coast.size*2.4,coast.size*2.4,terrainSegments(coast.profile),terrainSegments(coast.profile));geometry.rotateX(-Math.PI/2);
     const p=geometry.attributes.position;for(let i=0;i<p.count;i++)p.setY(i,terrainHeight(p.getX(i),p.getZ(i),coast.size,coast.height,coast.profile));
     const material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(geometry,material);mesh.updateMatrixWorld();
     for(let i=0;i<sites.length;i+=5) {
@@ -162,14 +162,16 @@ test('rough seas generate more whitecaps and changing presets clears stale foam 
   for(let i=0;i<3;i++)assert.deepEqual(sea.cascades[i].displacement,fresh.cascades[i].displacement);
 });
 
-test('coastal water depths follow the same terrain triangles as visible shores',()=> {
+test('coarse water inputs retain each supplied channel triangle and unchanged shore meshes',()=> {
   const data=bathymetryData(),n=BATHY_SIZE;
   for(const [channel,coast]of COASTS.entries())for(let i=0;i<80;i++) {
     const gx=7.23+(i*31.7)%174,gz=4.71+(i*17.8)%181,ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz;
     const h=(x:number,z:number)=>data[(z*n+x)*4+channel],a=h(ix,iz),b=h(ix,iz+1),d=h(ix+1,iz),c=h(ix+1,iz+1);
     const sampled=u+v<=1?a+(b-a)*v+(d-a)*u:c+(b-c)*(1-u)+(d-c)*(1-v);
     const expected=terrainSurfaceHeight((gx/(n-1)*2-1)*coast.size*1.2,(gz/(n-1)*2-1)*coast.size*1.2,coast.size,coast.height,coast.profile);
-    assert.ok(Math.abs(sampled-expected)<0.00002);
+    const px=coast.x+(gx/(n-1)*2-1)*coast.size*1.2,pz=coast.z+(gz/(n-1)*2-1)*coast.size*1.2;
+    assert.ok(Math.abs(sampled-sampleBathymetry(data,px,pz).height)<.00002);
+    if(coast.profile!=='hornoya')assert.ok(Math.abs(sampled-expected)<0.00002);
   }
 });
 
