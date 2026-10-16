@@ -149,7 +149,8 @@ export class World {
     this.sun.setFromSphericalCoords(1,T.MathUtils.degToRad(90-elevation),T.MathUtils.degToRad(azimuth));
     this.sky.material.uniforms.sunPosition.value.copy(this.sun).multiplyScalar(450000);
     this.sky.material.uniforms.rayleigh.value = preset === 'blue' ? 3.5 : 2.3;
-    this.sunlight.position.copy(this.sun).multiplyScalar(280);
+    this.sunlight.position.copy(this.sun).multiplyScalar(280).add(this.sunlight.target.position);
+    this.sunlight.target.updateMatrixWorld(true);
     this.sunlight.color.set(preset === 'day' ? 0xfff3e3 : preset === 'golden' ? 0xffcf8e : 0xe3a2ae);
     this.sunlight.intensity = preset === 'day' ? 3.4 : preset === 'golden' ? 2.6 : 1.4;
     this.hemisphere.intensity = preset === 'blue' ? 1.0 : 1.6;

@@ -106,7 +106,7 @@ async function boot() {
     }
     if(world.light==='day'&&photoSky&&photoEnvironment) {
       world.scene.background=photoSky.texture;world.scene.environment=photoEnvironment.texture;world.scene.environmentIntensity=0.6;
-      world.sun.copy(photoSky.sun);world.sunlight.position.copy(world.sun).multiplyScalar(280);
+      world.sun.copy(photoSky.sun);world.sunlight.position.copy(world.sun).multiplyScalar(280).add(world.sunlight.target.position);
     }else {world.scene.background=skyTarget.texture;world.scene.environment=environment.texture;world.scene.environmentIntensity=1;}
     if(lightChanged)world.forest?.relight(renderer,world.scene);
     world.ocean.material.uniforms.foamEnabled.value=checked('foam');bloom.enabled=checked('bloom')&&value('quality')!=='balanced';

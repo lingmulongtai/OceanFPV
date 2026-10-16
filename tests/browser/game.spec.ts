@@ -272,11 +272,15 @@ test('cruise departure and lighting remain valid far along the straight route',a
       w.ocean.advance(time,'breeze');const launch=w.launchPose(time),camera=launch.position.clone();
       w.update(time,camera,'breeze',camera,a.flight.orientation,0);
       const below=camera.clone();below.y-=1.2;
-      samples.push({time,position:camera.toArray(),clear:w.collision(camera,time,'breeze'),deck:w.collision(below,time,'breeze'),sky:w.sky.position.length(),target:Math.hypot(w.sunlight.target.position.x-camera.x,w.sunlight.target.position.z-camera.z),light:w.sunlight.position.clone().sub(w.sunlight.target.position).distanceTo(w.sun.clone().multiplyScalar(280))});
+      for(const light of ['golden','blue','day']) {
+        const select=document.querySelector<HTMLSelectElement>('#light')!;select.value=light;select.dispatchEvent(new Event('input',{bubbles:true}));
+        const atlasLight=w.forest.bakeScene.children.find((child:any)=>child.isDirectionalLight),atlasDirection=atlasLight.position.clone().sub(atlasLight.target.getWorldPosition(camera.clone())).normalize();
+        samples.push({time,preset:light,position:camera.toArray(),clear:w.collision(camera,time,'breeze'),deck:w.collision(below,time,'breeze'),sky:w.sky.position.length(),target:Math.hypot(w.sunlight.target.position.x-camera.x,w.sunlight.target.position.z-camera.z),light:w.sunlight.position.clone().sub(w.sunlight.target.position).distanceTo(w.sun.clone().multiplyScalar(280)),atlas:atlasDirection.distanceTo(w.sun)});
+      }
     }
     return samples;
   });
-  for(const sample of result){expect(sample.clear).toBeNull();expect(sample.deck).toContain('客船');expect(sample.sky).toBeLessThan(1e-6);expect(sample.target).toBeLessThan(1e-6);expect(sample.light).toBeLessThan(1e-6);}
+  for(const sample of result){expect(sample.clear).toBeNull();expect(sample.deck).toContain('客船');expect(sample.sky).toBeLessThan(1e-6);expect(sample.target).toBeLessThan(1e-6);expect(sample.light).toBeLessThan(1e-6);expect(sample.atlas).toBeLessThan(1e-6);}
   expect(result.at(-1)!.position[2]).toBeLessThan(-14000);
 });
 
