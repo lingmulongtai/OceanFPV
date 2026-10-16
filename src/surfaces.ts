@@ -1,6 +1,7 @@
 import * as T from 'three';
 
 export type SurfaceGroup={asset:string;resolution:'1k'|'2k'|'4k';materials:T.MeshStandardMaterial[];colour:boolean;roughness?:number};
+export type SurfaceFailure={asset:string;map:string;phase:'fetch'|'body'|'decode';attempt:number;recovered:boolean;elapsedMs:number;phaseElapsedMs:number;name:string;message:string;aborted:boolean;abortReason:string|null};
 /** Large photographed colour variation keeps metre-scale rock detail from reading as a tiled sheet. */
 export function blendRockScale(material:T.MeshStandardMaterial,macro:T.MeshStandardMaterial) {
   const available=()=>!!(material.map&&macro.map);
@@ -56,22 +57,17 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
           vec3 w=groundWeights();
           return normalize(normalize(getTangentFrame(eyePosition,baseNormal,ux)*nx)*w.x+normalize(getTangentFrame(eyePosition,baseNormal,uy)*ny)*w.y+normalize(getTangentFrame(eyePosition,baseNormal,uz)*nz)*w.z);
         }
-        ${detailed()?`vec3 groundDetailNormal(vec3 baseNormal,vec3 macroNormal,vec3 fineNormal){
-          vec3 rotation=cross(baseNormal,macroNormal);
-          return normalize(fineNormal+cross(rotation,fineNormal)+cross(rotation,cross(rotation,fineNormal))/max(1.0+dot(baseNormal,macroNormal),0.0001));
-        }`:''}
       #endif`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`vec3 groundBase=diffuseColor.rgb;
-      diffuseColor*=groundSample(map,90.0);
-      ${detailed()?'diffuseColor.rgb*=mix(vec3(1.0),groundSample(groundDetailMap,2.0).rgb,0.2);':''}
+      ${detailed()?`vec3 groundMacroMean=max(textureLod(map,vec2(0.5),16.0).rgb,vec3(0.04));
+      diffuseColor.rgb*=groundSample(groundDetailMap,2.0).rgb*mix(vec3(1.0),groundSample(map,90.0).rgb/groundMacroMean,0.35);`:'diffuseColor*=groundSample(map,90.0);'}
       diffuseColor.rgb=mix(diffuseColor.rgb,groundBase*groundSample(coverMap,15.0).rgb,vGroundCover);`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>',`float groundRockRoughness=groundSample(roughnessMap,90.0).g;
       ${detailed()?'groundRockRoughness=mix(groundRockRoughness,groundSample(groundDetailRoughnessMap,2.0).g,0.65);':''}
       float roughnessFactor=roughness*mix(groundRockRoughness,groundSample(coverRoughnessMap,15.0).g,vGroundCover);`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <normal_fragment_maps>',`
       #if defined(USE_NORMALMAP_TANGENTSPACE) && !defined(USE_TANGENT)
-        vec3 groundRockNormal=groundNormal(normalMap,90.0,normalScale,nonPerturbedNormal,-vViewPosition);
-        ${detailed()?'groundRockNormal=groundDetailNormal(nonPerturbedNormal,groundRockNormal,groundNormal(groundDetailNormalMap,2.0,groundDetailNormalScale,nonPerturbedNormal,-vViewPosition));':''}
+        vec3 groundRockNormal=${detailed()?'groundNormal(groundDetailNormalMap,2.0,groundDetailNormalScale,nonPerturbedNormal,-vViewPosition)':'groundNormal(normalMap,90.0,normalScale,nonPerturbedNormal,-vViewPosition)'};
         normal=normalize(mix(groundRockNormal,groundNormal(coverNormalMap,15.0,normalScale,nonPerturbedNormal,-vViewPosition),vGroundCover));
       #else
         #include <normal_fragment_maps>
@@ -102,17 +98,30 @@ export function wetCoastalSurface(material:T.MeshStandardMaterial,wash:{value:nu
   };
 }
 /** Optional local assets fail as one coherent material group, retaining fallback. */
-export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number) {
+export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number,failures:SurfaceFailure[]=[]) {
   const unique=new Map<string,SurfaceGroup>();
   for(const group of groups){const key=`${group.asset}:${group.resolution}:${group.colour}:${group.roughness??''}`;const existing=unique.get(key);if(existing)existing.materials.push(...group.materials);else unique.set(key,{...group,materials:[...group.materials]});}
   const results=await Promise.all(Array.from(unique.values()).map(async group=> {
     const names=group.colour?['diff','nor_gl','rough']:['nor_gl','rough'];
     const loaded=await Promise.allSettled(names.map(async name=> {
       const url=new URL(`${import.meta.env.BASE_URL}textures/${group.asset}_${name}_${group.resolution}.jpg`,document.baseURI);
-      const response=await fetch(url,{signal:AbortSignal.timeout(25000)});if(!response.ok)throw new Error(`Texture ${response.status}`);
-      const bitmap=await createImageBitmap(await response.blob(),{imageOrientation:'flipY',premultiplyAlpha:'none'});
-      const texture=new T.Texture(bitmap);texture.flipY=false;texture.wrapS=texture.wrapT=T.RepeatWrapping;texture.anisotropy=Math.min(16,anisotropy);
-      if(name==='diff')texture.colorSpace=T.SRGBColorSpace;texture.needsUpdate=true;return {name,texture};
+      let retryFailure:SurfaceFailure|null=null;
+      for(let attempt=1;attempt<=2;attempt++) {
+        const started=performance.now(),signal=AbortSignal.timeout(25000);let phase:SurfaceFailure['phase']='fetch',phaseStarted=started,bitmap:ImageBitmap;
+        try {
+          const response=await fetch(url,{signal});if(!response.ok)throw new Error(`Texture ${response.status}`);
+          phase='body';phaseStarted=performance.now();const blob=await response.blob();
+          phase='decode';phaseStarted=performance.now();bitmap=await createImageBitmap(blob,{imageOrientation:'flipY',premultiplyAlpha:'none'});
+        }catch(error) {
+          const now=performance.now(),failure:SurfaceFailure={asset:group.asset,map:name,phase,attempt,recovered:false,elapsedMs:Math.round(now-started),phaseElapsedMs:Math.round(now-phaseStarted),name:error instanceof Error?error.name:'UnknownError',message:error instanceof Error?error.message:String(error),aborted:signal.aborted,abortReason:signal.aborted?String(signal.reason?.name??signal.reason):null};
+          failures.push(failure);console.warn('Coastal surface load failed',failure);
+          if(attempt===1&&phase!=='decode'&&failure.aborted&&failure.abortReason==='TimeoutError'){retryFailure=failure;continue;}
+          throw error;
+        }
+        const texture=new T.Texture(bitmap);texture.flipY=false;texture.wrapS=texture.wrapT=T.RepeatWrapping;texture.anisotropy=Math.min(16,anisotropy);
+        if(name==='diff')texture.colorSpace=T.SRGBColorSpace;texture.needsUpdate=true;if(retryFailure)retryFailure.recovered=true;return {name,texture};
+      }
+      throw new Error('Surface retry exhausted');
     }));
     if(loaded.some(result=>result.status==='rejected')) {
       loaded.forEach(result=>{if(result.status==='fulfilled'){result.value.texture.dispose();(result.value.texture.image as ImageBitmap).close();}});return group.asset;

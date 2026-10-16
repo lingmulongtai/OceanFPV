@@ -24,29 +24,57 @@ async function recordGroundPrograms(page:Page) {
 
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
   await recordGroundPrograms(page);const detailRequests:string[]=[];page.on('request',request=>{if(/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.test(request.url()))detailRequests.push(request.url());});
+  const networkFailures:{url:string;error:string|undefined}[]=[];page.on('requestfailed',request=>networkFailures.push({url:request.url(),error:request.failure()?.errorText}));
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
-  const {gpu,render,forest,rocks,cliff}=await page.evaluate(()=> {
+  const {loading,gpu,render,forest,rocks,cliff,detailPrograms,unsupportedVisible}=await page.evaluate(()=> {
     const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
     const rocks=app.world.rocks;
-    return {gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:app.world.forest?.sourceTriangles??0,cliff:app.world.cliff?.surface.geometry.index.count/3,
+    const w=app.world;
+    return {loading:{failures:w.surfaceFailures,note:document.querySelector('#start-note')!.textContent,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean)},
+      detailPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap')),unsupportedVisible:!!document.querySelector('#unsupported')!.getClientRects().length,
+      gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:w.forest?.sourceTriangles??0,cliff:w.cliff?.surface.geometry.index.count/3,
       rocks:{triangles:rocks?.shape.geometry.index.count/3,placements:rocks?.placements.length,instances:rocks?.group.children.reduce((sum:number,mesh:any)=>sum+mesh.count,0),reef:rocks?.placements.filter((p:any)=>Math.hypot(p.matrix.elements[12]-app.world.lighthouseReef.x,p.matrix.elements[14]-app.world.lighthouseReef.z)<50).length}};
   });
+  console.log(`Surface delivery: ${JSON.stringify({...loading,networkFailures})}`);
+  expect(loading.failures.filter((failure:any)=>!failure.recovered)).toEqual([]);expect(loading.detail).toEqual([true,true,true]);expect(loading.note).not.toContain('標準素材');
   console.log(`Renderer: ${gpu}`);
   if(process.env.OCEANFPV_NATIVE_GPU==='1') {
     expect(gpu).not.toMatch(/SwiftShader|Microsoft Basic|unavailable/i);expect(gpu).toContain('Direct3D11');
   }
-  await expect(page.locator('#unsupported')).toBeHidden();
+  expect(unsupportedVisible).toBe(false);
   expect(render.triangles).toBeGreaterThan(30000);
   expect(forest).toBeGreaterThan(1000000);
   expect(rocks.triangles).toBe(14844);expect(rocks.placements).toBe(174);expect(rocks.instances).toBe(174);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
-  const detailPrograms=await page.evaluate(()=>(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap')));
   expect(detailPrograms.length).toBeGreaterThan(0);for(const program of detailPrograms){expect(program.samplers).toBeLessThanOrEqual(program.limit);expect(program.names).toContain('groundDetailNormalMap');expect(program.names).toContain('groundDetailRoughnessMap');}
-  expect(detailRequests.length).toBe(3);expect(new Set(detailRequests).size).toBe(3);
+  const recovered=loading.failures.filter((failure:any)=>failure.asset==='seaside_rock'&&failure.recovered);
+  expect(detailRequests.length).toBe(3+recovered.length);expect(new Set(detailRequests).size).toBe(3);
+  for(const url of new Set(detailRequests)){const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(url)![1];expect(detailRequests.filter(request=>request===url).length).toBe(1+recovered.filter((failure:any)=>failure.map===map).length);}
   console.log(`Ground production samplers: ${JSON.stringify(detailPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit})))}`);
   await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
+});
+
+test('one expired rock response retries only that image and reaches full detail',async({page})=> {
+  const requests:string[]=[],errors:string[]=[];page.on('request',request=>{const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(request.url());if(map)requests.push(map[1]);});page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(()=> {
+    const timeout=AbortSignal.timeout,controllers=new WeakMap<AbortSignal,AbortController>(),fetch=window.fetch.bind(window);let selected=false;
+    AbortSignal.timeout=ms=>{const deadline=timeout.call(AbortSignal,ms),controller=new AbortController();deadline.addEventListener('abort',()=>controller.abort(deadline.reason),{once:true});controllers.set(controller.signal,controller);return controller.signal;};
+    window.fetch=async(input,init)=> {
+      const expire=!selected&&String(input).endsWith('/seaside_rock_rough_4k.jpg');if(expire)selected=true;
+      const response=await fetch(input,init);
+      if(expire){const controller=controllers.get(init!.signal as AbortSignal);if(!controller)throw new Error('Missing controlled texture deadline');controller.abort(new DOMException('Controlled response deadline','TimeoutError'));}
+      return response;
+    };
+  });
+  await ready(page);
+  const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {failures:w.surfaceFailures,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),note:document.querySelector('#start-note')!.textContent};});
+  console.log(`Recovered surface delivery: ${JSON.stringify({state,requests})}`);
+  expect(state.detail).toEqual([true,true,true]);expect(state.note).not.toContain('標準素材');
+  expect(state.failures).toEqual([expect.objectContaining({asset:'seaside_rock',map:'rough',aborted:true,abortReason:'TimeoutError',attempt:1,recovered:true})]);
+  expect(['fetch','body']).toContain(state.failures[0].phase);
+  expect(requests.filter(map=>map==='diff').length).toBe(1);expect(requests.filter(map=>map==='nor_gl').length).toBe(1);expect(requests.filter(map=>map==='rough').length).toBe(2);expect(errors).toEqual([]);
 });
 
 test('one missing rock detail map retains coherent macro terrain and grass rendering',async({page})=> {
@@ -55,9 +83,11 @@ test('one missing rock detail map retains coherent macro terrain and grass rende
   const state=await page.evaluate(()=> {
     const world=(window as any).__OCEANFPV__.world,detail=world.coastalRockDetail;
     const islands=world.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover);
-    return {detail:[detail.map,detail.normalMap,detail.roughnessMap].map(Boolean),islands:islands.map((mesh:any)=>[mesh.material.map,mesh.material.normalMap,mesh.material.roughnessMap].every(Boolean)),cover:[world.groundCover.map,world.groundCover.normalMap,world.groundCover.roughnessMap].every(Boolean),programs:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('coverMap'))};
+    return {failures:world.surfaceFailures,detail:[detail.map,detail.normalMap,detail.roughnessMap].map(Boolean),islands:islands.map((mesh:any)=>[mesh.material.map,mesh.material.normalMap,mesh.material.roughnessMap].every(Boolean)),cover:[world.groundCover.map,world.groundCover.normalMap,world.groundCover.roughnessMap].every(Boolean),programs:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('coverMap'))};
   });
   expect(state.detail).toEqual([false,false,false]);expect(state.islands).toEqual([true,true,true]);expect(state.cover).toBe(true);expect(state.programs.length).toBeGreaterThan(0);
+  console.log(`Surface fallback: ${JSON.stringify(state.failures)}`);
+  expect(state.failures.filter((failure:any)=>!failure.recovered)).toEqual([expect.objectContaining({asset:'seaside_rock',map:'nor_gl',phase:'fetch',aborted:false,abortReason:null,attempt:1})]);
   for(const program of state.programs){expect(program.names).not.toContain('groundDetailMap');expect(program.samplers).toBeLessThanOrEqual(program.limit);}
   await page.screenshot({path:'test-results/oceanfpv-ground-detail-fallback.png'});expect(errors).toEqual([]);
 });
@@ -406,9 +436,11 @@ test('terrain projections preserve physical periods and normal direction on the 
   await page.goto('/tests/browser/fixtures/ground-probe.html');
   await page.waitForFunction(()=>!!((window as any).__GROUND_PROBE__||(window as any).__GROUND_PROBE_ERROR__),{},{timeout:60000});
   expect(await page.evaluate(()=>(window as any).__GROUND_PROBE_ERROR__)).toBeUndefined();
-  const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum,detailCount:p.detailSamples.length,detailMaximum:p.detailMaximum};});
+  const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum,detailCount:p.detailSamples.length,detailMaximum:p.detailMaximum,loadingFailures:p.loadingFailures};});
   console.log(`Ground material probe: ${JSON.stringify(probe)}`);
   expect(probe.count).toBe(96);expect(probe.maximum).toBeLessThan(0.002);expect(probe.detailCount).toBe(1728);expect(probe.detailMaximum).toBeLessThan(0.002);expect(errors).toEqual([]);
+  expect(probe.loadingFailures.map((failure:any)=>failure.phase)).toEqual(['fetch','fetch','fetch','body','body','body','decode','decode','decode',...Array(6).fill('body')]);
+  for(const failure of probe.loadingFailures.slice(-6))expect(failure).toMatchObject({name:'TimeoutError',aborted:true,abortReason:'TimeoutError',recovered:false});
 });
 test('headland bay and lighthouse reef match rendered flight contacts',async({page})=> {
   await ready(page);
