@@ -471,20 +471,33 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
     (window as any).__pad={id:'USB radio test',index:0,connected:true,mapping:'',axes:[0,0,0,0],buttons:[],timestamp:0};
     Object.defineProperty(navigator,'getGamepads',{value:()=>[(window as any).__pad]});
   });
-  await ready(page);await page.locator('#open-settings').click();await page.locator('[data-tab="controller"]').click();await page.locator('#input-source').selectOption('radio');
-  await page.locator('#calibrate').click();
-  await page.evaluate(()=> {(window as any).__pad.axes=[-0.8,-0.8,-0.8,-0.8];});
-  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.input.profile.calibration[0].min)).toBe(-0.8);
-  await page.evaluate(()=> {(window as any).__pad.axes=[0.9,0.9,0.9,0.9];});
-  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.input.profile.calibration[0].max)).toBe(0.9);
-  await page.locator('#save-calibration').click();
-  expect(await page.evaluate(()=> JSON.parse(localStorage.getItem('oceanfpv:radio:USB radio test')!).calibration[0].min)).toBe(-0.8);
-  await page.locator('[data-close="settings-dialog"]').last().click();
-  await page.evaluate(()=> {(window as any).__pad.axes=[0,0,0,-0.8];});await page.waitForTimeout(150);await page.locator('#start').click();
-  await expect(page.locator('#toast')).toContainText('スロットルを下げ');await expect(page.locator('#settings-dialog')).toBeVisible();
-  await page.evaluate(()=> {(window as any).__pad.axes=[0,0,0,0.9];});await page.waitForTimeout(150);
-  await expect(page.locator('#device-status')).toContainText('THROTTLE 0%');
-  await page.locator('[data-close="settings-dialog"]').last().click();await page.locator('#start').click();await expect(page.locator('#intro')).toBeHidden();
+  await ready(page);
+  // Preserve real DOM handlers and RAF input polling while avoiding a rendered
+  // actionability wait for every calibration step on software-rendered CI.
+  const result=await page.evaluate(async()=> {
+    const app=(window as any).__OCEANFPV__,pad=(window as any).__pad;
+    const click=(selector:string)=>document.querySelector<HTMLButtonElement>(selector)!.click();
+    const until=async(check:()=>boolean,label:string)=> {
+      const start=performance.now();
+      do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));if(check())return;}while(performance.now()-start<20000);
+      throw new Error(`Radio UI did not reach ${label}`);
+    };
+    click('#open-settings');click('[data-tab="controller"]');
+    const source=document.querySelector<HTMLSelectElement>('#input-source')!;source.value='radio';source.dispatchEvent(new Event('input',{bubbles:true}));
+    const dialog=document.querySelector<HTMLDialogElement>('#settings-dialog')!,opened=dialog.open;
+    await until(()=>app.input.pad?.id===pad.id,'device');click('#calibrate');
+    pad.axes=[-0.8,-0.8,-0.8,-0.8];await until(()=>app.input.profile.calibration[0].min===-0.8,'minimum');
+    pad.axes=[0.9,0.9,0.9,0.9];await until(()=>app.input.profile.calibration[0].max===0.9,'maximum');
+    const min=app.input.profile.calibration[0].min,max=app.input.profile.calibration[0].max;click('#save-calibration');
+    const saved=JSON.parse(localStorage.getItem('oceanfpv:radio:USB radio test')!);click('[data-close="settings-dialog"]:last-of-type');
+    pad.axes=[0,0,0,-0.8];await until(()=>app.input.sticks().throttle>0.12,'high throttle');click('#start');
+    const rejected={dialog:dialog.open,toast:document.querySelector('#toast')!.textContent,playing:app.getState().playing};
+    pad.axes=[0,0,0,0.9];await until(()=>document.querySelector('#device-status')!.textContent!.includes('THROTTLE 0%'),'low throttle');
+    click('[data-close="settings-dialog"]:last-of-type');click('#start');
+    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,started:document.querySelector('#intro')!.classList.contains('hidden')};
+  });
+  expect(result.opened).toBe(true);expect(result.source).toBe('radio');expect(result.min).toBe(-0.8);expect(result.max).toBe(0.9);expect(result.saved).toBe(-0.8);
+  expect(result.rejected.dialog).toBe(true);expect(result.rejected.toast).toContain('スロットルを下げ');expect(result.rejected.playing).toBe(false);expect(result.started).toBe(true);
 });
 test('lighting and sea settings persist across a full reload', async ({page})=> {
   test.setTimeout(300000);
