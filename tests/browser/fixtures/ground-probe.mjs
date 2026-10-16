@@ -39,9 +39,9 @@ const phaseSample=(uv,size,read)=>{
  }
  return value;
 };
-const sampleColour=(point,metres,normal)=>{
+const sampleColour=(point,metres,normal,fine=false)=>{
  const weights=normal.toArray().map(v=>Math.abs(v)**4),sum=weights.reduce((a,b)=>a+b),pairs=[[point.z,point.y],[point.x,point.z],[point.x,point.y]],colour=[0,0,0];
- pairs.forEach((uv,i)=>{const values=uv.map(v=>(Math.floor(((v/metres)%1+1)%1*64)+0.5)/64);values.push(0.25);values.forEach((v,j)=>colour[j]+=v*weights[i]/sum);});return colour;
+ pairs.forEach((uv,i)=>{const values=fine?phaseSample(uv.map(v=>v/metres),64,(x,y)=>[(x+.5)/64,(y+.5)/64,.25]):[...uv.map(v=>(Math.floor(((v/metres)%1+1)%1*64)+0.5)/64),.25];values.forEach((v,j)=>colour[j]+=v*weights[i]/sum);});return colour;
 };
 // Analytical gradients of planar coordinate fields, independent of screen derivatives.
 const mappedNormal=(normal,mapNormal)=>{
@@ -77,7 +77,7 @@ for(const field of detailFields)for(const kind of ['colour','normal','roughness'
  blendGroundCover(material,new T.MeshStandardMaterial({map:colour,normalMap:normalTexture(coverTilt),roughnessMap:rough}),carrier);wetCoastalSurface(material,{value:1.15});
  const compile=material.onBeforeCompile,key=material.customProgramCacheKey.bind(material);
  material.onBeforeCompile=(shader,renderer)=>{compile.call(material,shader,renderer);shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',`gl_FragColor=vec4(${kind==='normal'?'normal':kind==='roughness'?'vec3(roughnessFactor)':'diffuseColor.rgb'},1.0);`);};material.customProgramCacheKey=()=>key()+kind;
- mesh.material=material;
+ mesh.material=material;const completeOutputs=new Map();
  // Re-enter the complete state on this same material to exercise program cache changes.
  for(const state of ['complete','incomplete','missing','restored']) {
   const complete=state==='complete'||state==='restored';carrier.map=state==='missing'?null:colour;carrier.normalMap=state==='missing'?null:field.fine;carrier.roughnessMap=complete?detailRough:null;material.needsUpdate=true;
@@ -93,14 +93,17 @@ for(const field of detailFields)for(const kind of ['colour','normal','roughness'
    if(kind==='normal') {
     let rock=mappedNormal(normal,field.rock);
     if(complete) {
-     const fineSamples=[[point.z,point.y],[point.x,point.z],[point.x,point.y]].map(uv=>{const [x,y]=uv.map(v=>Math.floor(((v/2)%1+1)%1*8));return field.pattern?detailVectors[y*8+x]:flat;});
+     const fineSamples=[[point.z,point.y],[point.x,point.z],[point.x,point.y]].map(uv=>phaseSample(uv.map(v=>v/2),8,(x,y)=>field.pattern?detailVectors[y*8+x]:flat));
      rock=mappedNormal(normal,fineSamples);
     }
     expected=rock.multiplyScalar(1-cover).addScaledVector(mappedNormal(normal,coverTilt),cover).normalize().transformDirection(camera.matrixWorldInverse).toArray();
-   }else if(kind==='roughness')expected=Array(3).fill(((complete?0.7*0.35+sampleColour(point,2,normal)[1]*0.65:0.7)*(1-cover)+0.7*cover)*wetRoughness);
-   else {const macro=sampleColour(point,90,normal),fine=sampleColour(point,2,normal),grass=sampleColour(point,15,normal),t=Math.max(0,Math.min(1,(Math.abs(normal.y)-.45)/.3)),weight=.35*t*t*(3-2*t);expected=macro.map((v,i)=>((complete?fine[i]*(1-weight+weight*v/macroMean[i]):v)*(1-cover)+grass[i]*cover)*wetColour);}
+   }else if(kind==='roughness')expected=Array(3).fill(((complete?0.7*0.35+sampleColour(point,2,normal,true)[1]*0.65:0.7)*(1-cover)+0.7*cover)*wetRoughness);
+   else {const macro=sampleColour(point,90,normal),fine=sampleColour(point,2,normal,true),grass=sampleColour(point,15,normal),t=Math.max(0,Math.min(1,(Math.abs(normal.y)-.45)/.3)),weight=.35*t*t*(3-2*t);expected=macro.map((v,i)=>((complete?fine[i]*(1-weight+weight*v/macroMean[i]):v)*(1-cover)+grass[i]*cover)*wetColour);}
    const error=Math.max(...expected.map((v,i)=>Math.abs(v-actual[i])));detailMaximum=Math.max(detailMaximum,error);detailSamples.push({field:field.name,kind,state,normal:normal.toArray(),cover,position,actual:[...actual],expected,error});
    if(!Number.isFinite(error)||error>0.002)throw new Error(`Detail projection mismatch ${JSON.stringify(detailSamples.at(-1))}`);
+   const key=JSON.stringify({normal:normal.toArray(),cover,position});
+   if(state==='complete')completeOutputs.set(key,[...actual]);
+   if(state==='restored'&&Math.max(...completeOutputs.get(key).map((v,i)=>Math.abs(v-actual[i])))>0.000002)throw new Error('Restored fine material changed its complete output');
   }
  }
 }
