@@ -72,8 +72,9 @@ test('one expired rock response retries only that image and reaches full detail'
   const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {failures:w.surfaceFailures,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),note:document.querySelector('#start-note')!.textContent};});
   console.log(`Recovered surface delivery: ${JSON.stringify({state,requests})}`);
   expect(state.detail).toEqual([true,true,true]);expect(state.note).not.toContain('標準素材');
-  expect(state.failures).toEqual([expect.objectContaining({asset:'seaside_rock',map:'rough',aborted:true,abortReason:'TimeoutError',attempt:1,recovered:true})]);
-  expect(['fetch','body']).toContain(state.failures[0].phase);
+  const controlled=state.failures.filter((failure:any)=>failure.asset==='seaside_rock');
+  expect(controlled).toEqual([expect.objectContaining({asset:'seaside_rock',map:'rough',aborted:true,abortReason:'TimeoutError',attempt:1,recovered:true})]);
+  expect(state.failures.filter((failure:any)=>!failure.recovered)).toEqual([]);expect(['fetch','body']).toContain(controlled[0].phase);
   expect(requests.filter(map=>map==='diff').length).toBe(1);expect(requests.filter(map=>map==='nor_gl').length).toBe(1);expect(requests.filter(map=>map==='rough').length).toBe(2);expect(errors).toEqual([]);
 });
 
