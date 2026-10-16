@@ -349,7 +349,7 @@ test('fixed dialog views stop GPU draws and redraw changed settings',async({page
 });
 
 test('lost WebGL context closes modal layers and leaves recovery reachable',async({page})=> {
-  await ready(page);await page.locator('#start').click();await page.keyboard.press('Escape');
+  await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());await page.keyboard.press('Escape');
   await expect(page.locator('#pause-dialog')).toBeVisible();
   await page.evaluate(()=> {
     const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,extension=gl.getExtension('WEBGL_lose_context');
