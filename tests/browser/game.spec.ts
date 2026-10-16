@@ -458,7 +458,7 @@ test('terrain projections preserve physical periods and normal direction on the 
   expect(await page.evaluate(()=>(window as any).__GROUND_PROBE_ERROR__)).toBeUndefined();
   const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum,detailCount:p.detailSamples.length,detailMaximum:p.detailMaximum,loadingFailures:p.loadingFailures};});
   console.log(`Ground material probe: ${JSON.stringify(probe)}`);
-  expect(probe.count).toBe(96);expect(probe.maximum).toBeLessThan(0.002);expect(probe.detailCount).toBe(1728);expect(probe.detailMaximum).toBeLessThan(0.002);expect(errors).toEqual([]);
+  expect(probe.count).toBe(96);expect(probe.maximum).toBeLessThan(0.002);expect(probe.detailCount).toBe(2592);expect(probe.detailMaximum).toBeLessThan(0.002);expect(errors).toEqual([]);
   expect(probe.loadingFailures.map((failure:any)=>failure.phase)).toEqual(['fetch','fetch','fetch','body','body','body','decode','decode','decode',...Array(6).fill('body')]);
   for(const failure of probe.loadingFailures.slice(-6))expect(failure).toMatchObject({name:'TimeoutError',aborted:true,abortReason:'TimeoutError',recovered:false});
 });

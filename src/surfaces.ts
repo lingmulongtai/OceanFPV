@@ -60,7 +60,8 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
       #endif`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`vec3 groundBase=diffuseColor.rgb;
       ${detailed()?`vec3 groundMacroMean=max(textureLod(map,vec2(0.5),16.0).rgb,vec3(0.04));
-      diffuseColor.rgb*=groundSample(groundDetailMap,2.0).rgb*mix(vec3(1.0),groundSample(map,90.0).rgb/groundMacroMean,0.35);`:'diffuseColor*=groundSample(map,90.0);'}
+      float groundMacroStrength=0.35*smoothstep(0.45,0.75,abs(normalize(vGroundNormal).y));
+      diffuseColor.rgb*=groundSample(groundDetailMap,2.0).rgb*mix(vec3(1.0),groundSample(map,90.0).rgb/groundMacroMean,groundMacroStrength);`:'diffuseColor*=groundSample(map,90.0);'}
       diffuseColor.rgb=mix(diffuseColor.rgb,groundBase*groundSample(coverMap,15.0).rgb,vGroundCover);`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>',`float groundRockRoughness=groundSample(roughnessMap,90.0).g;
       ${detailed()?'groundRockRoughness=mix(groundRockRoughness,groundSample(groundDetailRoughnessMap,2.0).g,0.65);':''}

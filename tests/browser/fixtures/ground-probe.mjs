@@ -51,6 +51,7 @@ macroColour.mipmaps=[{data:new Float32Array(gradient),width:64,height:64}];
 for(let size=32;size>=1;size/=2){const data=new Float32Array(size*size*4);for(let i=0;i<data.length;i+=4)data.set([...macroMean,1],i);macroColour.mipmaps.push({data,width:size,height:size});}
 macroColour.minFilter=T.NearestMipmapNearestFilter;macroColour.needsUpdate=true;
 const detailSamples=[];let detailMaximum=0;
+const detailAxes=[...axes,new T.Vector3(.8,.6,0),new T.Vector3(-.8,-.6,0),new T.Vector3(Math.sqrt(1-.45**2),.45,0),new T.Vector3(Math.sqrt(1-.75**2),.75,0)];
 const detailFields=[{name:'flat-macro',rock:flat,fine:patternedNormal,pattern:true},{name:'flat-fine',rock:rockTilt,fine:normalTexture(flat),pattern:false},{name:'both-tilted',rock:rockTilt,fine:patternedNormal,pattern:true}];
 for(const field of detailFields)for(const kind of ['colour','normal','roughness']) {
  const carrier=new T.MeshStandardMaterial();carrier.normalScale.set(0.65,0.65);
@@ -62,7 +63,7 @@ for(const field of detailFields)for(const kind of ['colour','normal','roughness'
  // Re-enter the complete state on this same material to exercise program cache changes.
  for(const state of ['complete','incomplete','missing','restored']) {
   const complete=state==='complete'||state==='restored';carrier.map=state==='missing'?null:colour;carrier.normalMap=state==='missing'?null:field.fine;carrier.roughnessMap=complete?detailRough:null;material.needsUpdate=true;
-  for(const normal of axes)for(const cover of [0,0.5,1])for(const position of [[137.13,41.37,211.29],[137.57,0.1,211.67]]) {
+  for(const normal of detailAxes)for(const cover of [0,0.5,1])for(const position of [[137.13,41.37,211.29],[137.57,0.1,211.67]]) {
    mesh.position.set(...position);mesh.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),normal);coverAttribute.array.fill(cover);coverAttribute.needsUpdate=true;
    camera.up.set(...(Math.abs(normal.y)>0.99?[0,0,1]:[0,1,0]));camera.position.copy(mesh.position).addScaledVector(normal,6);camera.lookAt(mesh.position);camera.updateMatrixWorld(true);mesh.updateMatrixWorld(true);
    renderer.setRenderTarget(target);renderer.render(scene,camera);const actual=new Float32Array(4);renderer.readRenderTargetPixels(target,32,32,1,1,actual);
@@ -79,7 +80,7 @@ for(const field of detailFields)for(const kind of ['colour','normal','roughness'
     }
     expected=rock.multiplyScalar(1-cover).addScaledVector(mappedNormal(normal,coverTilt),cover).normalize().transformDirection(camera.matrixWorldInverse).toArray();
    }else if(kind==='roughness')expected=Array(3).fill(((complete?0.7*0.35+sampleColour(point,2,normal)[1]*0.65:0.7)*(1-cover)+0.7*cover)*wetRoughness);
-   else {const macro=sampleColour(point,90,normal),fine=sampleColour(point,2,normal),grass=sampleColour(point,15,normal);expected=macro.map((v,i)=>((complete?fine[i]*(0.65+0.35*v/macroMean[i]):v)*(1-cover)+grass[i]*cover)*wetColour);}
+   else {const macro=sampleColour(point,90,normal),fine=sampleColour(point,2,normal),grass=sampleColour(point,15,normal),t=Math.max(0,Math.min(1,(Math.abs(normal.y)-.45)/.3)),weight=.35*t*t*(3-2*t);expected=macro.map((v,i)=>((complete?fine[i]*(1-weight+weight*v/macroMean[i]):v)*(1-cover)+grass[i]*cover)*wetColour);}
    const error=Math.max(...expected.map((v,i)=>Math.abs(v-actual[i])));detailMaximum=Math.max(detailMaximum,error);detailSamples.push({field:field.name,kind,state,normal:normal.toArray(),cover,position,actual:[...actual],expected,error});
    if(!Number.isFinite(error)||error>0.002)throw new Error(`Detail projection mismatch ${JSON.stringify(detailSamples.at(-1))}`);
   }
