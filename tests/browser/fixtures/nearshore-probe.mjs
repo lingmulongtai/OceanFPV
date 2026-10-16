@@ -13,12 +13,12 @@ void main(){if(probeMode==0)gl_FragColor=vec4(displacementAt(probePoint).xyz,nea
 const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,0.1,10),target=new T.WebGLRenderTarget(1,1,{type:T.FloatType});
 scene.add(new T.Mesh(new T.PlaneGeometry(2,2),material));camera.position.z=1;
 const data=uniforms.bathymetry.value.image.data,points=[];
-for(const coast of BATHY_COASTS)for(const depth of [-5,0,0.2,0.8,1.5,2,2.5,3,4,6,8,8.2]) {
+for(const [coastIndex,coast]of BATHY_COASTS.entries())for(const depth of [-5,0,0.2,0.8,1.5,2,2.5,3,4,6,8,8.2]) {
   let closest;
   for(let z=0;z<BATHY_SIZE-1;z++)for(let x=0;x<BATHY_SIZE-1;x++) {
     const px=coast.x+((x+0.23)/(BATHY_SIZE-1)*2-1)*coast.size*1.2,pz=coast.z+((z+0.31)/(BATHY_SIZE-1)*2-1)*(coast.sizeZ??coast.size)*1.2;
     const bottom=sampleBathymetry(data,px,pz),error=Math.abs(-bottom.height-depth);
-    if(!closest||error<closest.error)closest={x:px,z:pz,error};
+    if(!closest||error<closest.error)closest={x:px,z:pz,error,coastIndex,targetDepth:depth,bottomDepth:-bottom.height};
   }
   points.push(closest);
 }
@@ -92,4 +92,4 @@ for(const manual of [false,true]) {
   }
 }
 if(longWaveError>0.005||subpixelMaximum>0.000001)throw new Error('Visible long waves lost or subpixel waves retained');
-const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');window.__NEARSHORE_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,heightError,normalError,varianceError,varianceRelativeError,shadingVarianceError,contactError,mipSamples,mipError,manualMipError,longWaveError,subpixelMaximum};
+const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');window.__NEARSHORE_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),points,samples,heightError,normalError,varianceError,varianceRelativeError,shadingVarianceError,contactError,mipSamples,mipError,manualMipError,longWaveError,subpixelMaximum};

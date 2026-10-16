@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as T from 'three';
 import {measuredIsletHeight,MEASURED_ISLET_SIZE,MEASURED_ISLET_HEIGHT} from '../src/measured-islet';
 import {terrainHeight,terrainSurfaceHeight,terrainSlope,coastalTreeSites,terrainCover,TERRAIN_SEGMENTS} from '../src/terrain';
+import {COASTS,bathymetryData,sampleBathymetry,BATHY_SIZE} from '../src/bathymetry';
 
 test('measured terrain keeps metre-scale source witnesses and all four submerged edges',()=> {
   assert.equal(MEASURED_ISLET_SIZE,250);assert.equal(MEASURED_ISLET_HEIGHT,22);assert.equal(TERRAIN_SEGMENTS,192);
@@ -31,4 +32,15 @@ test('measured trees root on dry supported slopes without a procedural island de
   const sites=coastalTreeSites(-850,420,250,22,'measured-islet');assert.ok(sites.length>0&&sites.length<=170);
   assert.deepEqual(sites,coastalTreeSites(-850,420,250,22,'measured-islet'));
   for(const site of sites){const x=site.x+850,z=site.z-420;assert.ok(Math.abs(site.y-terrainSurfaceHeight(x,z,250,22,'measured-islet'))<.00000001);assert.ok(site.y>5&&terrainCover(x,z,250,22,'measured-islet')>=.3);assert.ok(terrainSlope(x,z,250,22,'measured-islet')<35*Math.PI/180);}
+});
+
+test('southwestern island and uploaded blue depth channel share the measured grid',()=> {
+  const coast=COASTS[2],data=bathymetryData();assert.equal(coast.profile,'measured-islet');assert.equal(coast.size*2.4,600);assert.equal(BATHY_SIZE,193);
+  for(let z=0;z<193;z++)for(let x=0;x<193;x++)assert.equal(data[(z*193+x)*4+2],Math.fround(measuredIsletHeight(-300+x*3.125,-300+z*3.125)));
+  for(const [ix,iz]of [[94,74],[96,80],[96,96],[94,16],[80,70],[108,102]])for(const [u,v]of [[.2,.3],[.7,.8]]) {
+    const x=-300+(ix+u)*3.125,z=-300+(iz+v)*3.125,height=terrainSurfaceHeight(x,z,250,22,'measured-islet'),sample=sampleBathymetry(data,coast.x+x,coast.z+z);
+    assert.ok(Math.abs(sample.height-height)<.000002);const e=.0001;
+    assert.ok(Math.abs(sample.dx-(terrainSurfaceHeight(x+e,z,250,22,'measured-islet')-terrainSurfaceHeight(x-e,z,250,22,'measured-islet'))/(2*e))<.000001);
+    assert.ok(Math.abs(sample.dz-(terrainSurfaceHeight(x,z+e,250,22,'measured-islet')-terrainSurfaceHeight(x,z-e,250,22,'measured-islet'))/(2*e))<.000001);
+  }
 });

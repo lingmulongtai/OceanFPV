@@ -35,7 +35,8 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
     return {loading:{failures:w.surfaceFailures,note:document.querySelector('#start-note')!.textContent,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean)},
       detailPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap')),unsupportedVisible:!!document.querySelector('#unsupported')!.getClientRects().length,
       gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:w.forest?.sourceTriangles??0,cliff:w.cliff?.surface.geometry.index.count/3,
-      rocks:{triangles:rocks?.shape.geometry.index.count/3,placements:rocks?.placements.length,instances:rocks?.group.children.reduce((sum:number,mesh:any)=>sum+mesh.count,0),reef:rocks?.placements.filter((p:any)=>Math.hypot(p.matrix.elements[12]-app.world.lighthouseReef.x,p.matrix.elements[14]-app.world.lighthouseReef.z)<50).length}};
+      rocks:{triangles:rocks?.shape.geometry.index.count/3,placements:rocks?.placements.length,instances:rocks?.group.children.reduce((sum:number,mesh:any)=>sum+mesh.count,0),reef:rocks?.placements.filter((p:any)=>Math.hypot(p.matrix.elements[12]-app.world.lighthouseReef.x,p.matrix.elements[14]-app.world.lighthouseReef.z)<50).length,
+        perIsland:w.islands.map((c:any)=>rocks?.placements.filter((p:any)=>Math.abs(p.matrix.elements[12]-c.x)<c.size*1.2&&Math.abs(p.matrix.elements[14]-c.z)<c.size*1.2).length)}};
   });
   console.log(`Surface delivery: ${JSON.stringify({...loading,networkFailures})}`);
   expect(loading.failures.filter((failure:any)=>!failure.recovered)).toEqual([]);expect(loading.detail).toEqual([true,true,true]);expect(loading.note).not.toContain('標準素材');
@@ -46,7 +47,7 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(unsupportedVisible).toBe(false);
   expect(render.triangles).toBeGreaterThan(30000);
   expect(forest).toBeGreaterThan(1000000);
-  expect(rocks.triangles).toBe(14844);expect(rocks.placements).toBe(174);expect(rocks.instances).toBe(174);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
+  expect(rocks.triangles).toBe(14844);expect(rocks.perIsland).toEqual([51,66,79]);expect(rocks.placements).toBe(205);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
   expect(detailPrograms.length).toBeGreaterThan(0);for(const program of detailPrograms){expect(program.samplers).toBeLessThanOrEqual(program.limit);expect(program.names).toContain('groundDetailNormalMap');expect(program.names).toContain('groundDetailRoughnessMap');}
   const recovered=loading.failures.filter((failure:any)=>failure.asset==='seaside_rock'&&failure.recovered);
   expect(detailRequests.length).toBe(3+recovered.length);expect(new Set(detailRequests).size).toBe(3);
@@ -119,7 +120,7 @@ test('photographed cliff contacts, joined ground and shared water depth agree',a
 test('missing cliff leaves the original headland and its placements intact',async({page})=> {
   await page.route('**/models/coastal_cliff_02/**',route=>route.abort());await ready(page);
   const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {cliff:!!w.cliff,ground:!!w.cliffGround,rocks:w.rocks.placements.length,instances:w.rocks.group.children.reduce((n:number,mesh:any)=>n+mesh.count,0)};});
-  expect(state).toEqual({cliff:false,ground:false,rocks:182,instances:182});await expect(page.locator('#start-note')).toContainText('標準素材');
+  expect(state).toEqual({cliff:false,ground:false,rocks:213,instances:213});await expect(page.locator('#start-note')).toContainText('標準素材');
 });
 
 test('cliff join keeps fallback rock rendering and collision records together',async({page})=> {
@@ -481,10 +482,26 @@ test('headland bay and lighthouse reef match rendered flight contacts',async({pa
     if(!rockHit||rockHit.instanceId===undefined)throw new Error('Scanned reef rock has no rendered surface');
     const instanceMatrix=new T.Matrix4();(rockHit.object as any).getMatrixAt(rockHit.instanceId,instanceMatrix);instanceMatrix.premultiply(rockHit.object.matrixWorld);
     const rockNormal=rockHit.face!.normal.clone().applyMatrix3(new T.Matrix3().getNormalMatrix(instanceMatrix)).normalize();
+    const measured=world.islands[2],islet=world.scene.children.find((m:any)=>m.geometry?.attributes.groundCover&&m.position.x===measured.x&&m.position.z===measured.z),ip=islet.geometry.attributes.position;
+    let measuredDepthError=0;for(let i=0;i<ip.count;i++)measuredDepthError=Math.max(measuredDepthError,Math.abs(ip.getY(i)-bottom[i*4+2]));
+    const measuredContacts=[];
+    for(let z=1;z<191&&measuredContacts.length<12;z+=3)for(let x=1;x<191&&measuredContacts.length<12;x+=3)for(const [u,v]of [[.2,.3],[.7,.8]]) {
+      if(measuredContacts.length>=12)break;
+      const px=measured.x-300+(x+u)*3.125,pz=measured.z-300+(z+v)*3.125;
+      if(world.naturalObstacles.some((o:any)=>Math.hypot(px-o.x,pz-o.z)<o.radius+1)||world.rocks.placements.some((p:any)=>px>p.bounds.min.x-1&&px<p.bounds.max.x+1&&pz>p.bounds.min.z-1&&pz<p.bounds.max.z+1))continue;
+      const surface=new T.Raycaster(new T.Vector3(px,60,pz),new T.Vector3(0,-1,0)).intersectObject(islet)[0];if(!surface||surface.point.y<8)continue;
+      measuredContacts.push({half:u+v>1,surface:world.collision(surface.point,app.getState().time,'breeze'),air:world.collision(surface.point.clone().add(new T.Vector3(0,.6,0)),app.getState().time,'breeze')});
+    }
+    const openPoint=new T.Vector3(-850,10,550),openBottom=new T.Raycaster(openPoint,new T.Vector3(0,-1,0)).intersectObject(islet)[0];if(!openBottom)throw new Error('Missing measured sea floor');
     return {profile:island.profile,depthError,bayContact:world.collision(bay,app.getState().time,'breeze'),ridgeContact:world.collision(ridge,app.getState().time,'breeze'),
+      measured:{profile:measured.profile,size:measured.size,vertices:ip.count,depthError:measuredDepthError,contacts:measuredContacts,openBottom:openBottom.point.y,openAir:world.collision(openPoint,app.getState().time,'breeze')},
       reefHeight:hit.point.y,reefSurface:world.collision(hit.point,app.getState().time,'breeze'),reefAir:world.collision(hit.point.clone().add(new T.Vector3(0,0.6,0)),app.getState().time,'breeze'),previousGhost:world.collision(new T.Vector3(175,10,-135),app.getState().time,'breeze'),scannedSurface:world.collision(rockHit.point,app.getState().time,'breeze'),scannedAir:world.collision(rockHit.point.clone().addScaledVector(rockNormal,0.6),app.getState().time,'breeze'),reefTextures:['map','normalMap','roughnessMap'].map(key=>(hit.object as any).material[key]?.image.width)};
   });
   expect(coast.profile).toBe('headland');expect(coast.depthError).toBeLessThan(0.0001);
+  expect(coast.measured.profile).toBe('measured-islet');expect(coast.measured.size).toBe(250);expect(coast.measured.vertices).toBe(193**2);expect(coast.measured.depthError).toBeLessThan(.0001);
+  expect(coast.measured.contacts).toHaveLength(12);expect(new Set(coast.measured.contacts.map((p:any)=>p.half)).size).toBe(2);
+  for(const point of coast.measured.contacts){expect(point.surface).toBe('島に接触しました');expect(point.air).toBeNull();}
+  expect(coast.measured.openBottom).toBe(-9);expect(coast.measured.openAir).toBeNull();
   expect(coast.bayContact).toBeNull();expect(coast.ridgeContact).toBe('島に接触しました');
   expect(coast.reefHeight).toBeCloseTo(5.540271905,5);expect(coast.reefSurface).toBe('岩礁に接触しました');expect(coast.reefAir).toBeNull();expect(coast.previousGhost).toBeNull();
   expect(coast.scannedSurface).toBe('岩に接触しました');expect(coast.scannedAir).toBeNull();
@@ -494,8 +511,9 @@ test('nearshore displacement and geometric normals match CPU sampling on the GPU
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/nearshore-probe.html');
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__NEARSHORE_PROBE__);},{timeout:60000}).toBe(true);
-  const probe=await page.evaluate(()=>{const p=(window as any).__NEARSHORE_PROBE__;return {gpu:p.gpu,count:p.samples.length,heightError:p.heightError,normalError:p.normalError,varianceError:p.varianceError,varianceRelativeError:p.varianceRelativeError,shadingVarianceError:p.shadingVarianceError,contactError:p.contactError,mipCount:p.mipSamples.length,mipError:p.mipError,manualMipError:p.manualMipError,longWaveError:p.longWaveError,subpixelMaximum:p.subpixelMaximum};});
+  const probe=await page.evaluate(()=>{const p=(window as any).__NEARSHORE_PROBE__;return {gpu:p.gpu,count:p.samples.length,measuredDepths:p.points.filter((point:any)=>point.coastIndex===2).map((point:any)=>({target:point.targetDepth,actual:point.bottomDepth})),heightError:p.heightError,normalError:p.normalError,varianceError:p.varianceError,varianceRelativeError:p.varianceRelativeError,shadingVarianceError:p.shadingVarianceError,contactError:p.contactError,mipCount:p.mipSamples.length,mipError:p.mipError,manualMipError:p.manualMipError,longWaveError:p.longWaveError,subpixelMaximum:p.subpixelMaximum};});
   console.log(`Nearshore probe: ${JSON.stringify(probe)}`);
+  expect(probe.measuredDepths.map((point:any)=>point.target)).toEqual([-5,0,.2,.8,1.5,2,2.5,3,4,6,8,8.2]);for(const point of probe.measuredDepths)expect(Math.abs(point.target-point.actual)).toBeLessThan(.05);
   expect(probe.count).toBeGreaterThanOrEqual(2058);expect(probe.heightError).toBeLessThan(0.003);expect(probe.normalError).toBeLessThan(0.003);expect(probe.varianceRelativeError).toBeLessThan(0.0001);expect(probe.shadingVarianceError).toBeLessThan(0.0001);expect(probe.contactError).toBeLessThan(0.01);expect(errors).toEqual([]);
   expect(probe.mipCount).toBeGreaterThanOrEqual(448);expect(probe.mipError).toBeLessThan(0.001);expect(probe.manualMipError).toBeLessThan(0.000003);expect(probe.longWaveError).toBeLessThan(0.005);expect(probe.subpixelMaximum).toBeLessThan(0.000001);
 });
