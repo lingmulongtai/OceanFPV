@@ -197,6 +197,25 @@ test('bow lounge windows expose supported room depth and preserve closed flight 
   expect(result.opaquePlinth).toBe(true);expect(result.plinthContact).toContain('客船');expect(result.samples).toHaveLength(7);for(const sample of result.samples){expect(sample.depth).toBeGreaterThan(6);expect(sample.zError).toBeLessThan(.00002);expect(sample.contact).toContain('客船');expect(sample.air).toBeNull();expect(sample.floorError).toBeLessThan(.00002);expect(sample.ceilingError).toBeLessThan(.00002);}
 });
 
+test('bridge foundation connects to the deck and matches flight contacts',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),root=w.cruise.root;
+    const samples=[];
+    for(const x of [-12.6,0,12.6]){
+      const origin=root.localToWorld(new T.Vector3(x,30,-77)),direction=new T.Vector3(0,0,1).transformDirection(root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(root,true)[0];
+      if(!hit)throw new Error('Missing bridge support');
+      // Start inside the support, above the deck cap; back faces do not mask its foundation.
+      const local=root.worldToLocal(hit.point.clone()),under=root.localToWorld(new T.Vector3(x,29.4,-64)),down=new T.Vector3(0,-1,0).transformDirection(root.matrixWorld),foundation=new T.Raycaster(under,down).intersectObject(root,true)[0];
+      if(!foundation)throw new Error('Missing bridge support foundation');
+      samples.push({paint:hit.object.material===w.cruise.paint[0],faceError:Math.abs(local.z+74.5),contact:w.collision(hit.point,a.getState().time,'breeze'),deckError:Math.abs(root.worldToLocal(foundation.point.clone()).y-29.28)});
+    }
+    return {samples,air:w.collision(root.localToWorld(new T.Vector3(14.5,30,-73)),a.getState().time,'breeze')};
+  });
+  expect(result.samples).toHaveLength(3);expect(result.air).toBeNull();
+  for(const sample of result.samples){expect(sample.paint).toBe(true);expect(sample.faceError).toBeLessThan(.00001);expect(sample.contact).toContain('客船');expect(sample.deckError).toBeLessThan(.00001);}
+});
+
 test('stern terrace walking surfaces and supports have matching flight contacts',async({page})=> {
   await ready(page);
   const result=await page.evaluate(async()=>{
