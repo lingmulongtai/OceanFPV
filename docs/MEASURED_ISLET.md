@@ -1,6 +1,6 @@
 # Measured coastal islet
 
-The southwestern island uses the reproducible derivative in `src/data/measured-islet.json`. Its metre-scale relief replaces the former radial hill with low rock shelves, small detached islets and inlets. The 600 m square is translated to game centre (-850,420); this remains a fictional map, with the northern islands retaining their procedural terrain. The same 193×193 vertices supply rendering, contact heights, slopes, vegetation and the blue channel of the ocean's depth texture. Publication verification remains pending.
+The southwestern island uses the reproducible derivative in `src/data/measured-islet.json`. Its metre-scale relief replaces the former radial hill with low rock shelves, small detached islets and inlets. The 600 m square is translated to game centre (-850,420); this remains a fictional map, with the northwestern headland retaining procedural terrain; the northeastern island now uses the separate [Hornøya derivative](HORNOYA_COAST.md). The same 193×193 vertices supply rendering, contact heights, slopes, vegetation and the blue channel of the ocean's depth texture. Publication verification remains pending.
 
 Source: ©Kartverket, [DTM1 tile 33-108-101](https://nedlasting.geonorge.no/hoydedata/DTM1/33-108-101.tif), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), [provider terms](https://www.kartverket.no/api-og-data/vilkar-for-bruk/). The source TIFF SHA-256 is `9d29a9bd0411f20b4e53bc7834f42ff829f7ba1f4822affa3b8b949e90e02d2b`. It contains a 15010×15010 Float32 raster with 1 m cells and -32767 NoData. Its embedded horizontal coordinates are ETRS89 / UTM33N. The vertical datum is unconfirmed; no survey-height, tide-datum or NN2000:2025 claim is made. The feed also names NLOD2.0, which permits adaptations/redistribution and declares CC BY4.0 compatibility; its historical scope has not been established.
 
@@ -21,7 +21,7 @@ Tests cover analytical pixel-centre/slope witnesses, unchanged source data, miss
 
 ## Integration and evidence
 
-Rock candidates cover the irregular island rather than a radial coastal ring. The captured rocks require at least 80% of their bottom samples to be embedded in the actual terrain; rendered instances and collision placements share the accepted transforms. The measured island has 79 accepted captured rocks and 17 dry-slope trees. Fallback rocks use the same candidate locations. The original two islands retain their placement rules and forest density checks.
+Rock candidates cover the irregular island rather than a radial coastal ring. The captured rocks require at least 80% of their bottom samples to be embedded in the actual terrain; rendered instances and collision placements share the accepted transforms. The measured island has 79 accepted captured rocks and 17 dry-slope trees. Fallback rocks use the same candidate locations. The northwestern headland retains its placement rules. The northeastern island has separate measured-terrain placement checks.
 
 Detailed shelves exposed a 5.18 mm contact error under strong crossed swell: the inverse horizontal wave displacement stopped after six iterations. Coastal sampling now allows twelve iterations and stops early when successive source positions differ by less than one micrometre. The same 5,436 coastal sample/state combinations have a maximum CPU reconstruction error of 0.171 mm. The existing 4 mm shoreline unit threshold is preserved.
 
@@ -30,7 +30,7 @@ Detailed shelves exposed a 5.18 mm contact error under strong crossed swell: the
 - Native and SwiftShader both pass 4,116 GPU nearshore cases and 896 mip cases. Measured-island samples explicitly cover land, waterline and twelve depth targets through 8.2 m. Maximum native height/contact differences are 2.81/2.69 mm; SwiftShader 0.208/0.143 mm. Existing normal, variance and mip thresholds are preserved. SwiftShader terrain-contact and GPU checks pass 2/2.
 - Six actual main-renderer captures use RTX4050, ULTRA1920×1280, fixed wave/vessel time120, three cameras and day/evening light. Browser errors are empty; low-shore, close and wide images were inspected. The captured composition uses all photographic materials, without fallback.
 
-The source does not supply measured vegetation, photographic land cover or sea depth. Trees and separate boulders remain procedural placements, and their material contrast/repetition remains an appearance limit. Other islands still have smooth procedural silhouettes. These checks do not establish sustained performance, physical controller acceptance, or a fully measured map. Complete CI and public deployment checks remain separate gates.
+The source does not supply measured vegetation, photographic land cover or sea depth. Trees and separate boulders remain procedural placements, and their material contrast/repetition remains an appearance limit. The northwestern headland still has procedural relief; the northeastern measured island is documented separately. These checks do not establish sustained performance, physical controller acceptance, or a fully measured map. Complete CI and public deployment checks remain separate gates.
 
 ## Matched view
 
