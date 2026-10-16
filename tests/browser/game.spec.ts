@@ -480,14 +480,15 @@ test('mobile help fits the viewport and closes with the keyboard', async ({page}
   await page.keyboard.press('Escape');await expect(page.locator('#help-dialog')).toBeHidden();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
 });
-test('terrain projections preserve physical periods and normal direction on the GPU',async({page})=> {
+test('terrain projections retain metre scale and coherent detail maps on the GPU',async({page})=> {
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/ground-probe.html');
   await page.waitForFunction(()=>!!((window as any).__GROUND_PROBE__||(window as any).__GROUND_PROBE_ERROR__),{},{timeout:60000});
   expect(await page.evaluate(()=>(window as any).__GROUND_PROBE_ERROR__)).toBeUndefined();
-  const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum,detailCount:p.detailSamples.length,detailMaximum:p.detailMaximum,loadingFailures:p.loadingFailures};});
+  const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum,detailCount:p.detailSamples.length,detailMaximum:p.detailMaximum,stochasticCount:p.stochasticSamples.length,stochasticMaximum:p.stochasticMaximum,continuityMaximum:p.continuityMaximum,loadingFailures:p.loadingFailures};});
   console.log(`Ground material probe: ${JSON.stringify(probe)}`);
   expect(probe.count).toBe(96);expect(probe.maximum).toBeLessThan(0.002);expect(probe.detailCount).toBe(2592);expect(probe.detailMaximum).toBeLessThan(0.002);expect(errors).toEqual([]);
+  expect(probe.stochasticCount).toBe(20);expect(probe.stochasticMaximum).toBeLessThan(.002);expect(probe.continuityMaximum).toBeLessThan(.002);
   expect(probe.loadingFailures.map((failure:any)=>failure.phase)).toEqual(['fetch','fetch','fetch','body','body','body','decode','decode','decode',...Array(6).fill('body')]);
   for(const failure of probe.loadingFailures.slice(-6))expect(failure).toMatchObject({name:'TimeoutError',aborted:true,abortReason:'TimeoutError',recovered:false});
 });

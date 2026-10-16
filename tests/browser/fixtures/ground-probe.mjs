@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {groundDetailCode} from '../../../src/ground-detail.ts';
 import {blendGroundCover,wetCoastalSurface,loadSurfaces} from '../../../src/surfaces.ts';
 window.addEventListener('error',event=>{window.__GROUND_PROBE_ERROR__=event.message;});
 const renderer=new T.WebGLRenderer();renderer.setSize(64,64);renderer.toneMapping=T.NoToneMapping;document.body.append(renderer.domElement);
@@ -21,6 +22,23 @@ const materials=fields.flatMap(field=> {
 });
 const mesh=new T.Mesh(geometry,materials[0].material);mesh.position.set(137.13,41.37,211.29);scene.add(mesh);
 const axes=[new T.Vector3(1,0,0),new T.Vector3(-1,0,0),new T.Vector3(0,1,0),new T.Vector3(0,-1,0),new T.Vector3(0,0,1),new T.Vector3(0,0,-1),new T.Vector3(0.6,0.4,0.7).normalize(),new T.Vector3(-0.8,0.3,-0.4).normalize()];
+// Independent integer arithmetic: GPU uint wrap is modelled with BigInt, not
+// production code or implementation-dependent floating-point sine hashes.
+const mask=0xffffffffn,offsetCache=new Map(),phaseOffset=(x,y)=>{
+ const key=`${x},${y}`;if(offsetCache.has(key))return offsetCache.get(key);
+ const hash=value=>{value=((value^(value>>16n))*0x7feb352dn)&mask;value=((value^(value>>15n))*0x846ca68bn)&mask;return value^(value>>16n);};
+ const seed=((BigInt(x)*0x9e3779b9n)&mask)^((BigInt(y)*0x85ebca6bn)&mask)^0x27d4eb2dn;
+ const offset=[Number(hash(seed)>>8n)/16777216,Number(hash(seed^0x68bc21ebn)>>8n)/16777216];offsetCache.set(key,offset);return offset;
+};
+const phaseSample=(uv,size,read)=>{
+ const cell=uv.map(Math.floor),f=uv.map((v,i)=>{const t=Math.max(0,Math.min(1,(v-cell[i]-.35)/.30));return t*t*(3-2*t);}),value=[0,0,0];
+ for(let y=0;y<2;y++)for(let x=0;x<2;x++) {
+  const offset=phaseOffset(cell[0]+x,cell[1]+y),weight=(x?f[0]:1-f[0])*(y?f[1]:1-f[1]);
+  const texel=uv.map((v,i)=>Math.floor((v+offset[i]-Math.floor(v+offset[i]))*size));
+  read(...texel).forEach((v,i)=>value[i]+=v*weight);
+ }
+ return value;
+};
 const sampleColour=(point,metres,normal)=>{
  const weights=normal.toArray().map(v=>Math.abs(v)**4),sum=weights.reduce((a,b)=>a+b),pairs=[[point.z,point.y],[point.x,point.z],[point.x,point.y]],colour=[0,0,0];
  pairs.forEach((uv,i)=>{const values=uv.map(v=>(Math.floor(((v/metres)%1+1)%1*64)+0.5)/64);values.push(0.25);values.forEach((v,j)=>colour[j]+=v*weights[i]/sum);});return colour;
@@ -86,6 +104,40 @@ for(const field of detailFields)for(const kind of ['colour','normal','roughness'
   }
  }
 }
+// Direct production-helper reads cover signed cells and both sides of tile
+// boundaries without relying on a projected mesh's floating-point ray position.
+const phasePoints=[[2.2,3.7],[-1.2,-2.7],[-1.5,2.5],[-1.0001,.41],[-.9999,.41],[.41,1.9999],[.41,2.0001]],stochasticSamples=[];
+const phaseUniforms={phasePoint:{value:new T.Vector2()},phaseStep:{value:new T.Vector2()},phaseMap:{value:colour},phaseMode:{value:0}};
+const phaseMaterial=new T.ShaderMaterial({uniforms:phaseUniforms,vertexShader:'void main(){gl_Position=vec4(position.xy,0,1);}',fragmentShader:`
+ uniform vec2 phasePoint,phaseStep;uniform sampler2D phaseMap;uniform int phaseMode;
+ ${groundDetailCode}
+ void main(){vec2 uv=phasePoint+(gl_FragCoord.xy-vec2(32.5))*phaseStep;gl_FragColor=phaseMode==1?vec4(groundDetailOffset(phasePoint),0,1):groundDetailSample(phaseMap,uv);}`});
+const phaseScene=new T.Scene(),phaseMesh=new T.Mesh(new T.PlaneGeometry(2,2),phaseMaterial);phaseMesh.frustumCulled=false;phaseScene.add(phaseMesh);
+let stochasticMaximum=0;
+const phaseRead=(kind,point,expected)=>{
+ phaseUniforms.phasePoint.value.set(...point);renderer.setRenderTarget(target);renderer.render(phaseScene,camera);const actual=new Float32Array(4);renderer.readRenderTargetPixels(target,32,32,1,1,actual);
+ const error=Math.max(...expected.map((v,i)=>Math.abs(v-actual[i])));stochasticMaximum=Math.max(stochasticMaximum,error);stochasticSamples.push({kind,point,actual:[...actual],expected,error});
+ if(!Number.isFinite(error)||error>0.002)throw new Error(`Fine sampling mismatch ${JSON.stringify(stochasticSamples.at(-1))}`);return [...actual];
+};
+const boundarySamples=phasePoints.map(point=>phaseRead('signed-cell',point,phaseSample(point,64,(x,y)=>[(x+.5)/64,(y+.5)/64,.25])));
+const continuityMaximum=Math.max(...[[3,4],[5,6]].flatMap(([a,b])=>boundarySamples[a].map((value,i)=>Math.abs(value-boundarySamples[b][i]))));
+if(continuityMaximum>0.002)throw new Error('Fine texture changes phase at a cell boundary');
+phaseUniforms.phaseMode.value=1;
+for(const [x,y,u,v]of [[0,0,8638947,14766835],[1,0,1319066,365975],[-1,0,14482133,7034157],[-2,-3,14197482,1258665],[69,105,8889556,8640783],[-68,-106,11313054,10269873]]) {
+ const expected=[u/16777216,v/16777216,0],actual=phaseRead('hash-witness',[x,y],expected);
+ if(expected.some((value,i)=>value!==actual[i]))throw new Error('GPU integer phase differs from its exact 24-bit witness');
+ if(expected.slice(0,2).some((value,i)=>value!==phaseOffset(x,y)[i]))throw new Error('Independent hash reference disagrees with its golden witness');
+}
+// Original UV derivatives give LOD1 (two base texels/pixel), even across a
+// phase boundary. Differently coloured levels expose accidental offset LODs.
+const mipTexture=dataTexture(new Float32Array(64*64*4),64,64);mipTexture.mipmaps=[];
+for(let size=64,level=0;size>=1;size/=2,level++) {
+ const value=level===0?[1,0,0,1]:level===1?[0,.5,0,1]:[0,0,.75,1],data=new Float32Array(size*size*4);
+ for(let i=0;i<data.length;i+=4)data.set(value,i);mipTexture.mipmaps.push({data,width:size,height:size});
+}
+mipTexture.minFilter=T.NearestMipmapNearestFilter;mipTexture.needsUpdate=true;
+phaseUniforms.phaseMode.value=0;phaseUniforms.phaseMap.value=mipTexture;phaseUniforms.phaseStep.value.set(1/32,1/32);
+for(const point of phasePoints)phaseRead('original-gradient-mip',point,[0,.5,0]);
 const loadingFailures=[],originalFetch=globalThis.fetch,originalBitmap=globalThis.createImageBitmap,originalTimeout=AbortSignal.timeout;
 try {
  for(const phase of ['fetch','body','decode','timeout']) {
@@ -108,4 +160,4 @@ try {
  if(missing.length||!material.map||!material.normalMap||!material.roughnessMap||requests.get('diff')!==1||requests.get('nor_gl')!==1||requests.get('rough')!==2||recoveryFailures.length!==1||!recoveryFailures[0].recovered||recoveryFailures[0].attempt!==1)throw new Error(`Timeout recovery did not retain successful maps: ${JSON.stringify({missing,requests:[...requests],recoveryFailures})}`);
  for(const texture of [material.map,material.normalMap,material.roughnessMap]){texture.dispose();texture.image.close();}material.dispose();
 }finally{globalThis.fetch=originalFetch;globalThis.createImageBitmap=originalBitmap;AbortSignal.timeout=originalTimeout;}
-const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');if(gl.getError()!==gl.NO_ERROR)throw new Error('Ground probe WebGL error');window.__GROUND_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,maximum,detailSamples,detailMaximum,loadingFailures};
+const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');if(gl.getError()!==gl.NO_ERROR)throw new Error('Ground probe WebGL error');window.__GROUND_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,maximum,detailSamples,detailMaximum,stochasticSamples,stochasticMaximum,continuityMaximum,loadingFailures};
