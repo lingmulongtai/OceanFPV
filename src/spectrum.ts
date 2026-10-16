@@ -150,7 +150,10 @@ export class SpectralSea {
   heightAt(x:number,z:number,scale=1,envelope?:(x:number,z:number)=>number) {
     let qx=x,qz=z;const horizontal=Math.min(scale,this.chopLimit);
     // Shore gradients amplify inverse-map error; refine before sampling their envelope.
-    for(let i=0;i<(envelope?6:3);i++) {let dx=0,dz=0;for(const c of this.cascades){dx+=c.sample(qx,qz,0);dz+=c.sample(qx,qz,2);}qx=x-dx*horizontal;qz=z-dz*horizontal;}
+    for(let i=0;i<(envelope?12:3);i++) {
+      let dx=0,dz=0;for(const c of this.cascades){dx+=c.sample(qx,qz,0);dz+=c.sample(qx,qz,2);}
+      const nextX=x-dx*horizontal,nextZ=z-dz*horizontal,converged=Math.hypot(nextX-qx,nextZ-qz)<.000001;qx=nextX;qz=nextZ;if(envelope&&converged)break;
+    }
     return this.cascades.reduce((h,c)=>h+c.sample(qx,qz),0)*scale*(envelope?.(qx,qz)??1);
   }
 }

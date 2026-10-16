@@ -77,13 +77,13 @@ test('painted roof charts retain geometry and a 2.5 metre photographed period',(
 
 test('coastal trees root on dry rendered triangles below 35 degrees',()=> {
   for(const coast of COASTS) {
-    const sites=coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile);assert.ok(sites.length>60&&sites.length<=170);
+    const sites=coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile);assert.ok(sites.length>(coast.profile==='measured-islet'?0:60)&&sites.length<=170);
     assert.deepEqual(sites,coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile));
     const geometry=new PlaneGeometry(coast.size*2.4,coast.size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geometry.rotateX(-Math.PI/2);
     const p=geometry.attributes.position;for(let i=0;i<p.count;i++)p.setY(i,terrainHeight(p.getX(i),p.getZ(i),coast.size,coast.height,coast.profile));
     const material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(geometry,material);mesh.updateMatrixWorld();
     for(let i=0;i<sites.length;i+=5) {
-      const site=sites[i];assert.ok(site.y>10&&site.scale>=0.65&&site.scale<=1.35);
+      const site=sites[i];assert.ok(site.y>(coast.profile==='measured-islet'?5:10)&&site.scale>=0.65&&site.scale<=1.35);
       const origin=new Vector3(site.x-coast.x,site.y+10,site.z-coast.z),hit=new Raycaster(origin,new Vector3(0,-1,0),0,20).intersectObject(mesh)[0];
       assert.ok(hit);assert.ok(Math.abs(hit.point.y-site.y)<0.0001);assert.ok(hit.face!.normal.y>Math.cos(35*Math.PI/180));
     }

@@ -14,7 +14,7 @@ type RockPlacement={matrix:T.Matrix4;inverse:T.Matrix4;bounds:T.Box3;scale:numbe
 export function coastalRockSites(coast:RockPatch['coast']) {
   const sites:RockSite[]=[];
   for(let i=0;i<2040&&sites.length<90;i++) {
-    const angle=i*2.399963,radial=((i*37)%101)/100,r=coast.size*(coast.profile==='headland'?Math.sqrt(radial)*1.09:0.72+radial*0.37),x=Math.cos(angle)*r,z=Math.sin(angle)*r,scale=1.1+(i%7)*0.28;
+    const angle=i*2.399963,radial=((i*37)%101)/100,r=coast.size*(coast.profile==='headland'||coast.profile==='measured-islet'?Math.sqrt(radial)*1.09:0.72+radial*0.37),x=Math.cos(angle)*r,z=Math.sin(angle)*r,scale=1.1+(i%7)*0.28;
     const height=terrainSurfaceHeight(x,z,coast.size,coast.height,coast.profile);
     if(height< -2||height>14||terrainSlope(x,z,coast.size,coast.height,coast.profile)>Math.PI/4.5)continue;
     if(sites.some(site=>Math.hypot(coast.x+x-site.x,coast.z+z-site.z)<1.8*(scale+site.scale)*0.75))continue;

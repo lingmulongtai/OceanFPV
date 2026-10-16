@@ -92,6 +92,18 @@ test('natural shoreline world points reconstruct contact heights within four mil
   }
 });
 
+test('inverse displacement converges on measured shelves under strong crossed swell',()=> {
+  const sea=new SpectralSea(),envelope=(x:number,z:number)=>nearshoreEnvelope(-terrainSurfaceHeight(x+850,z-420,250,22,'measured-islet')).value;
+  for(const time of [6,12]) {
+    sea.update(time,2.15);
+    for(const [x,z]of [[-742.65,255.05],[-927.09,426.53]]) {
+      const px=x+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,0),0)*sea.horizontalScale,pz=z+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,2),0)*sea.horizontalScale;
+      const rendered=sea.cascades.reduce((sum,c)=>sum+c.sample(x,z),0)*2.15*envelope(x,z);
+      assert.ok(Math.abs(sea.heightAt(px,pz,2.15,envelope)-rendered)<.001);
+    }
+  }
+});
+
 test('wave height energy used for unresolved coastal gradients follows actual fields',()=> {
   const sea=new SpectralSea();
   for(const time of [0,6,12]) {

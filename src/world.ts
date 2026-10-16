@@ -344,7 +344,7 @@ export class World {
     }
     crowns.castShadow=trunks.castShadow=true;this.scene.add(crowns,trunks);
     this.treeSites.push({matrices,fallback:[crowns,trunks]});
-    const rockSites=coastalRockSites(coast),fallbackSites=profile==='headland'?rockSites:null;
+    const rockSites=coastalRockSites(coast),fallbackSites=profile==='headland'||profile==='measured-islet'?rockSites:null;
     const rocks=new T.InstancedMesh(new T.IcosahedronGeometry(1,2),this.rockMaterial,fallbackSites?.length??90);
     const obstacles:NaturalObstacle[]=[];this.fallbackRockLists.set(rocks,obstacles);
     for(let i=0;i<rocks.count;i++) {const site=fallbackSites?.[i],angle=site?.yaw??i*2.399,r=size*(0.68+(i%9)*0.027),tx=site?site.x-x:Math.cos(angle)*r,tz=site?site.z-z:Math.sin(angle)*r,y=this.terrain(tx,tz,size,height,profile),s=site?site.scale*2:2+(i%7)*0.6;

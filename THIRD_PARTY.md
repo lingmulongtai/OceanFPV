@@ -4,6 +4,8 @@
 - **GodotOceanWaves**, copyright 2024 Ethan Truong, MIT. Included only as part of the original OceanLab source/reference; license: `OceanLab/third_party/GodotOceanWaves-LICENSE`.
 - **Three.js**, copyright 2010–2026 three.js authors, MIT. Runtime renderer and addons (Reflector, Sky, RoundedBoxGeometry, postprocessing, geometry utilities). License: `node_modules/three/LICENSE` and the built bundle's license notices.
 - Vite, TypeScript, tsx and Playwright are development dependencies with their respective upstream licenses. `package-lock.json` pins the dependency tree.
+- **geotiff.js**, MIT: development-only decoder for the measured coastal terrain importer. License: `node_modules/geotiff/LICENSE`.
+- **Kartverket DTM1**, ©Kartverket, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): the southwestern islet terrain in `src/data/measured-islet.json` derives from [tile 33-108-101](https://nedlasting.geonorge.no/hoydedata/DTM1/33-108-101.tif). A 500 m crop is classified, clipped boundary-connected land removed, water replaced with synthetic depth, and heights resampled to a 600 m grid without exaggeration. Source hashes, coordinates, changes and the unconfirmed vertical datum are retained in the data and [terrain notes](docs/MEASURED_ISLET.md). [Provider terms](https://www.kartverket.no/api-og-data/vilkar-for-bruk/). The MIT code license does not replace this terrain license.
 
 **Poly Haven**, CC0 1.0: self-hosted photographic PBR surfaces in `public/textures/`.
 
@@ -17,4 +19,4 @@
 
 Downloaded from the official asset service on 2026-10-12/13. Source URLs, original MD5 and SHA-256 hashes are retained in `public/textures/manifest.json` and `public/models/island_tree_02/manifest.json`. [Asset license](https://polyhaven.com/license), [CC0 legal code](https://creativecommons.org/publicdomain/zero/1.0/legalcode). OceanFPV is independent of and not endorsed by Poly Haven. The asset API was used only during development with an identifying user-agent; the game makes no live API calls.
 
-Ship geometry, terrain, ocean simulation and UI are generated locally in code. The photographic surfaces, HDR sky and captured tree are self-hosted. No API keys or external runtime asset services are required.
+Ship geometry, procedural terrain, ocean simulation and UI are generated locally in code. The measured terrain derivative retains its separate attribution above. The photographic surfaces, HDR sky and captured tree are self-hosted. No API keys or external runtime asset services are required.
