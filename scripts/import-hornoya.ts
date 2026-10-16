@@ -25,7 +25,7 @@ export function decodeHornoyaCrop(bytes:Uint8Array) {
   return source;
 }
 
-export function prepareHornoyaGrid(source:Float32Array,vertices=193) {
+export function prepareHornoyaGrid(source:Float32Array,vertices=769) {
   const {version,width,extentMetres,unitMetres,heights}=prepareCoastalGrid(source,1200,0,2147483647,vertices);
   return {version,width,extentMetres,unitMetres,storageBits:32,source:HORNOYA_SOURCE,
     underwater:'Synthetic chamfer distance ×0.4 across the full 1200 m crop, capped at 9 m; no measured bathymetry',heights};
@@ -39,6 +39,6 @@ async function importHornoya(input:string,output:string,vertices:number) {
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href) {
-  const input=process.argv[2];if(!input)throw new Error('Usage: node --import tsx scripts/import-hornoya.ts <reviewed 1200x1200 crop.f32> [output.json] [vertices=193]');
-  await importHornoya(input,process.argv[3]??'src/data/hornoya.json',Number(process.argv[4]??193));
+  const input=process.argv[2];if(!input)throw new Error('Usage: node --import tsx scripts/import-hornoya.ts <reviewed 1200x1200 crop.f32> [output.json] [vertices=769]');
+  await importHornoya(input,process.argv[3]??'src/data/hornoya.json',Number(process.argv[4]??769));
 }
