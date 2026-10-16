@@ -350,7 +350,7 @@ async function boot() {
     if(!playing) {
       const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
       const drift=reduced?0:Math.sin(time*0.045)*4;
-      camera.fov=58;camera.position.set(112+drift,42,137+drift);camera.lookAt(-25,10,-125);
+      camera.fov=58;camera.position.copy(world.cruise.root.localToWorld(new T.Vector3(180+drift,68,-245+drift)));camera.lookAt(world.cruise.root.localToWorld(new T.Vector3(0,20,-5)));
       world.drone.visible=false;
     } else {
       camera.fov=fov;
@@ -385,7 +385,8 @@ async function boot() {
   });
   const [missingSurfaces]=await Promise.all([world.loadSurfaceTextures(renderer,lightingReady),lightingReady]);
   if(!supported)return;
-  camera.position.set(112,42,137);camera.lookAt(-25,10,-125);
+  world.advanceVessels(0);
+  camera.position.copy(world.cruise.root.localToWorld(new T.Vector3(180,68,-245)));camera.lookAt(world.cruise.root.localToWorld(new T.Vector3(0,20,-5)));
   world.update(0,camera.position,sea,flight.position,flight.orientation,0);
   composer.render();
   $<HTMLButtonElement>('start').disabled=false;
