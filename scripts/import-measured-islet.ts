@@ -30,25 +30,26 @@ export function prepareIsletGrid(source:Float32Array) {
     }
     if(edge)for(const i of queue)land[i]=0;
   }
-  const distance=Float32Array.from(land,value=>value?0:1e6);
-  for(const direction of [1,-1])for(let z=direction===1?0:n-1;z>=0&&z<n;z+=direction)for(let x=direction===1?0:n-1;x>=0&&x<n;x+=direction) {
-    const i=z*n+x;if(land[i])continue;
+  const side=600,padding=50,distance=new Float32Array(side*side).fill(1e6),heights=new Float32Array(side*side);
+  for(let z=0;z<n;z++)for(let x=0;x<n;x++)if(land[z*n+x]){const i=(z+padding)*side+x+padding;distance[i]=0;heights[i]=source[z*n+x];}
+  for(const direction of [1,-1])for(let z=direction===1?0:side-1;z>=0&&z<side;z+=direction)for(let x=direction===1?0:side-1;x>=0&&x<side;x+=direction) {
+    const i=z*side+x;if(distance[i]===0)continue;
     for(const [dx,dz,cost] of [[-direction,0,1],[-direction,-direction,Math.SQRT2],[0,-direction,1],[direction,-direction,Math.SQRT2]]) {
-      const nx=x+dx,nz=z+dz;if(nx>=0&&nx<n&&nz>=0&&nz<n)distance[i]=Math.min(distance[i],distance[nz*n+nx]+cost);
+      const nx=x+dx,nz=z+dz;if(nx>=0&&nx<side&&nz>=0&&nz<side)distance[i]=Math.min(distance[i],distance[nz*side+nx]+cost);
     }
   }
-  const heights=Float32Array.from(source,(h,i)=>land[i]?h:-Math.min(9,.4*distance[i]));
+  for(let i=0;i<heights.length;i++)if(distance[i]!==0)heights[i]=-Math.min(9,.4*distance[i]);
   const output:number[]=[];
   for(let z=0;z<width;z++)for(let x=0;x<width;x++) {
-    const gx=x/(width-1)*extentMetres-extentMetres/2+249.5,gz=z/(width-1)*extentMetres-extentMetres/2+249.5;
+    const gx=x/(width-1)*extentMetres-.5,gz=z/(width-1)*extentMetres-.5;
     let height=-9;
-    if(gx>=0&&gz>=0&&gx<499&&gz<499) {
-      const ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz,i=iz*n+ix;
-      height=(heights[i]*(1-u)+heights[i+1]*u)*(1-v)+(heights[i+n]*(1-u)+heights[i+n+1]*u)*v;
+    if(gx>=0&&gz>=0&&gx<side-1&&gz<side-1) {
+      const ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz,i=iz*side+ix;
+      height=(heights[i]*(1-u)+heights[i+1]*u)*(1-v)+(heights[i+side]*(1-u)+heights[i+side+1]*u)*v;
     }
     const encoded=Math.round(height/unitMetres);if(encoded< -32768||encoded>32767)throw new Error('Height exceeds the declared millimetre storage range');output.push(encoded);
   }
-  return {version:1,width,extentMetres,unitMetres,source:ISLET_SOURCE,underwater:'Synthetic chamfer distance ×0.4, capped at 9 m; no measured bathymetry',heights:output};
+  return {version:1,width,extentMetres,unitMetres,source:ISLET_SOURCE,underwater:'Synthetic chamfer distance ×0.4 over the crop and 50 m outer border, capped at 9 m; no measured bathymetry',heights:output};
 }
 
 async function importIslet(input:string,output:string) {

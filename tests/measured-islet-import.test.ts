@@ -22,3 +22,11 @@ test('measured import rejects missing heights and unrepresentable elevations',()
   const high=new Float32Array(500*500);for(let z=200;z<300;z++)for(let x=200;x<300;x++)high[z*500+x]=50;
   assert.throws(()=>prepareIsletGrid(high),/storage range/);
 });
+
+test('synthetic depth extends across the source crop instead of making a rectangular underwater wall',()=> {
+  const source=new Float32Array(500*500);
+  for(let z=1;z<20;z++)for(let x=240;x<260;x++)source[z*500+x]=2;
+  const grid=prepareIsletGrid(source),at=(z:number)=>grid.heights[z*193+96]*grid.unitMetres;
+  assert.equal(at(16),-.6);assert.equal(at(15),-1.85);assert.equal(at(0),-9);assert.equal(at(17),2);
+  for(let z=1;z<=16;z++)assert.ok(Math.abs(at(z)-at(z-1))<=1.251,'water depth outside the source crop must retain the 0.4 m/m slope');
+});
