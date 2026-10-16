@@ -32,14 +32,14 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
     const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
     const rocks=app.world.rocks;
     const w=app.world;
-    return {loading:{failures:w.surfaceFailures,note:document.querySelector('#start-note')!.textContent,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)},
+    return {loading:{failures:w.surfaceFailures,note:document.querySelector('#start-note')!.textContent,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),bed:w.ocean.material.uniforms.hasSeabedMap.value&&w.ocean.material.uniforms.seabedMap.value===w.coastalRockDetail.map,tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)},
       detailPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap')),unsupportedVisible:!!document.querySelector('#unsupported')!.getClientRects().length,
       gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:w.forest?.sourceTriangles??0,cliff:w.cliff?.surface.geometry.index.count/3,
       rocks:{triangles:rocks?.shape.geometry.index.count/3,placements:rocks?.placements.length,instances:rocks?.group.children.reduce((sum:number,mesh:any)=>sum+mesh.count,0),reef:rocks?.placements.filter((p:any)=>Math.hypot(p.matrix.elements[12]-app.world.lighthouseReef.x,p.matrix.elements[14]-app.world.lighthouseReef.z)<50).length,
         perIsland:w.islands.map((c:any)=>rocks?.placements.filter((p:any)=>Math.abs(p.matrix.elements[12]-c.x)<c.size*1.2&&Math.abs(p.matrix.elements[14]-c.z)<c.size*1.2).length)}};
   });
   console.log(`Surface delivery: ${JSON.stringify({...loading,networkFailures})}`);
-  expect(loading.failures.filter((failure:any)=>!failure.recovered)).toEqual([]);expect(loading.detail).toEqual([true,true,true]);expect(loading.tints).toEqual([false,false,false]);expect(loading.note).not.toContain('標準素材');
+  expect(loading.failures.filter((failure:any)=>!failure.recovered)).toEqual([]);expect(loading.detail).toEqual([true,true,true]);expect(loading.bed).toBe(true);expect(loading.tints).toEqual([false,false,false]);expect(loading.note).not.toContain('標準素材');
   console.log(`Renderer: ${gpu}`);
   if(process.env.OCEANFPV_NATIVE_GPU==='1') {
     expect(gpu).not.toMatch(/SwiftShader|Microsoft Basic|unavailable/i);expect(gpu).toContain('Direct3D11');
@@ -89,9 +89,9 @@ test('one missing rock detail map retains coherent macro terrain and grass rende
   const state=await page.evaluate(()=> {
     const world=(window as any).__OCEANFPV__.world,detail=world.coastalRockDetail;
     const islands=world.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover);
-    return {failures:world.surfaceFailures,detail:[detail.map,detail.normalMap,detail.roughnessMap].map(Boolean),islands:islands.map((mesh:any)=>[mesh.material.map,mesh.material.normalMap,mesh.material.roughnessMap].every(Boolean)),tints:islands.map((mesh:any)=>mesh.material.vertexColors),cover:[world.groundCover.map,world.groundCover.normalMap,world.groundCover.roughnessMap].every(Boolean),programs:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('coverMap'))};
+    return {failures:world.surfaceFailures,detail:[detail.map,detail.normalMap,detail.roughnessMap].map(Boolean),bed:world.ocean.material.uniforms.hasSeabedMap.value,islands:islands.map((mesh:any)=>[mesh.material.map,mesh.material.normalMap,mesh.material.roughnessMap].every(Boolean)),tints:islands.map((mesh:any)=>mesh.material.vertexColors),cover:[world.groundCover.map,world.groundCover.normalMap,world.groundCover.roughnessMap].every(Boolean),programs:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('coverMap'))};
   });
-  expect(state.detail).toEqual([false,false,false]);expect(state.islands).toEqual([true,true,true]);expect(state.tints).toEqual([false,false,false]);expect(state.cover).toBe(true);expect(state.programs.length).toBeGreaterThan(0);
+  expect(state.detail).toEqual([false,false,false]);expect(state.bed).toBe(false);expect(state.islands).toEqual([true,true,true]);expect(state.tints).toEqual([false,false,false]);expect(state.cover).toBe(true);expect(state.programs.length).toBeGreaterThan(0);
   console.log(`Surface fallback: ${JSON.stringify(state.failures)}`);
   expect(state.failures.filter((failure:any)=>!failure.recovered)).toEqual([expect.objectContaining({asset:'seaside_rock',map:'nor_gl',phase:'fetch',aborted:false,abortReason:null,attempt:1})]);
   for(const program of state.programs){expect(program.names).not.toContain('groundDetailMap');expect(program.samplers).toBeLessThanOrEqual(program.limit);}
@@ -136,8 +136,8 @@ test('detailed cliff water height gradient and attenuation agree on the GPU',asy
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/cliff-depth-probe.html');
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__CLIFF_DEPTH_PROBE__);},{timeout:60000}).toBe(true);
-  const result=await page.evaluate(()=>{const p=(window as any).__CLIFF_DEPTH_PROBE__;return {gpu:p.gpu,count:p.samples.length,heightError:p.heightError,gradientError:p.gradientError,envelopeError:p.envelopeError,opticalCount:p.opticalSamples.length,opticalMaximum:p.opticalMaximum};});
-  console.log(`Cliff depth probe: ${JSON.stringify(result)}`);expect(result.count).toBe(77);expect(result.heightError).toBeLessThan(.003);expect(result.gradientError).toBeLessThan(.003);expect(result.envelopeError).toBeLessThan(.003);expect(result.opticalCount).toBe(616);expect(result.opticalMaximum).toBeLessThan(.003);expect(errors).toEqual([]);
+  const result=await page.evaluate(()=>{const p=(window as any).__CLIFF_DEPTH_PROBE__;return {gpu:p.gpu,count:p.samples.length,heightError:p.heightError,gradientError:p.gradientError,envelopeError:p.envelopeError,opticalCount:p.opticalSamples.length,opticalMaximum:p.opticalMaximum,radianceCount:p.radianceSamples.length,radianceMaximum:p.radianceMaximum};});
+  console.log(`Cliff depth probe: ${JSON.stringify(result)}`);expect(result.count).toBe(77);expect(result.heightError).toBeLessThan(.003);expect(result.gradientError).toBeLessThan(.003);expect(result.envelopeError).toBeLessThan(.003);expect(result.opticalCount).toBe(616);expect(result.opticalMaximum).toBeLessThan(.003);expect(result.radianceCount).toBe(324);expect(result.radianceMaximum).toBeLessThan(.0001);expect(errors).toEqual([]);
 });
 
 test('production hull water masks agree on the GPU for cruise explorer and yacht',async({page})=> {
