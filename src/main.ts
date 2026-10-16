@@ -44,7 +44,8 @@ async function boot() {
   const composer=new EffectComposer(renderer,renderTarget);composer.addPass(new RenderPass(world.scene,camera));
   const bloom=new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),0.035,0.35,2.4);composer.addPass(bloom);composer.addPass(new OutputPass());
   const flight=new Flight(),input=new Inputs(),race=new Race(),sound=new FlightAudio();
-  let sea:SeaState='breeze', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0;
+  let sea:SeaState='breeze', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0,launchHeld=false;
+  const departureAnchor=new T.Vector3();
   const clock=new SimulationClock();
   let lastHUD=0,lastControllerUI=0,frameCount=0,fpsTime=performance.now(),toastUntil=0;
   let cameraMode='fpv',cameraTilt=12,fov=95,returnToPause=false;
@@ -144,9 +145,11 @@ async function boot() {
     time=0;world.ocean.advance(time,sea);
     flight.reset();race.reset(selectedRace);flightTime=0;playing=true;paused=false;clock.reset(performance.now());input.clear();
     const launch=world.launchPose(time);flight.position.copy(launch.position);flight.previous.copy(launch.position);flight.velocity.copy(launch.velocity);flight.orientation.setFromAxisAngle(new T.Vector3(0,1,0),launch.heading);
+    launchHeld=true;departureAnchor.copy(flight.position);
     show('intro',false);show('intro-footer',false);show('scene-label',false);show('hud',hudVisible);document.body.classList.add('flying');
     flight.armed=true;world.updateGates(race.active,race.next);void sound.start();
-    toast(selectedRace?'緑のゲートを番号順に通過。6ゲート × 3周。':'Spaceで上昇、WASDで傾き、Q/Eで旋回。Escで一時停止。',5500);
+    const departureHelp=input.source==='radio'?'船首で離陸待機中。スロットルをゆっくり上げて離陸。':input.source==='xbox'?'左スティックを上げて離陸。右スティックで機体を傾けます。':'Spaceで離陸、WASDで傾き、Q/Eで旋回。Escで一時停止。';
+    toast(selectedRace?`${departureHelp} 緑のゲートを番号順に通過。6ゲート × 3周。`:departureHelp,5500);
     document.activeElement instanceof HTMLElement&&document.activeElement.blur();
   }
   function restart() {
@@ -166,7 +169,7 @@ async function boot() {
     closeAll();paused=false;clock.reset(performance.now());input.clear();void sound.start();
   }
   function menu() {
-    closeAll();playing=false;paused=false;clock.reset(performance.now());flight.reset();race.reset(false);input.clear();sound.update(0,false);document.exitPointerLock?.();
+    closeAll();playing=false;paused=false;launchHeld=false;clock.reset(performance.now());flight.reset();race.reset(false);input.clear();sound.update(0,false);document.exitPointerLock?.();
     show('intro',true);show('intro-footer',true);show('scene-label',true);show('hud',false);document.body.classList.remove('flying');world.updateGates(false,0);
   }
   function openDialog(id:string) {
@@ -300,7 +303,7 @@ async function boot() {
     $('speed').textContent=String(Math.round(flight.velocity.length()*3.6));
     $('altitude').textContent=(flight.position.y-world.ocean.heightAt(flight.position.x,flight.position.z)).toFixed(1);
     $('vertical').textContent=(flight.velocity.y>=0?'+':'')+flight.velocity.y.toFixed(1);
-    $('flight-mode').textContent=flight.mode.toUpperCase();$('arm-state').textContent=flight.armed?'ARMED':'DISARMED';
+    $('flight-mode').textContent=flight.mode.toUpperCase();$('arm-state').textContent=flight.armed?(launchHeld?'DECK READY':'ARMED'):'DISARMED';
     $('input-label').textContent=input.source.toUpperCase();
     const direction=new T.Vector3(0,0,-1).applyQuaternion(flight.orientation);
     const heading=(T.MathUtils.radToDeg(Math.atan2(direction.x,-direction.z))+360)%360;
@@ -330,7 +333,19 @@ async function boot() {
       const advanced=clock.advance(performance.now(),step=> {
         time+=step;world.ocean.advance(time,sea);world.advanceVessels(time);
         if(!playing||flight.crashed||race.finished)return;
-        flight.step(step,sticks,sea==='swell'?0.65:sea==='breeze'?0.2:0);flightTime+=step;
+        if(launchHeld) {
+          const lifting=flight.armed&&(sticks.absoluteThrottle?sticks.throttle>9.81/31:sticks.throttle>0.05);
+          // Support only the departure point. Once moved away or lifted, never
+          // pull an airborne craft back to the moving ship.
+          if(lifting||flight.position.distanceToSquared(departureAnchor)>0.25)launchHeld=false;
+          else {
+            const launch=world.launchPose(time);flight.previous.copy(flight.position);flight.position.copy(launch.position);departureAnchor.copy(flight.position);
+            flight.velocity.copy(launch.velocity);flight.orientation.copy(world.cruise.root.quaternion);flight.angularVelocity.set(0,0,0);
+            flight.motor=flight.armed?(sticks.absoluteThrottle?Math.min(sticks.throttle,9.81/31):0.05):0;
+          }
+        }
+        if(!launchHeld)flight.step(step,sticks,sea==='swell'?0.65:sea==='breeze'?0.2:0);
+        flightTime+=step;
         const collision=world.collision(flight.position,time,sea,flight.previous);
         if(collision) {flight.crashed=true;flight.armed=false;flight.motor=0;pause('フライト終了',`${collision}。Rまたは「やり直す」で離陸地点へ。`);return false;}
         if(race.step(step,flight.previous,flight.position)) {

@@ -287,7 +287,13 @@ test('cruise departure and lighting remain valid far along the straight route',a
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
   test.setTimeout(300000);
   await ready(page);await page.locator('#start').click();
-  const launchAltitude=await page.evaluate(()=>(window as any).__OCEANFPV__.flight.position.y);
+  await expect.poll(()=>page.evaluate(()=>(window as any).__OCEANFPV__.getState().time)).toBeGreaterThan(9);
+  const waiting=await page.evaluate(()=>{
+    const a=(window as any).__OCEANFPV__,launch=a.world.launchPose(a.getState().time);
+    return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused};
+  });
+  expect(waiting.error).toBeLessThan(1e-6);expect(waiting.flightTime).toBeCloseTo(waiting.worldTime,6);expect(waiting.crashed).toBe(false);expect(waiting.armed).toBe(true);expect(waiting.paused).toBe(false);
+  const launchAltitude=waiting.altitude;
   await page.keyboard.down('Space');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(launchAltitude+3);await page.keyboard.up('Space');
   const beforePitch=await page.evaluate(()=> {
     const flight=(window as any).__OCEANFPV__.flight,forward=flight.position.clone().set(0,0,-1).applyQuaternion(flight.orientation).setY(0).normalize();
@@ -395,8 +401,11 @@ test('race registers actual ordered gate crossing and saves a completed run', as
     return (window as any).__OCEANFPV__.getState().time;
   });
   expect(resetTime).toBe(0);
-  const crossings=await page.evaluate(async()=> {
+  const run=await page.evaluate(async()=> {
     const app=(window as any).__OCEANFPV__,crossings:{progress:number;waited:number;stallResumes:number}[]=[];
+    const waitingStarted=performance.now();
+    do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}while(app.getState().time<0.5&&performance.now()-waitingStarted<20000);
+    const waiting={time:app.getState().time,flightTime:app.getState().flightTime,raceTime:app.race.elapsed,next:app.race.next};
     for(let index=0;index<18;index++) {
       const g=app.world.gateMeshes[index%6];
       // Use the mesh orientation to put flight one step before the real plane.
@@ -419,8 +428,9 @@ test('race registers actual ordered gate crossing and saves a completed run', as
       const crossed={progress:progress(),waited:performance.now()-start,stallResumes};crossings.push(crossed);
       if(crossed.progress!==index+1||crossed.waited>20000)break;
     }
-    return crossings;
+    return {waiting,crossings};
   });
+  const {waiting,crossings}=run;expect(waiting.time).toBeGreaterThan(0);expect(waiting.flightTime).toBeCloseTo(waiting.time,6);expect(waiting.raceTime).toBeCloseTo(waiting.time,6);expect(waiting.next).toBe(0);
   console.log(`Race gate crossings: ${JSON.stringify(crossings)}`);
   expect(crossings).toHaveLength(18);
   expect(crossings[3].stallResumes).toBeGreaterThanOrEqual(1);
@@ -494,10 +504,14 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
     const rejected={dialog:dialog.open,toast:document.querySelector('#toast')!.textContent,playing:app.getState().playing};
     pad.axes=[0,0,0,0.9];await until(()=>document.querySelector('#device-status')!.textContent!.includes('THROTTLE 0%'),'low throttle');
     click('[data-close="settings-dialog"]:last-of-type');click('#start');
-    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,started:document.querySelector('#intro')!.classList.contains('hidden')};
+    const startTime=app.getState().time;await until(()=>app.getState().time>startTime+1,'zero-throttle deck wait');
+    const launch=app.world.launchPose(app.getState().time),waiting={crashed:app.flight.crashed,armed:app.flight.armed,flightTime:app.getState().flightTime,error:app.flight.position.distanceTo(launch.position)},altitude=app.flight.position.y;
+    pad.axes=[0,0,0,-0.8];await until(()=>app.flight.position.y>altitude+1,'radio takeoff');
+    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,waiting,climb:app.flight.position.y-altitude,started:document.querySelector('#intro')!.classList.contains('hidden')};
   });
   expect(result.opened).toBe(true);expect(result.source).toBe('radio');expect(result.min).toBe(-0.8);expect(result.max).toBe(0.9);expect(result.saved).toBe(-0.8);
   expect(result.rejected.dialog).toBe(true);expect(result.rejected.toast).toContain('スロットルを下げ');expect(result.rejected.playing).toBe(false);expect(result.started).toBe(true);
+  expect(result.waiting.crashed).toBe(false);expect(result.waiting.armed).toBe(true);expect(result.waiting.flightTime).toBeGreaterThan(1);expect(result.waiting.error).toBeLessThan(1e-6);expect(result.climb).toBeGreaterThan(1);
 });
 test('lighting and sea settings persist across a full reload', async ({page})=> {
   test.setTimeout(300000);
