@@ -228,15 +228,12 @@ export class Ocean {
         float reflectionLOD=log2(max(1.0,max(mirrorFootprint,sqrt(unresolvedVariance)*distortion*reflectionSize)));
         if(hullCutout)discard;
         vec3 reflected=textureLod(mirrorSampler,clamp(reflectionUV,0.001,0.999),reflectionLOD).rgb;float shallow=0.0,shoreFoam=0.0;
-        for(int i=0;i<4;i++) {
-          vec2 uv=(p-islands[i].xy)/(islands[i].zw*2.4)+0.5;float bottomHeight=-60.0;
-          if(all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1))))bottomHeight=bottomAt(uv)[i];
-          float depth=max(worldPosition.y-bottomHeight,0.0);
-          shallow=max(shallow,pow(1.0-smoothstep(0.0,8.0,depth),2.0));
-          float wash=0.65+0.35*sin(time*1.2+bottomHeight*1.8);
-          shoreFoam=max(shoreFoam,(1.0-smoothstep(0.4,3.2,depth))*wash*smoothstep(0.23,0.65,n));
-        }
-        shoreFoam=max(shoreFoam,smoothstep(0.3,0.7,1.0-normal.y)*(1.0-smoothstep(0.5,4.0,max(-coastalBottom(waveCoordinate).x,0.0))));
+        // Optical depth follows the displaced fragment and includes the detailed cliff shelf.
+        float bottomHeight=coastalBottom(p).x,depth=max(worldPosition.y-bottomHeight,0.0);
+        shallow=pow(1.0-smoothstep(0.0,8.0,depth),2.0);
+        float wash=0.65+0.35*sin(time*1.2+bottomHeight*1.8);
+        shoreFoam=(1.0-smoothstep(0.4,3.2,depth))*wash*smoothstep(0.23,0.65,n);
+        shoreFoam=max(shoreFoam,smoothstep(0.3,0.7,1.0-normal.y)*(1.0-smoothstep(0.5,4.0,max(-bottomHeight,0.0))));
         shoreFoam*=shoreDetail;
         vec3 absorption=mix(vec3(0.006,0.045,0.082),vec3(0.016,0.17,0.145),shallow);
         float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);absorption+=vec3(0.018,0.11,0.078)*crestLight;

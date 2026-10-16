@@ -22,4 +22,24 @@ for(const x of [-395,-394.2,-393.7,-392.4,-391.3,-390.2,-389.1,-388.3,-387.2,-38
  heightError=Math.max(heightError,h);gradientError=Math.max(gradientError,g);envelopeError=Math.max(envelopeError,e);samples.push({x:px,z:pz,h,g,e});
 }
 const gl=renderer.getContext(),ext=gl.getExtension('WEBGL_debug_renderer_info');
-window.__CLIFF_DEPTH_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',samples,heightError,gradientError,envelopeError};
+// Exercise the production fragment body with controlled foam inputs, not a copy of its depth loop.
+renderer.outputColorSpace=T.LinearSRGBColorSpace;renderer.toneMapping=T.NoToneMapping;
+Object.assign(uniforms,{probeHeight:{value:0},probeOffset:{value:new T.Vector2()},probeNormal:{value:new T.Vector3(0,1,0)}});
+const opticalMaterial=new T.ShaderMaterial({uniforms,
+ vertexShader:'varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;uniform vec2 probePoint,probeOffset;uniform float probeHeight;void main(){worldPosition=vec3(probePoint.x,probeHeight,probePoint.y);waveCoordinate=probePoint+probeOffset;mirrorCoord=vec4(0,0,0,1);gl_Position=vec4(position.xy,0,1);}',
+ fragmentShader:ocean.material.fragmentShader.replace('void main() {','uniform vec3 probeNormal;\nvoid main() {')
+  .replace('float shallow=0.0,shoreFoam=0.0;','float shallow=0.0,shoreFoam=0.0;n=0.5;normal=probeNormal;shoreDetail=1.0;')
+  .replace('gl_FragColor=vec4(color,1.0);','gl_FragColor=vec4(shallow,shoreFoam,coastalBottom(p).x,1.0);')});
+scene.children[0].material=opticalMaterial;
+const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
+const opticalSamples=[];let opticalMaximum=0;
+for(const point of samples)for(const waterHeight of [0,.9])for(const offset of [[0,0],[2.2,-.6]])for(const normal of [[0,1,0],[.8,.6,0]]) {
+ const x=point.x,z=point.z,bottom=ocean.bottomAt(x,z).height,depth=Math.max(waterHeight-bottom,0);
+ uniforms.probePoint.value.set(x,z);uniforms.probeHeight.value=waterHeight;uniforms.probeOffset.value.set(...offset);uniforms.probeNormal.value.set(...normal);
+ renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
+ const wash=.65+.35*Math.sin(uniforms.time.value*1.2+bottom*1.8),shore=(1-smooth(.4,3.2,depth))*wash*smooth(.23,.65,.5);
+ const expected=[(1-smooth(0,8,depth))**2,Math.max(shore,smooth(.3,.7,1-normal[1])*(1-smooth(.5,4,Math.max(-bottom,0)))),bottom];
+ const error=Math.max(...expected.map((v,i)=>Math.abs(v-pixel[i])));opticalMaximum=Math.max(opticalMaximum,error);
+ opticalSamples.push({x,z,waterHeight,offset,normal,actual:[...pixel],expected,error});
+}
+window.__CLIFF_DEPTH_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',samples,heightError,gradientError,envelopeError,opticalSamples,opticalMaximum};
