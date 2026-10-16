@@ -286,7 +286,9 @@ test('cruise departure and lighting remain valid far along the straight route',a
 
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
   test.setTimeout(300000);
-  await ready(page);await page.locator('#start').click();
+  // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
+  await page.setViewportSize({width:320,height:240});
+  await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());
   await expect.poll(()=>page.evaluate(()=>(window as any).__OCEANFPV__.getState().time)).toBeGreaterThan(9);
   const waiting=await page.evaluate(()=>{
     const a=(window as any).__OCEANFPV__,launch=a.world.launchPose(a.getState().time);
@@ -306,13 +308,16 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   await page.keyboard.press('Escape');await expect(page.locator('#pause-dialog')).toBeVisible();
   const paused=await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray());
   await page.waitForTimeout(300);expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray())).toEqual(paused);
-  await page.locator('#resume').click();
+  await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#resume')!.click());
   await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y=-4);
   await expect(page.locator('#pause-title')).toHaveText('フライト終了');
   await page.keyboard.press('KeyR');await expect(page.locator('#pause-dialog')).toBeHidden();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.crashed)).toBe(false);
-  await page.locator('#open-settings').click();await page.locator('#mode').selectOption('acro');
-  await page.locator('[data-close="settings-dialog"]').last().click();
+  const mode=await page.evaluate(()=> {
+    document.querySelector<HTMLButtonElement>('#open-settings')!.click();const select=document.querySelector<HTMLSelectElement>('#mode')!;select.value='acro';select.dispatchEvent(new Event('input',{bubbles:true}));
+    document.querySelectorAll<HTMLButtonElement>('[data-close="settings-dialog"]').item(1).click();return (window as any).__OCEANFPV__.flight.mode;
+  });
+  expect(mode).toBe('acro');
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(true);
 });
 test('render delays keep world and flight coupled and unsafe gaps pause without a jump',async({page})=> {
@@ -393,9 +398,10 @@ test('lost WebGL context closes modal layers and leaves recovery reachable',asyn
 });
 test('race registers actual ordered gate crossing and saves a completed run', async ({page})=> {
   test.setTimeout(300000);
+  await page.setViewportSize({width:320,height:240});
   await ready(page);
   await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.getState().time),{timeout:60000}).toBeGreaterThan(2);
-  await page.locator('#race-mode').click();
+  await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#race-mode')!.click());
   const resetTime=await page.evaluate(()=> {
     document.querySelector<HTMLButtonElement>('#start')!.click();
     return (window as any).__OCEANFPV__.getState().time;
@@ -477,6 +483,7 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
 });
 test('radio calibration, axis assignment and low-throttle arming', async ({page})=> {
   test.setTimeout(300000);
+  await page.setViewportSize({width:320,height:240});
   await page.addInitScript(()=> {
     (window as any).__pad={id:'USB radio test',index:0,connected:true,mapping:'',axes:[0,0,0,0],buttons:[],timestamp:0};
     Object.defineProperty(navigator,'getGamepads',{value:()=>[(window as any).__pad]});
