@@ -396,23 +396,34 @@ test('race registers actual ordered gate crossing and saves a completed run', as
   });
   expect(resetTime).toBe(0);
   const crossings=await page.evaluate(async()=> {
-    const app=(window as any).__OCEANFPV__,crossings:{progress:number;waited:number}[]=[];
+    const app=(window as any).__OCEANFPV__,crossings:{progress:number;waited:number;stallResumes:number}[]=[];
     for(let index=0;index<18;index++) {
       const g=app.world.gateMeshes[index%6];
       // Use the mesh orientation to put flight one step before the real plane.
       const normal=app.flight.position.clone().set(0,0,1).applyQuaternion(g.quaternion);
-      app.flight.position.copy(g.position).addScaledVector(normal,-0.08);
-      app.flight.velocity.copy(normal).multiplyScalar(24);app.flight.orientation.identity();
-      const start=performance.now(),progress=()=>app.race.laps.length*6+app.race.next;
+      const approach=()=>{app.flight.position.copy(g.position).addScaledVector(normal,-0.08);app.flight.velocity.copy(normal).multiplyScalar(24);app.flight.orientation.identity();};
+      approach();let start=performance.now(),stallResumes=0;
+      const progress=()=>app.race.laps.length*6+app.race.next;
+      if(index===3)while(performance.now()-start<10100){/* Exercise real render-stall pause and UI recovery mid-race. */}
       // Let real animation/physics frames cross the plane without a protocol poll per frame.
-      do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+      do {
+        await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+        if(progress()<index+1&&app.getState().paused) {
+          if(document.querySelector('#pause-title')!.textContent!=='描画が長時間止まりました'||++stallResumes>2)throw new Error('Gate crossing paused unexpectedly');
+          // Keep the stall safeguard: resume through the same button as a player,
+          // then repeat this approach without changing race progress or physics.
+          document.querySelector<HTMLButtonElement>('#resume')!.click();approach();start=performance.now();
+        }
+      }
       while(progress()<index+1&&performance.now()-start<20000);
-      const crossed={progress:progress(),waited:performance.now()-start};crossings.push(crossed);
+      const crossed={progress:progress(),waited:performance.now()-start,stallResumes};crossings.push(crossed);
       if(crossed.progress!==index+1||crossed.waited>20000)break;
     }
     return crossings;
   });
+  console.log(`Race gate crossings: ${JSON.stringify(crossings)}`);
   expect(crossings).toHaveLength(18);
+  expect(crossings[3].stallResumes).toBeGreaterThanOrEqual(1);
   for(const [index,crossed]of crossings.entries()) {
     expect(crossed.progress).toBe(index+1);expect(crossed.waited).toBeLessThanOrEqual(20000);
   }
