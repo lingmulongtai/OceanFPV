@@ -56,26 +56,30 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(errors).toEqual([]);
 });
 
-test('one expired rock response retries only that image and reaches full detail',async({page})=> {
+for(const peer of [false,true])test(peer?'expired rock response and peer both recover without refetching the completed map':'one expired rock response retries only that image and reaches full detail',async({page})=> {
   const requests:string[]=[],errors:string[]=[];page.on('request',request=>{const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(request.url());if(map)requests.push(map[1]);});page.on('pageerror',error=>errors.push(error.message));
-  await page.addInitScript(()=> {
-    const timeout=AbortSignal.timeout,controllers=new WeakMap<AbortSignal,AbortController>(),fetch=window.fetch.bind(window);let selected=false;
+  await page.addInitScript(({peer})=> {
+    const timeout=AbortSignal.timeout,controllers=new WeakMap<AbortSignal,AbortController>(),fetch=window.fetch.bind(window),selected=new Set<string>();
     AbortSignal.timeout=ms=>{const deadline=timeout.call(AbortSignal,ms),controller=new AbortController();deadline.addEventListener('abort',()=>controller.abort(deadline.reason),{once:true});controllers.set(controller.signal,controller);return controller.signal;};
     window.fetch=async(input,init)=> {
-      const expire=!selected&&String(input).endsWith('/seaside_rock_rough_4k.jpg');if(expire)selected=true;
+      const map=/seaside_rock_(rough|nor_gl)_4k.jpg$/.exec(String(input))?.[1],expire=!!map&&!selected.has(map)&&(map==='rough'||peer);if(expire)selected.add(map!);
       const response=await fetch(input,init);
       if(expire){const controller=controllers.get(init!.signal as AbortSignal);if(!controller)throw new Error('Missing controlled texture deadline');controller.abort(new DOMException('Controlled response deadline','TimeoutError'));}
       return response;
     };
-  });
+  },{peer});
   await ready(page);
   const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {failures:w.surfaceFailures,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),note:document.querySelector('#start-note')!.textContent};});
   console.log(`Recovered surface delivery: ${JSON.stringify({state,requests})}`);
   expect(state.detail).toEqual([true,true,true]);expect(state.note).not.toContain('標準素材');
-  const controlled=state.failures.filter((failure:any)=>failure.asset==='seaside_rock');
-  expect(controlled).toEqual([expect.objectContaining({asset:'seaside_rock',map:'rough',aborted:true,abortReason:'TimeoutError',attempt:1,recovered:true})]);
+  const recovered=state.failures.filter((failure:any)=>failure.asset==='seaside_rock'&&failure.recovered),controlled=recovered.filter((failure:any)=>failure.map==='rough');
+  expect(controlled).toEqual([expect.objectContaining({asset:'seaside_rock',map:'rough',phase:'body',message:'Controlled response deadline',aborted:true,abortReason:'TimeoutError',attempt:1,recovered:true})]);
   expect(state.failures.filter((failure:any)=>!failure.recovered)).toEqual([]);expect(['fetch','body']).toContain(controlled[0].phase);
-  expect(requests.filter(map=>map==='diff').length).toBe(1);expect(requests.filter(map=>map==='nor_gl').length).toBe(1);expect(requests.filter(map=>map==='rough').length).toBe(2);expect(errors).toEqual([]);
+  expect(requests.length).toBe(3+recovered.length);
+  for(const map of ['diff','nor_gl','rough']){const failures=recovered.filter((failure:any)=>failure.map===map);expect(failures.length).toBeLessThanOrEqual(1);expect(requests.filter(request=>request===map).length).toBe(1+failures.length);}
+  expect(requests.filter(map=>map==='rough').length).toBe(2);
+  if(peer){expect(recovered.filter((failure:any)=>failure.map==='nor_gl')).toEqual([expect.objectContaining({phase:'body',message:'Controlled response deadline',attempt:1,recovered:true})]);expect(requests.filter(map=>map==='diff').length).toBe(1);}
+  expect(errors).toEqual([]);
 });
 
 test('one missing rock detail map retains coherent macro terrain and grass rendering',async({page})=> {
@@ -458,7 +462,7 @@ test('terrain projections preserve physical periods and normal direction on the 
   expect(await page.evaluate(()=>(window as any).__GROUND_PROBE_ERROR__)).toBeUndefined();
   const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum,detailCount:p.detailSamples.length,detailMaximum:p.detailMaximum,loadingFailures:p.loadingFailures};});
   console.log(`Ground material probe: ${JSON.stringify(probe)}`);
-  expect(probe.count).toBe(96);expect(probe.maximum).toBeLessThan(0.002);expect(probe.detailCount).toBe(1728);expect(probe.detailMaximum).toBeLessThan(0.002);expect(errors).toEqual([]);
+  expect(probe.count).toBe(96);expect(probe.maximum).toBeLessThan(0.002);expect(probe.detailCount).toBe(2592);expect(probe.detailMaximum).toBeLessThan(0.002);expect(errors).toEqual([]);
   expect(probe.loadingFailures.map((failure:any)=>failure.phase)).toEqual(['fetch','fetch','fetch','body','body','body','decode','decode','decode',...Array(6).fill('body')]);
   for(const failure of probe.loadingFailures.slice(-6))expect(failure).toMatchObject({name:'TimeoutError',aborted:true,abortReason:'TimeoutError',recovered:false});
 });
