@@ -7,7 +7,7 @@ const WIDTH=256,HEIGHT=384,TILE_X=128,TILE_Y=64,PAD=2;
 const atlasUV=(chart:number,u:number,v:number)=>[(chart%2*TILE_X+PAD+T.MathUtils.clamp(u,0,1)*(TILE_X-2*PAD))/WIDTH,(Math.floor(chart/2)*TILE_Y+PAD+T.MathUtils.clamp(v,0,1)*(TILE_Y-2*PAD))/HEIGHT];
 
 /** Dedicated charts leave photographed UV0, positions and normals intact. */
-export function roomOcclusionUV(geometry:T.BufferGeometry,floor=0,cabin=0,side=1,surface?:RoomSurface) {
+export function roomOcclusionUV(geometry:T.BufferGeometry,floor=0,cabin=0,side=1,surface?:RoomSurface,end=1) {
   const p=geometry.attributes.position,n=geometry.attributes.normal,uv=new T.Float32BufferAttribute(new Float32Array(p.count*2),2);
   for(let i=0;i<p.count;i++) {
     let chart=-1,u=0,v=0;const x=Math.abs(p.getX(i)),y=p.getY(i),z=p.getZ(i);
@@ -17,9 +17,9 @@ export function roomOcclusionUV(geometry:T.BufferGeometry,floor=0,cabin=0,side=1
     if(surface==='partition'&&Math.abs(n.getZ(i))>0.9){chart=n.getZ(i)>0?3:4;u=(x-7.6)/6.22;v=(y-floor-0.06)/2.49;}
     if(surface==='front'&&n.getX(i)*side<-0.9){chart=5;u=(z-cabin-0.04)/3.42;v=(y-floor-0.06)/2.49;}
     if(surface==='balcony'&&n.getY(i)<-0.9){chart=6;u=(x-13.76)/2.4;v=(z-cabin-0.04)/3.42;}
-    if(surface==='aft-floor'&&n.getY(i)>.9){chart=8;u=(p.getX(i)+13.82)/27.64;v=(z-cabin)/6.07;}
-    if(surface==='aft-ceiling'&&n.getY(i)<-.9){chart=9;u=(p.getX(i)+13.82)/27.64;v=(z-cabin)/6.07;}
-    if(surface==='aft-back'&&n.getZ(i)>.9){chart=10;u=(p.getX(i)+13.82)/27.64;v=(y-floor-.06)/2.49;}
+    if(surface==='aft-floor'&&n.getY(i)>.9){chart=8;u=(p.getX(i)*end+13.82)/27.64;v=(z-cabin)*end/6.07;}
+    if(surface==='aft-ceiling'&&n.getY(i)<-.9){chart=9;u=(p.getX(i)*end+13.82)/27.64;v=(z-cabin)*end/6.07;}
+    if(surface==='aft-back'&&n.getZ(i)*end>.9){chart=10;u=(p.getX(i)*end+13.82)/27.64;v=(y-floor-.06)/2.49;}
     const a=chart<0?[0.999,0.999]:atlasUV(chart,u,v);uv.setXY(i,a[0],a[1]);
   }
   geometry.setAttribute('uv1',uv);return geometry;
