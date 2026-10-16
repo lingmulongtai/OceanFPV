@@ -541,7 +541,7 @@ test('lighting and sea settings persist across a full reload', async ({page})=> 
 
 test('mobile help fits the viewport and closes with the keyboard', async ({page})=> {
   await page.setViewportSize({width:390,height:844});await ready(page);
-  await page.locator('#open-help').click();await expect(page.locator('#help-dialog')).toBeVisible();
+  await page.locator('#open-help').focus();await page.keyboard.press('Enter');await expect(page.locator('#help-dialog')).toBeVisible();
   const box=await page.locator('#help-dialog').boundingBox();expect(box!.width).toBeLessThan(390);
   await page.screenshot({path:'test-results/oceanfpv-mobile-help.png'});
   await page.keyboard.press('Escape');await expect(page.locator('#help-dialog')).toBeHidden();
