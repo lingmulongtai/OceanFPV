@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as T from 'three';
 import {measuredIsletHeight,MEASURED_ISLET_SIZE,MEASURED_ISLET_HEIGHT} from '../src/measured-islet';
-import {terrainHeight,terrainSurfaceHeight,terrainSlope,TERRAIN_SEGMENTS} from '../src/terrain';
+import {terrainHeight,terrainSurfaceHeight,terrainSlope,coastalTreeSites,terrainCover,TERRAIN_SEGMENTS} from '../src/terrain';
 
 test('measured terrain keeps metre-scale source witnesses and all four submerged edges',()=> {
   assert.equal(MEASURED_ISLET_SIZE,250);assert.equal(MEASURED_ISLET_HEIGHT,22);assert.equal(TERRAIN_SEGMENTS,192);
@@ -25,4 +25,10 @@ test('measured contact heights and slopes follow both rendered triangle halves',
     const expected=Math.acos(Math.min(1,hit.face!.normal.y));assert.ok(Math.abs(terrainSlope(x,z,250,22,'measured-islet')-expected)<.000002);checked++;
   }
   assert.equal(checked,12);geometry.dispose();material.dispose();
+});
+
+test('measured trees root on dry supported slopes without a procedural island density quota',()=> {
+  const sites=coastalTreeSites(-850,420,250,22,'measured-islet');assert.ok(sites.length>0&&sites.length<=170);
+  assert.deepEqual(sites,coastalTreeSites(-850,420,250,22,'measured-islet'));
+  for(const site of sites){const x=site.x+850,z=site.z-420;assert.ok(Math.abs(site.y-terrainSurfaceHeight(x,z,250,22,'measured-islet'))<.00000001);assert.ok(site.y>5&&terrainCover(x,z,250,22,'measured-islet')>=.3);assert.ok(terrainSlope(x,z,250,22,'measured-islet')<35*Math.PI/180);}
 });

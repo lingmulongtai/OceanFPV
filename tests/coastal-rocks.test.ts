@@ -54,6 +54,15 @@ test('all coastal placements preserve scale and settle into rendered terrain rat
   assert.equal(count,270);
 });
 
+test('measured coastal rocks follow irregular shelves and retain physical support',()=> {
+  const coast={x:-850,z:420,size:250,height:22,profile:'measured-islet'} as const,sites=coastalRockSites(coast),shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),point=new T.Vector3();
+  const ground=(x:number,z:number)=>terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile);
+  assert.ok(sites.length>0&&sites.length<=90);assert.ok(sites.some(site=>Math.hypot(site.x-coast.x,site.z-coast.z)<coast.size*.65));
+  for(const site of sites){assert.ok(ground(site.x,site.z)>=-2&&ground(site.x,site.z)<=14);assert.ok(terrainSlope(site.x-coast.x,site.z-coast.z,250,22,'measured-islet')<=Math.PI/4.5);}
+  const placements=rockPatchPlacements(shape,{coast,sites,embedFraction:.45,maxTilt:Math.PI/12,minSupportFraction:.8});assert.ok(placements.length>0);
+  for(const placement of placements){const support=shape.feet.filter(foot=>{point.copy(foot).applyMatrix4(placement.matrix);return point.y<=ground(point.x,point.z);});assert.ok(support.length>=shape.feet.length*.8);}
+});
+
 test('custom rock patches reject missing support feet and keep excluded world space clear',()=> {
   const shape=new CoastalRockShape(normaliseRockGeometry(capturedGeometry())),coast=COASTS[0],sites=[{x:0,z:0,scale:2,yaw:0},{x:-10,z:0,scale:2,yaw:0}];
   const supported=rockPatchPlacements(shape,{coast,sites,heightAt:(x)=>x>2?null:2});
