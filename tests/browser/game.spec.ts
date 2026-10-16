@@ -220,7 +220,7 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
   await expect(page.locator('#start-note')).toContainText('標準素材');
   expect(await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {detailed:!!w.rocks,contacts:w.fallbackRockObstacles.length,visible:w.rockPatches.filter((patch:any)=>patch.fallback).every((patch:any)=>patch.fallback.parent===w.scene),meshPatches:w.rockPatches.filter((patch:any)=>!patch.fallback).length,tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)};})).toEqual({detailed:false,contacts:270,visible:true,meshPatches:1,tints:[true,true,true]});
   const first=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());
-  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.x)).not.toBe(first[0]);
+  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.z)).not.toBe(first[2]);
   const app=await page.evaluate(()=> {
     const a=(window as any).__OCEANFPV__,expected=a.world.launchPose(a.getState().time);
     document.querySelector<HTMLButtonElement>('#start')!.click();

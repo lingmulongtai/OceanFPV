@@ -215,11 +215,22 @@ test('stern trails follow past ship transforms and never predate launch',()=> {
     }
     assert.deepEqual(trail,vesselWakeTrail(kind,time,length));
   }
-  const turned=vesselWakeTrail('cruise',120,260),current=vesselPose('cruise',120),oldest=turned.at(-1)!;
+  const turned=vesselWakeTrail('yacht',120,28),current=vesselPose('yacht',120),oldest=turned.at(-1)!;
   const lateral=Math.cos(current.heading)*(oldest.x-turned[0].x)-Math.sin(current.heading)*(oldest.z-turned[0].z);
-  assert.ok(Math.abs(lateral)>50,'old stern positions must leave the current straight heading');
+  assert.ok(Math.abs(lateral)>50,'turning yachts leave a curved stern trail');
   vesselWakeTrail('cruise',800,260);
   const reset=vesselWakeTrail('cruise',0,260);assert.ok(reset.every(p=>p.age===0&&p.x===reset[0].x&&p.z===reset[0].z));
+});
+
+test('passenger ship holds a straight course without looping or teleporting',()=> {
+  for(const time of [0,1,60,300,900,3600]) {
+    const pose=vesselPose('cruise',time);
+    assert.equal(pose.x,0);assert.equal(pose.z,220-4.2*time);
+    assert.ok(Math.abs(pose.heading)<1e-12);assert.equal(pose.speed,4.2);
+    const trail=vesselWakeTrail('cruise',time,260);
+    for(const point of trail)assert.equal(point.x,0);
+    for(let i=1;i<trail.length;i++)assert.ok(trail[i].z>=trail[i-1].z);
+  }
 });
 
 test('vessel routes move continuously and the bow follows the travel direction',()=> {
