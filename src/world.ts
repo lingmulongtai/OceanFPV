@@ -253,7 +253,6 @@ export class World {
     this.shorelineWash.value=SEA_SCALE[state];
     this.ocean.update(time,camera,state);
     this.sky.material.uniforms.time.value=time;
-    this.sky.position.copy(camera);
     this.sunlight.target.position.set(camera.x,0,camera.z);
     this.sunlight.position.copy(this.sun).multiplyScalar(280).add(this.sunlight.target.position);
     this.advanceVessels(time);

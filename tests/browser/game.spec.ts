@@ -272,7 +272,7 @@ test('cruise departure and lighting remain valid far along the straight route',a
       w.ocean.advance(time,'breeze');const launch=w.launchPose(time),camera=launch.position.clone();
       w.update(time,camera,'breeze',camera,a.flight.orientation,0);
       const below=camera.clone();below.y-=1.2;
-      samples.push({time,position:camera.toArray(),clear:w.collision(camera,time,'breeze'),deck:w.collision(below,time,'breeze'),sky:w.sky.position.distanceTo(camera),target:Math.hypot(w.sunlight.target.position.x-camera.x,w.sunlight.target.position.z-camera.z),light:w.sunlight.position.clone().sub(w.sunlight.target.position).distanceTo(w.sun.clone().multiplyScalar(280))});
+      samples.push({time,position:camera.toArray(),clear:w.collision(camera,time,'breeze'),deck:w.collision(below,time,'breeze'),sky:w.sky.position.length(),target:Math.hypot(w.sunlight.target.position.x-camera.x,w.sunlight.target.position.z-camera.z),light:w.sunlight.position.clone().sub(w.sunlight.target.position).distanceTo(w.sun.clone().multiplyScalar(280))});
     }
     return samples;
   });
