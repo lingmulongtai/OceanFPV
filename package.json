@@ -18,6 +18,7 @@
     "@playwright/test": "1.64.0",
     "@types/node": "22.19.11",
     "@types/three": "0.183.1",
+    "geotiff": "3.0.5",
     "tsx": "^4.23.15",
     "typescript": "5.9.3",
     "vite": "8.3.4"
