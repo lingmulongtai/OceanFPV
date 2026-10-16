@@ -103,7 +103,7 @@ test('one missing rock detail map retains coherent macro terrain and grass rende
 test('photographed cliff contacts, joined ground and shared water depth agree',async({page})=> {
   await ready(page);
   const result=await page.evaluate(()=>{
-    const w=(window as any).__OCEANFPV__.world,scan=w.cliff.surface,ground=w.cliffGround,Vector=w.ship.position.constructor,Ray=w.lighthouseReef.topRay.constructor;
+    const w=(window as any).__OCEANFPV__.world,scan=w.cliff.surface,ground=w.cliffGround,Vector=w.cruise.root.position.constructor,Ray=w.lighthouseReef.topRay.constructor;
     const ray=new Ray(new Vector(-350,2,-450),new Vector(-1,0,0)),hit=scan.tree.raycastFirst(ray,2);if(!hit)throw new Error('Missing photographed front face');
     const front=hit.point.clone().add(new Vector(2,0,0)),back=hit.point.clone().add(new Vector(-2,0,0));
     const contacts=[w.collision(back,0,'breeze',front),w.collision(front,0,'breeze',back)];
@@ -142,11 +142,11 @@ test('detailed cliff water height gradient and attenuation agree on the GPU',asy
   console.log(`Cliff depth probe: ${JSON.stringify(result)}`);expect(result.count).toBe(77);expect(result.heightError).toBeLessThan(.003);expect(result.gradientError).toBeLessThan(.003);expect(result.envelopeError).toBeLessThan(.003);expect(result.opticalCount).toBe(616);expect(result.opticalMaximum).toBeLessThan(.003);expect(result.radianceCount).toBe(324);expect(result.radianceMaximum).toBeLessThan(.0001);expect(errors).toEqual([]);
 });
 
-test('production hull water masks agree on the GPU for cruise explorer and yacht',async({page})=> {
+test('production hull water masks agree on the GPU for cruise and yacht',async({page})=> {
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/hull-mask-probe.html');
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__HULL_MASK_PROBE__);},{timeout:60000}).toBe(true);
-  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(1704);
+  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(1136);
   // SwiftShader's existing sin/pow bow profile differs by up to 1.36 mm; the new aft profile stays tighter.
   expect(result.widthError).toBeLessThan(.002);expect(result.aftWidthError).toBeLessThan(.0005);expect(result.maskErrors).toBe(0);expect(errors).toEqual([]);
 });
@@ -257,8 +257,8 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
     const old=w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray());w.advanceVessels(0);
     return {old,points:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};
   });
-  expect(reset.old).toHaveLength(39);expect(reset.old.some((p:number[])=>p[2]>0)).toBe(true);
-  for(let i=0;i<3;i++) {
+  expect(reset.old).toHaveLength(26);expect(reset.old.some((p:number[])=>p[2]>0)).toBe(true);
+  for(let i=0;i<2;i++) {
     const points=reset.points.slice(i*13,(i+1)*13);
     expect(points.every((p:number[])=>p[2]===0&&p[0]===points[0][0]&&p[1]===points[0][1])).toBe(true);
   }

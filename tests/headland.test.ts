@@ -48,7 +48,7 @@ test('northern drainage meshes, contact samples and uploaded depths agree inside
 });
 
 test('complete vessel footprints stay in water around all island profiles',()=> {
-  for(const [kind,length,width,omega]of [['explorer',92,4.4,0.025],['cruise',260,17,0.018],['yacht',28,4.5,0.027]] as const)for(let i=0;i<360;i++) {
+  for(const [kind,length,width,omega]of [['cruise',260,17,0.018],['yacht',28,4.5,0.027]] as const)for(let i=0;i<360;i++) {
     const pose=vesselPose(kind,kind==='cruise'?i*10:i/360*2*Math.PI/omega),sin=Math.sin(pose.heading),cos=Math.cos(pose.heading);
     for(let j=0;j<=8;j++)for(const side of [-1,1]) {
       const x=side*width,z=(j/8-0.5)*length,px=pose.x+cos*x+sin*z,pz=pose.z-sin*x+cos*z;

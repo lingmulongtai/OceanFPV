@@ -116,13 +116,13 @@ export class Ocean {
     this.material=this.mesh.material as T.ShaderMaterial;this.material.lights=false;this.material.side=T.DoubleSide;
     Object.assign(this.material.uniforms,{
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
-      dusk:{value:0.4},foamEnabled:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:3},()=>new T.Vector4())},headings:{value:[0,0,0]},vesselWidths:{value:[4.4,17,4.5]},vesselSpeeds:{value:[0,0,0]},
+      dusk:{value:0.4},foamEnabled:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:2},()=>new T.Vector4())},headings:{value:[0,0]},vesselWidths:{value:[17,4.5]},vesselSpeeds:{value:[0,0]},
       chopScale:{value:this.simulation.horizontalScale},
       slopeVariance:{value:new T.Vector3()},
       heightVariance:{value:new T.Vector3()},
       slopeMipEnergy:{value:Array.from({length:8},()=>new T.Vector3())},heightMipEnergy:{value:Array.from({length:8},()=>new T.Vector3())},
       slopeMipCross:{value:Array.from({length:8},()=>new T.Vector3())},heightMipCross:{value:Array.from({length:8},()=>new T.Vector3())},
-      wakePoints:{value:Array.from({length:3*WAKE_SAMPLES},()=>new T.Vector4())},wakeBounds:{value:Array.from({length:3},()=>new T.Vector4())},
+      wakePoints:{value:Array.from({length:2*WAKE_SAMPLES},()=>new T.Vector4())},wakeBounds:{value:Array.from({length:2},()=>new T.Vector4())},
       reflectionSize:{value:1536},
       islands:{value:BATHY_COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.sizeZ??c.size))},
     });
@@ -153,8 +153,8 @@ export class Ocean {
       ${waterOpticsCode}
       uniform sampler2D mirrorSampler;
       uniform vec3 eye,sunDirection,sunColor;uniform float time,dusk,reflectionSize;uniform bool foamEnabled;
-      uniform vec4 vessels[3];uniform float headings[3],vesselWidths[3],vesselSpeeds[3];
-      uniform vec4 wakePoints[${3*WAKE_SAMPLES}],wakeBounds[3];
+      uniform vec4 vessels[2];uniform float headings[2],vesselWidths[2],vesselSpeeds[2];
+      uniform vec4 wakePoints[${2*WAKE_SAMPLES}],wakeBounds[2];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
       float hash(vec2 p) {
         uint h=uint(int(p.x))*0x9e3779b9u^uint(int(p.y))*0x85ebca6bu;
@@ -200,13 +200,13 @@ export class Ocean {
         vec2 mirrorUV=mirrorCoord.xy/max(mirrorCoord.w,0.001);
         bool hullCutout=false;
         float wakeFoam=0.0,wakeWave=0.0,n=foamNoise(p*0.53+vec2(time*0.12,-time*0.09));
-        for(int i=0;i<3;i++) {
+        for(int i=0;i<2;i++) {
           vec2 rel=p-vessels[i].xz;float c=cos(headings[i]),s=sin(headings[i]);vec2 local=vec2(c*rel.x-s*rel.y,s*rel.x+c*rel.y);
           float length=vessels[i].w,width=vesselWidths[i],speed=vesselSpeeds[i],aft=local.y-length*0.5,bow=local.y+length*0.5;
           float u=(local.y+length*0.5)/length;
           if(u>0.0&&u<1.0) {
             float shape=pow(max(sin(u*3.14159),0.001),0.42);
-            if(i==1)shape=cruiseHullWidth(u,width)/width;
+            if(i==0)shape=cruiseHullWidth(u,width)/width;
             else if(i>0&&u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
             if(abs(local.x)<width*shape*0.98)hullCutout=true;
           }

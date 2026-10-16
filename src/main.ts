@@ -290,7 +290,7 @@ async function boot() {
     const scale=race.active?1.7:0.14,origin=race.active?new T.Vector3():flight.position;
     const project=(x:number,z:number)=>[(x-origin.x)*scale,(z-origin.z)*scale];
     if(!race.active)for(const island of world.islands){const [x,z]=project(island.x,island.z);ctx.fillStyle='#90af8b30';ctx.beginPath();ctx.arc(x,z,island.size*scale,0,Math.PI*2);ctx.fill();}
-    for(const [root,length,width]of [[world.ship,92,4.4],[world.cruise.root,260,17],[world.yacht,28,4.5]]as const){const [x,z]=project(root.position.x,root.position.z);ctx.save();ctx.translate(x,z);ctx.rotate(-root.rotation.y);ctx.fillStyle='#d2e3d799';ctx.beginPath();ctx.moveTo(0,-length*0.5*scale);ctx.lineTo(width*scale,-length*0.35*scale);ctx.lineTo(width*scale,length*0.45*scale);ctx.lineTo(-width*scale,length*0.45*scale);ctx.lineTo(-width*scale,-length*0.35*scale);ctx.closePath();ctx.fill();ctx.restore();}
+    for(const [root,length,width]of [[world.cruise.root,260,17],[world.yacht,28,4.5]]as const){const [x,z]=project(root.position.x,root.position.z);ctx.save();ctx.translate(x,z);ctx.rotate(-root.rotation.y);ctx.fillStyle='#d2e3d799';ctx.beginPath();ctx.moveTo(0,-length*0.5*scale);ctx.lineTo(width*scale,-length*0.35*scale);ctx.lineTo(width*scale,length*0.45*scale);ctx.lineTo(-width*scale,length*0.45*scale);ctx.lineTo(-width*scale,-length*0.35*scale);ctx.closePath();ctx.fill();ctx.restore();}
     if(race.active) GATES.forEach((g,i)=> {const [x,z]=project(g.position.x,g.position.z);ctx.fillStyle=i===race.next?'#b5ebd4':'#769488';ctx.beginPath();ctx.arc(x,z,4,0,Math.PI*2);ctx.fill();});
     const pos=flight.position.clone();const direction=new T.Vector3(0,0,-1).applyQuaternion(flight.orientation);const angle=Math.atan2(direction.x,-direction.z);
     const [px,pz]=project(pos.x,pos.z);const x=Math.max(-108,Math.min(108,px)),z=Math.max(-108,Math.min(108,pz));ctx.translate(x,z);ctx.rotate(angle);
@@ -369,7 +369,6 @@ async function boot() {
       world.scene.backgroundRotation.y=time*0.00015;
       world.scene.environmentRotation.y=world.scene.backgroundRotation.y;
       if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280);}
-      world.ship.updateMatrixWorld(true);
       renderer.info.reset();composer.render();frameCount++;
       sceneDirty=false;wasFrozen=frozen;renderedFov=camera.fov;renderedPosition.copy(camera.position);renderedOrientation.copy(camera.quaternion);renderedOcean=world.ocean.material;renderedOceanVersion=world.ocean.material.version;
     }

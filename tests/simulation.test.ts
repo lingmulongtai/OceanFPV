@@ -206,7 +206,7 @@ test('terrain sampling stays finite and continuous through the coastline',()=> {
 });
 
 test('stern trails follow past ship transforms and never predate launch',()=> {
-  for(const [kind,length] of [['explorer',92],['cruise',260],['yacht',28]] as const)for(const time of [0,3,8,27,190]) {
+  for(const [kind,length] of [['cruise',260],['yacht',28]] as const)for(const time of [0,3,8,27,190]) {
     const trail=vesselWakeTrail(kind,time,length);assert.equal(trail.length,WAKE_SAMPLES);
     for(const point of trail) {
       assert.ok(point.age>=0&&point.age<=time&&point.age<=WAKE_STEP*(WAKE_SAMPLES-1));
@@ -234,7 +234,7 @@ test('passenger ship holds a straight course without looping or teleporting',()=
 });
 
 test('vessel routes move continuously and the bow follows the travel direction',()=> {
-  for(const kind of ['explorer','cruise','yacht'] as const)for(let t=0;t<800;t+=13) {
+  for(const kind of ['cruise','yacht'] as const)for(let t=0;t<800;t+=13) {
     const pose=vesselPose(kind,t),next=vesselPose(kind,t+0.001);
     assert.ok(pose.speed>1);assert.ok(Math.hypot(next.x-pose.x,next.z-pose.z)>0);
     assert.ok(Math.abs((next.x-pose.x)/0.001-pose.vx)<0.002);assert.ok(Math.abs((next.z-pose.z)/0.001-pose.vz)<0.002);
