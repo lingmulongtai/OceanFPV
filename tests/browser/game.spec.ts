@@ -401,8 +401,19 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
     (window as any).__pad={id:'Xbox test controller',index:0,connected:true,mapping:'standard',axes:[0,0,0,0],buttons:Array.from({length:17},()=>({pressed:false,value:0,touched:false})),timestamp:0};
     Object.defineProperty(navigator,'getGamepads',{value:()=>[(window as any).__pad]});
   });
-  await ready(page);await page.locator('#open-settings').click();await page.locator('[data-tab="controller"]').click();
-  await page.locator('#input-source').selectOption('xbox');await page.locator('[data-close="settings-dialog"]').last().click();
+  await ready(page);
+  // Batch setup events so software rendering cannot add a full frame wait to every protocol round trip.
+  const setup=await page.evaluate(()=> {
+    document.querySelector<HTMLButtonElement>('#open-settings')!.click();
+    const dialog=document.querySelector<HTMLDialogElement>('#settings-dialog')!,opened=dialog.open;
+    const tab=document.querySelector<HTMLButtonElement>('[data-tab="controller"]')!;tab.click();
+    const selected=tab.getAttribute('aria-pressed');
+    const source=document.querySelector<HTMLSelectElement>('#input-source')!;source.value='xbox';source.dispatchEvent(new Event('input',{bubbles:true}));
+    const applied=(window as any).__OCEANFPV__.input.source;
+    document.querySelectorAll<HTMLButtonElement>('[data-close="settings-dialog"]').item(1).click();
+    return {opened,selected,source:applied,closed:!dialog.open};
+  });
+  expect(setup).toEqual({opened:true,selected:'true',source:'xbox',closed:true});
   const climbed=await page.evaluate(async()=> {
     const app=(window as any).__OCEANFPV__;
     document.querySelector<HTMLButtonElement>('#start')!.click();
