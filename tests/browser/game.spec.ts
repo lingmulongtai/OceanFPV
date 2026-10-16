@@ -222,13 +222,14 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
   const first=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());
   await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.z)).not.toBe(first[2]);
   const app=await page.evaluate(()=> {
-    const a=(window as any).__OCEANFPV__,expected=a.world.launchPose(a.getState().time);
+    const a=(window as any).__OCEANFPV__;
     document.querySelector<HTMLButtonElement>('#start')!.click();
-    const local=a.world.cruise.root.worldToLocal(a.flight.position.clone());
-    return {local:local.toArray(),positionError:a.flight.position.distanceTo(expected.position),velocityError:a.flight.velocity.distanceTo(expected.velocity)};
+    const expected=a.world.launchPose(0),local=a.world.cruise.root.worldToLocal(a.flight.position.clone());
+    return {local:local.toArray(),time:a.getState().time,positionError:a.flight.position.distanceTo(expected.position),velocityError:a.flight.velocity.distanceTo(expected.velocity)};
   });
   expect(Math.abs(app.local[0])).toBeLessThan(1e-6);expect(Math.abs(app.local[2]+112)).toBeLessThan(1e-6);
   expect(app.positionError).toBeLessThan(1e-6);expect(app.velocityError).toBeLessThan(1e-6);
+  expect(app.time).toBe(0);
   await page.keyboard.press('Escape');await expect(page.locator('#pause-dialog')).toBeVisible();
   const stopped=await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};});await page.waitForTimeout(300);
   expect(await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};})).toEqual(stopped);
