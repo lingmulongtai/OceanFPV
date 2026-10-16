@@ -264,6 +264,22 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
     expect(points.every((p:number[])=>p[2]===0&&p[0]===points[0][0]&&p[1]===points[0][1])).toBe(true);
   }
 });
+test('cruise departure and lighting remain valid far along the straight route',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(()=> {
+    const a=(window as any).__OCEANFPV__,w=a.world,samples=[];
+    for(const time of [0,600,1800,3600]) {
+      w.ocean.advance(time,'breeze');const launch=w.launchPose(time),camera=launch.position.clone();
+      w.update(time,camera,'breeze',camera,a.flight.orientation,0);
+      const below=camera.clone();below.y-=1.2;
+      samples.push({time,position:camera.toArray(),clear:w.collision(camera,time,'breeze'),deck:w.collision(below,time,'breeze'),sky:w.sky.position.distanceTo(camera),target:Math.hypot(w.sunlight.target.position.x-camera.x,w.sunlight.target.position.z-camera.z),light:w.sunlight.position.clone().sub(w.sunlight.target.position).distanceTo(w.sun.clone().multiplyScalar(280))});
+    }
+    return samples;
+  });
+  for(const sample of result){expect(sample.clear).toBeNull();expect(sample.deck).toContain('客船');expect(sample.sky).toBeLessThan(1e-6);expect(sample.target).toBeLessThan(1e-6);expect(sample.light).toBeLessThan(1e-6);}
+  expect(result.at(-1)!.position[2]).toBeLessThan(-14000);
+});
+
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
   test.setTimeout(300000);
   await ready(page);await page.locator('#start').click();

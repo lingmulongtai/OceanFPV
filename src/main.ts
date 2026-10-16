@@ -368,7 +368,7 @@ async function boot() {
       world.update(time,camera.position,sea,flight.position,flight.orientation,flight.motor);
       world.scene.backgroundRotation.y=time*0.00015;
       world.scene.environmentRotation.y=world.scene.backgroundRotation.y;
-      if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280);}
+      if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280).add(world.sunlight.target.position);}
       renderer.info.reset();composer.render();frameCount++;
       sceneDirty=false;wasFrozen=frozen;renderedFov=camera.fov;renderedPosition.copy(camera.position);renderedOrientation.copy(camera.quaternion);renderedOcean=world.ocean.material;renderedOceanVersion=world.ocean.material.version;
     }

@@ -72,7 +72,7 @@ export class World {
 
   constructor() {
     wetCoastalSurface(this.rockMaterial,this.shorelineWash);
-    this.scene.add(this.cruise.root,this.yacht,this.drone,this.sky,this.sunlight,this.hemisphere);
+    this.scene.add(this.cruise.root,this.yacht,this.drone,this.sky,this.sunlight,this.sunlight.target,this.hemisphere);
     this.sky.scale.setScalar(10000);
     this.sky.material.uniforms.turbidity.value = 4;
     this.sky.material.uniforms.rayleigh.value = 2.4;
@@ -253,6 +253,9 @@ export class World {
     this.shorelineWash.value=SEA_SCALE[state];
     this.ocean.update(time,camera,state);
     this.sky.material.uniforms.time.value=time;
+    this.sky.position.copy(camera);
+    this.sunlight.target.position.set(camera.x,0,camera.z);
+    this.sunlight.position.copy(this.sun).multiplyScalar(280).add(this.sunlight.target.position);
     this.advanceVessels(time);
     this.forest?.update(camera,time,this.quality,this.light);
     this.drone.position.copy(dronePosition);this.drone.quaternion.copy(orientation);
