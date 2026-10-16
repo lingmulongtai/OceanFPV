@@ -31,3 +31,15 @@ Detailed shelves exposed a 5.18 mm contact error under strong crossed swell: the
 - Six actual main-renderer captures use RTX4050, ULTRA1920×1280, fixed wave/vessel time120, three cameras and day/evening light. Browser errors are empty; low-shore, close and wide images were inspected. The captured composition uses all photographic materials, without fallback.
 
 The source does not supply measured vegetation, photographic land cover or sea depth. Trees and separate boulders remain procedural placements, and their material contrast/repetition remains an appearance limit. Other islands still have smooth procedural silhouettes. These checks do not establish sustained performance, physical controller acceptance, or a fully measured map. Complete CI and public deployment checks remain separate gates.
+
+## Matched view
+
+Both captures use the actual main renderer, RTX4050, an ULTRA1920×1280 render buffer, daylight and wave/vessel time120; screenshots are 960×640. Camera position, orientation and effective FOV65 are identical. The stored FOV55 request is clamped by the existing input's minimum of 65. The former radial hill used an 85 m nominal height setting; the measured source peaks near 22 m at its original scale.
+
+Before:
+
+![Former southwestern radial hill](images/southwest-procedural-before.png)
+
+After:
+
+![Measured southwestern shelves and inlets](images/southwest-measured-after.png)
