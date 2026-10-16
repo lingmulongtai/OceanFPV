@@ -285,7 +285,8 @@ test('cruise departure and lighting remain valid far along the straight route',a
 });
 
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
-  test.setTimeout(300000);
+  // Measured CI software startup alone took 198 s; retain time for real input and reset.
+  test.setTimeout(420000);
   // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
   await page.setViewportSize({width:320,height:240});
   await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());
@@ -304,21 +305,19 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   expect(beforePitch.altitude).toBeGreaterThan(launchAltitude+2);
   const forwardSpeed=()=>page.evaluate((forward:number[])=> {const v=(window as any).__OCEANFPV__.flight.velocity;return v.x*forward[0]+v.z*forward[2];},beforePitch.forward);
   await page.keyboard.down('KeyW');await expect.poll(forwardSpeed).toBeGreaterThan(Math.max(0.8,beforePitch.speed+0.8));await page.keyboard.up('KeyW');
-  expect(await forwardSpeed()).toBeGreaterThan(0.5);
   await page.keyboard.press('Escape');await expect(page.locator('#pause-dialog')).toBeVisible();
-  const paused=await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray());
-  await page.waitForTimeout(300);expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray())).toEqual(paused);
-  await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#resume')!.click());
-  await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y=-4);
+  const paused=await page.evaluate((forward:number[])=>{const flight=(window as any).__OCEANFPV__.flight;return {position:flight.position.toArray(),speed:flight.velocity.x*forward[0]+flight.velocity.z*forward[2]};},beforePitch.forward);
+  expect(paused.speed).toBeGreaterThan(.5);
+  await page.waitForTimeout(300);expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray())).toEqual(paused.position);
+  await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#resume')!.click();(window as any).__OCEANFPV__.flight.position.y=-4;});
   await expect(page.locator('#pause-title')).toHaveText('フライト終了');
-  await page.keyboard.press('KeyR');await expect(page.locator('#pause-dialog')).toBeHidden();
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.crashed)).toBe(false);
-  const mode=await page.evaluate(()=> {
+  await page.keyboard.press('KeyR');
+  const reset=await page.evaluate(()=> {
+    const flight=(window as any).__OCEANFPV__.flight,reset={visible:document.querySelector<HTMLDialogElement>('#pause-dialog')!.getClientRects().length>0,crashed:flight.crashed,armed:flight.armed};
     document.querySelector<HTMLButtonElement>('#open-settings')!.click();const select=document.querySelector<HTMLSelectElement>('#mode')!;select.value='acro';select.dispatchEvent(new Event('input',{bubbles:true}));
-    document.querySelectorAll<HTMLButtonElement>('[data-close="settings-dialog"]').item(1).click();return (window as any).__OCEANFPV__.flight.mode;
+    document.querySelectorAll<HTMLButtonElement>('[data-close="settings-dialog"]').item(1).click();return {...reset,mode:flight.mode,armedAfterMode:flight.armed};
   });
-  expect(mode).toBe('acro');
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(true);
+  expect(reset).toEqual({visible:false,crashed:false,armed:true,mode:'acro',armedAfterMode:true});
 });
 test('render delays keep world and flight coupled and unsafe gaps pause without a jump',async({page})=> {
   test.setTimeout(300000);
