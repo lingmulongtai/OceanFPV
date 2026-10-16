@@ -1,9 +1,10 @@
 import { terrainHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain';
 import {LighthouseReef,LIGHTHOUSE_COAST} from './lighthouse-reef';
 import {MEASURED_ISLET_SIZE,MEASURED_ISLET_HEIGHT} from './measured-islet';
+import {HORNOYA_SIZE,HORNOYA_HEIGHT} from './hornoya';
 
 export type Coast={x:number;z:number;size:number;sizeZ?:number;height:number;profile?:TerrainProfile};
-export const COASTS=[{x:-580,z:-420,size:260,height:130,profile:'headland'},{x:610,z:-800,size:320,height:190,profile:'radial'},{x:-850,z:420,size:MEASURED_ISLET_SIZE,height:MEASURED_ISLET_HEIGHT,profile:'measured-islet'}] as const;
+export const COASTS=[{x:-580,z:-420,size:260,height:130,profile:'headland'},{x:800,z:-900,size:HORNOYA_SIZE,height:HORNOYA_HEIGHT,profile:'hornoya'},{x:-850,z:420,size:MEASURED_ISLET_SIZE,height:MEASURED_ISLET_HEIGHT,profile:'measured-islet'}] as const;
 export const BATHY_COASTS:readonly Coast[]=[...COASTS,LIGHTHOUSE_COAST];
 export const BATHY_SIZE=TERRAIN_SEGMENTS+1;
 /** RGB holds exact island vertices; alpha resamples reef top faces and a submerged skirt. */
