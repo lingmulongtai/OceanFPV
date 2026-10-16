@@ -8,7 +8,7 @@ import { GATES } from './race';
 import {cruiseHullContains} from './cruise-hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { buildMotorYacht,YACHT_BEAM } from './yacht';
-import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
+import { vesselPose, vesselWakeTrail, withinFlightArea, WAKE_SAMPLES } from './navigation';
 import { blendGroundCover, blendRockScale, wetCoastalSurface, loadSurfaces, type SurfaceGroup, type SurfaceFailure } from './surfaces';
 import { coastalTreeSites, terrainCover, terrainSurfaceHeight, terrainSegments, type TerrainProfile } from './terrain';
 import { COASTS, type Coast } from './bathymetry';
@@ -288,10 +288,10 @@ export class World {
     this.advanceVessels(time);const pose=vesselPose('cruise',time);
     return {position:this.cruise.root.localToWorld(CRUISE_LAUNCH.clone()),velocity:this.launchVelocity?.clone()??new T.Vector3(pose.vx,0,pose.vz),heading:pose.heading};
   }
-  collision(p:T.Vector3,_time:number,_state:SeaState,previous=p):string|null {
+  collision(p:T.Vector3,time:number,_state:SeaState,previous=p):string|null {
     if(this.cliff?.surface.contacts(p,previous))return '海岸の崖に接触しました';
     if(p.y < this.ocean.heightAt(p.x,p.z)+0.18) return '海面に接触しました';
-    if(p.y>500||Math.hypot(p.x,p.z)>1900) return '飛行エリアの外に出ました';
+    if(p.y>500||!withinFlightArea(p.x,p.z,time)) return '飛行エリアの外に出ました';
     const passenger=this.cruise.root.worldToLocal(p.clone());
     if(cruiseHullContains(passenger))return '客船の船体・甲板に接触しました';
     for(const c of this.cruise.boxes)if(vesselBoxContains(c,passenger))return '客船の構造物に接触しました';

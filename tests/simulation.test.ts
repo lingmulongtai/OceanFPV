@@ -9,7 +9,7 @@ import { inverseFFT, SpectralSea } from '../src/spectrum';
 import { closedHullGeometry, foredeckGeometry, hullNameGeometry } from '../src/hull';
 import {cruiseHullGeometry,cruiseHullSidePose} from '../src/cruise-hull';
 import { deckGeometry, vesselBoxContains, windowRibbon } from '../src/cruise';
-import { vesselPose, vesselWakeTrail, WAKE_SAMPLES, WAKE_STEP } from '../src/navigation';
+import { vesselPose, vesselWakeTrail, withinFlightArea, WAKE_SAMPLES, WAKE_STEP } from '../src/navigation';
 import { coastalTreeSites, terrainHeight, terrainSurfaceHeight, terrainSegments } from '../src/terrain';
 import { bathymetryData, sampleBathymetry, BATHY_SIZE, COASTS } from '../src/bathymetry';
 import { metricPaintGeometry } from '../src/paint';
@@ -231,6 +231,19 @@ test('passenger ship holds a straight course without looping or teleporting',()=
     for(const point of trail)assert.equal(point.x,0);
     for(let i=1;i<trail.length;i++)assert.ok(trail[i].z>=trail[i-1].z);
   }
+});
+
+test('flight area follows the sailed corridor without cutting off the islands',()=> {
+  for(const time of [0,60,900,3600]) {
+    const ship=vesselPose('cruise',time);
+    assert.ok(withinFlightArea(ship.x,ship.z-112,time));
+    for(let z=ship.z;z<220;z+=50)assert.ok(withinFlightArea(0,z,time));
+    assert.ok(withinFlightArea(1200,ship.z,time));
+    assert.ok(withinFlightArea(1500,-1000,time));
+    assert.equal(withinFlightArea(2000,ship.z,time),false);
+    assert.equal(withinFlightArea(0,ship.z-4000,time),false);
+  }
+  assert.equal(withinFlightArea(0,-3000,0),false);
 });
 
 test('vessel routes move continuously and the bow follows the travel direction',()=> {

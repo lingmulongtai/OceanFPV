@@ -10,6 +10,12 @@ export function vesselPose(kind:VesselKind,time:number) {
 }
 
 export const WAKE_SAMPLES=13,WAKE_STEP=8;
+/** Keep the islands and the sailed corridor reachable as the ship travels. */
+export function withinFlightArea(x:number,z:number,time:number) {
+  if(Math.hypot(x,z)<=1900)return true;
+  const ship=vesselPose('cruise',Math.max(0,time)),nearestZ=Math.max(ship.z,Math.min(220,z));
+  return Math.hypot(x,z-nearestZ)<=1200;
+}
 /** Water-plane stern positions; repeated start points cannot emit an older wake. */
 export function vesselWakeTrail(kind:VesselKind,time:number,length:number) {
   const elapsed=Math.max(0,time);
