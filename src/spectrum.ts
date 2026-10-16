@@ -57,13 +57,13 @@ export class WaveCascade {
   compressionBound=0;
   slopeVariance=0;
 
-  constructor(readonly size: number, readonly length: number, seed: number, rms: number, minWave: number, maxWave: number, readonly chop=1.6) {
+  constructor(readonly size: number, readonly length: number, seed: number, rms: number, minWave: number, maxWave: number, readonly chop=1.6,windDirection=0.7) {
     const count=size*size;this.displacement=new Float32Array(count*4);this.tangentX=new Float32Array(count*4);this.tangentZ=new Float32Array(count*4);
     this.h0=new Float64Array(count*2);this.omega=new Float64Array(count);this.directionX=new Float64Array(count);this.directionZ=new Float64Array(count);
     this.fields=Array.from({length:2},()=>({real:new Float64Array(count),imaginary:new Float64Array(count)}));
     const random=()=> {seed=(Math.imul(seed,1664525)+1013904223)>>>0;return (seed+1)/4294967297;};
     const gaussian=()=>Math.sqrt(-2*Math.log(random()))*Math.cos(2*Math.PI*random());
-    const windX=Math.cos(0.7),windZ=Math.sin(0.7),windLength=11*11/9.81;
+    const windX=Math.cos(windDirection),windZ=Math.sin(windDirection),windLength=11*11/9.81;
     let energy=0;
     for(let z=0;z<size;z++) for(let x=0;x<size;x++) {
       const i=z*size+x,kx=2*Math.PI*(x<size/2?x:x-size)/length,kz=2*Math.PI*(z<size/2?z:z-size)/length,k=Math.hypot(kx,kz);
@@ -131,7 +131,7 @@ export class WaveCascade {
 }
 
 export class SpectralSea {
-  readonly cascades=[new WaveCascade(128,433,173,0.85,36,433,1.8),new WaveCascade(128,97,519,0.34,4,36,1.3),new WaveCascade(128,23.3,831,0.085,0.45,4,0.85)];
+  readonly cascades=[new WaveCascade(128,433,173,0.85,36,433,1.8,-0.45),new WaveCascade(128,97,519,0.34,4,36,1.3),new WaveCascade(128,23.3,831,0.085,0.45,4,0.85)];
   time=0;
   private scale=1;
   private chopLimit=1;
