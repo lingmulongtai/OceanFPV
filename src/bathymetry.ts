@@ -2,6 +2,7 @@ import { terrainHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain'
 import {LighthouseReef,LIGHTHOUSE_COAST} from './lighthouse-reef';
 import {MEASURED_ISLET_SIZE,MEASURED_ISLET_HEIGHT} from './measured-islet';
 import {HORNOYA_SIZE,HORNOYA_HEIGHT} from './hornoya';
+import {type IslandDepth} from './island-depth';
 
 export type Coast={x:number;z:number;size:number;sizeZ?:number;height:number;profile?:TerrainProfile};
 export const COASTS=[{x:-580,z:-420,size:260,height:130,profile:'headland'},{x:800,z:-900,size:HORNOYA_SIZE,height:HORNOYA_HEIGHT,profile:'hornoya'},{x:-850,z:420,size:MEASURED_ISLET_SIZE,height:MEASURED_ISLET_HEIGHT,profile:'measured-islet'}] as const;
@@ -22,8 +23,15 @@ export function bathymetryData(reef=new LighthouseReef()) {
 
 /** Height and world-space gradient of the same Float32 triangles uploaded to WebGL. */
 export function sampleBathymetry(data:Float32Array,x:number,z:number) {
+  return sampleCoastalDepth(data,x,z,null);
+}
+
+/** Detailed islands replace their coarse channel; the other islands still compete by height. */
+export function sampleCoastalDepth(data:Float32Array,x:number,z:number,detail:IslandDepth|null) {
   let height=-60,dx=0,dz=0;
   for(const [channel,coast]of BATHY_COASTS.entries()) {
+    const replacement=detail?.channel===channel?detail.sample(x,z):null;
+    if(replacement){if(replacement.height>height){height=replacement.height;dx=replacement.dx;dz=replacement.dz;}continue;}
     const u=(x-coast.x)/(coast.size*2.4)+0.5,v=(z-coast.z)/((coast.sizeZ??coast.size)*2.4)+0.5;
     if(u<0||u>1||v<0||v>1)continue;
     const px=u*TERRAIN_SEGMENTS,pz=v*TERRAIN_SEGMENTS,ix=Math.min(Math.floor(px),TERRAIN_SEGMENTS-1),iz=Math.min(Math.floor(pz),TERRAIN_SEGMENTS-1),fx=px-ix,fz=pz-iz;
