@@ -224,10 +224,10 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
   const app=await page.evaluate(()=> {
     const a=(window as any).__OCEANFPV__,expected=a.world.launchPose(a.getState().time);
     document.querySelector<HTMLButtonElement>('#start')!.click();
-    const local=a.world.ship.worldToLocal(a.flight.position.clone());
+    const local=a.world.cruise.root.worldToLocal(a.flight.position.clone());
     return {local:local.toArray(),positionError:a.flight.position.distanceTo(expected.position),velocityError:a.flight.velocity.distanceTo(expected.velocity)};
   });
-  expect(Math.abs(app.local[0])).toBeLessThan(1);expect(Math.abs(app.local[2]-38)).toBeLessThan(2);
+  expect(Math.abs(app.local[0])).toBeLessThan(1e-6);expect(Math.abs(app.local[2]+112)).toBeLessThan(1e-6);
   expect(app.positionError).toBeLessThan(1e-6);expect(app.velocityError).toBeLessThan(1e-6);
   await page.keyboard.press('Escape');await expect(page.locator('#pause-dialog')).toBeVisible();
   const stopped=await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};});await page.waitForTimeout(300);
@@ -248,7 +248,7 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
     w.ocean.advance(0.05,'breeze');w.advanceVessels(0.05);
     w.ocean.advance(0.05,'swell');w.advanceVessels(0.05);
     const presetCleared=w.launchVelocity===null&&w.launchSample.time===0.05;
-    return {error,held,refreshes,rewindCleared,presetCleared,floatError:Math.abs(w.ship.position.y-w.ocean.heightAt(w.ship.position.x,w.ship.position.z)*0.45)};
+    return {error,held,refreshes,rewindCleared,presetCleared,floatError:Math.abs(w.cruise.root.position.y-w.ocean.heightAt(w.cruise.root.position.x,w.cruise.root.position.z)*0.2)};
   });
   expect(motion.error).toBeLessThan(1e-6);expect(motion.held).toBeGreaterThan(10);expect(motion.refreshes).toBeGreaterThanOrEqual(5);
   expect(motion.rewindCleared).toBe(true);expect(motion.presetCleared).toBe(true);expect(motion.floatError).toBeLessThan(1e-6);

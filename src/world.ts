@@ -23,6 +23,8 @@ import {CliffGround} from './cliff-ground';
 export type LightPreset = 'golden' | 'day' | 'blue';
 type Collider = { min: T.Vector3; max: T.Vector3 };
 type NaturalObstacle={x:number;z:number;y:number;radius:number;height:number};
+// 1.2 m above the actual foredeck triangles, clear of winches and cabins.
+const CRUISE_LAUNCH=new T.Vector3(0,11.835878,-112);
 
 function canvasTexture(paint: (ctx: CanvasRenderingContext2D) => void, size = 512) {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
@@ -408,17 +410,15 @@ export class World {
     // A wave snapshot spans several physics ticks. Keep its full-interval deck
     // velocity between snapshots instead of dividing the jump by one tick.
     if(this.ocean.simulation.time===time&&time!==this.launchSample?.time) {
-      const position=this.ship.localToWorld(new T.Vector3(0,5.4,38)),dt=time-(this.launchSample?.time??time);
+      const position=this.cruise.root.localToWorld(CRUISE_LAUNCH.clone()),dt=time-(this.launchSample?.time??time);
       this.launchVelocity=this.launchSample&&dt>0&&dt<0.2?position.clone().sub(this.launchSample.position).divideScalar(dt):null;
       this.launchSample={time,position};
     }
     this.vesselTime=time;this.vesselSeaScale=scale;
   }
   launchPose(time:number) {
-    this.advanceVessels(time);const pose=vesselPose('explorer',time);
-    const before=vesselPose('explorer',time-0.01),after=vesselPose('explorer',time+0.01),turn=Math.atan2(Math.sin(after.heading-before.heading),Math.cos(after.heading-before.heading))/0.02;
-    const offset=new T.Vector3(0,5.4,38).applyQuaternion(this.ship.quaternion);
-    return {position:this.ship.localToWorld(new T.Vector3(0,5.4,38)),velocity:this.launchVelocity?.clone()??new T.Vector3(pose.vx+turn*offset.z,0,pose.vz-turn*offset.x),heading:pose.heading};
+    this.advanceVessels(time);const pose=vesselPose('cruise',time);
+    return {position:this.cruise.root.localToWorld(CRUISE_LAUNCH.clone()),velocity:this.launchVelocity?.clone()??new T.Vector3(pose.vx,0,pose.vz),heading:pose.heading};
   }
   collision(p:T.Vector3,_time:number,_state:SeaState,previous=p):string|null {
     if(this.cliff?.surface.contacts(p,previous))return '海岸の崖に接触しました';
