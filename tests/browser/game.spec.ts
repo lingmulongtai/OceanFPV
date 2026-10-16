@@ -455,10 +455,21 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
 });
 test('lighting and sea settings persist across a full reload', async ({page})=> {
   test.setTimeout(300000);
-  await ready(page);await page.locator('#open-settings').click();await page.locator('#light').selectOption('day');await page.locator('#sea').selectOption('calm');
-  await page.keyboard.press('Escape');await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
+  await ready(page);
+  // This test covers persistence; ordinary pointer interactions are checked in
+  // the scene tests. Batch DOM events to avoid animation-frame actionability
+  // waits consuming the two full software-rendered initializations.
+  const chosen=await page.evaluate(()=> {
+    document.querySelector<HTMLButtonElement>('#open-settings')!.click();
+    for(const [id,value]of [['light','blue'],['sea','calm']]){const select=document.getElementById(id) as HTMLSelectElement;select.value=value;select.dispatchEvent(new Event('input',{bubbles:true}));}
+    const saved=JSON.parse(localStorage.getItem('oceanfpv:settings')!);
+    return {open:document.querySelector<HTMLDialogElement>('#settings-dialog')!.open,light:saved.light,sea:saved.sea};
+  });
+  expect(chosen).toEqual({open:true,light:'blue',sea:'calm'});
+  await page.keyboard.press('Escape');await expect(page.locator('#settings-dialog')).not.toBeVisible();
+  await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
-  expect(persisted).toEqual({light:'day',sea:'calm'});
+  expect(persisted).toEqual({light:'blue',sea:'calm'});
 });
 
 test('mobile help fits the viewport and closes with the keyboard', async ({page})=> {
