@@ -72,8 +72,9 @@ test('one expired rock response retries only that image and reaches full detail'
   const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {failures:w.surfaceFailures,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),note:document.querySelector('#start-note')!.textContent};});
   console.log(`Recovered surface delivery: ${JSON.stringify({state,requests})}`);
   expect(state.detail).toEqual([true,true,true]);expect(state.note).not.toContain('標準素材');
-  expect(state.failures).toEqual([expect.objectContaining({asset:'seaside_rock',map:'rough',aborted:true,abortReason:'TimeoutError',attempt:1,recovered:true})]);
-  expect(['fetch','body']).toContain(state.failures[0].phase);
+  const controlled=state.failures.filter((failure:any)=>failure.asset==='seaside_rock');
+  expect(controlled).toEqual([expect.objectContaining({asset:'seaside_rock',map:'rough',aborted:true,abortReason:'TimeoutError',attempt:1,recovered:true})]);
+  expect(state.failures.filter((failure:any)=>!failure.recovered)).toEqual([]);expect(['fetch','body']).toContain(controlled[0].phase);
   expect(requests.filter(map=>map==='diff').length).toBe(1);expect(requests.filter(map=>map==='nor_gl').length).toBe(1);expect(requests.filter(map=>map==='rough').length).toBe(2);expect(errors).toEqual([]);
 });
 
@@ -168,6 +169,25 @@ test('aft lounge windows reveal real room depth and retain closed flight contact
     const data=w.cruise.teak.aoMap.image.data,chartFloor=data.slice(256*256*4,320*256*4);return {samples,aoHeight:w.cruise.teak.aoMap.image.height,minimum:Math.min(...chartFloor.filter((_:number,i:number)=>i%4===0))};
   });
   expect(result.aoHeight).toBe(384);expect(result.minimum).toBeLessThan(100);expect(result.samples).toHaveLength(8);for(const sample of result.samples){expect(sample.coplanar).toBe(1);expect(sample.depth).toBeGreaterThan(6);expect(sample.depth).toBeLessThan(6.1);expect(sample.zError).toBeLessThan(.00002);expect(sample.contact).toContain('構造物');expect(sample.clear).toBeNull();}
+});
+
+test('bow lounge windows expose supported room depth and preserve closed flight contacts',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),root=w.cruise.root;
+    const glass=root.children.filter((m:any)=>m.material===w.cruise.glazing),opaque=root.children.filter((m:any)=>m.isMesh&&m.material!==w.cruise.glazing&&!m.material.transparent),samples=[];
+    for(let deck=1;deck<8;deck++) {
+      const y=10.6+deck*2.85,length=deck<5?196:178-(deck-5)*18,z=deck<5?3:9+(deck-5)*3,floor=y-1.27;
+      const origin=root.localToWorld(new T.Vector3(4,y+.02,z-length/2-.7)),direction=new T.Vector3(0,0,1).transformDirection(root.matrixWorld),ray=new T.Raycaster(origin,direction),pane=ray.intersectObjects(glass)[0],wall=ray.intersectObjects(opaque)[0];
+      if(!pane||!wall)throw new Error(`Missing bow lounge ${deck}`);
+      const local=root.worldToLocal(pane.point.clone()),air=root.localToWorld(local.clone().add(new T.Vector3(0,0,-.5))),inside=root.localToWorld(new T.Vector3(4,y+.02,z-length/2+2));
+      const down=new T.Vector3(0,-1,0).transformDirection(root.matrixWorld),up=down.clone().negate(),bottom=new T.Raycaster(inside,down).intersectObjects(opaque)[0],top=new T.Raycaster(inside,up).intersectObjects(opaque)[0];if(!bottom||!top)throw new Error('Missing bow floor or ceiling');
+      samples.push({depth:pane.point.distanceTo(wall.point),zError:Math.abs(local.z-z+length/2+.07),contact:w.collision(pane.point,a.getState().time,'breeze'),air:w.collision(air,a.getState().time,'breeze'),floorError:Math.abs(root.worldToLocal(bottom.point.clone()).y-floor-.06),ceilingError:Math.abs(root.worldToLocal(top.point.clone()).y-floor-2.55)});
+    }
+    const origin=root.localToWorld(new T.Vector3(4,10.62,-99)),direction=new T.Vector3(0,0,1).transformDirection(root.matrixWorld),plinth=new T.Raycaster(origin,direction).intersectObjects(root.children)[0];
+    if(!plinth)throw new Error('Missing lower bow wall');return {samples,opaquePlinth:plinth.object.material===w.cruise.paint[0],plinthContact:w.collision(plinth.point,a.getState().time,'breeze')};
+  });
+  expect(result.opaquePlinth).toBe(true);expect(result.plinthContact).toContain('客船');expect(result.samples).toHaveLength(7);for(const sample of result.samples){expect(sample.depth).toBeGreaterThan(6);expect(sample.zError).toBeLessThan(.00002);expect(sample.contact).toContain('客船');expect(sample.air).toBeNull();expect(sample.floorError).toBeLessThan(.00002);expect(sample.ceilingError).toBeLessThan(.00002);}
 });
 
 test('stern terrace walking surfaces and supports have matching flight contacts',async({page})=> {

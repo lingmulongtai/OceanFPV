@@ -8,7 +8,7 @@ import {buildTenderModel,TENDER_MOUNTS} from './tender';
 import {buildSternTerraces} from './stern-terraces';
 import {cruiseHullGeometry,cruiseHullSidePose} from './cruise-hull';
 import {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
-import {buildAftLounge,buildAftLoungeFurniture} from './aft-lounge';
+import {buildAftLounge,buildAftLoungeFurniture,buildBowLounge,buildBowLoungeFurniture} from './aft-lounge';
 
 export type VesselBox={min:T.Vector3;max:T.Vector3;radius?:number};
 export {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
@@ -41,12 +41,12 @@ export function buildCruiseShip() {
   tenderUpholstery.name='Tender upholstery';
   const boxes:VesselBox[]=[],buckets=new Map<T.Material,T.BufferGeometry[]>();
   const furnitureMaterials=new Set<T.Material>([linen,...quilts]),coarseFurniture=new Map<T.Material,T.BufferGeometry[]>();
-  const blockers:T.BufferGeometry[]=[],aftBlockers:T.BufferGeometry[]=[];let capture=false,aoFloor=0,aoCabin=0,aoSide=1;
+  const blockers:T.BufferGeometry[]=[],aftBlockers:T.BufferGeometry[]=[];let capture=false,aoFloor=0,aoCabin=0,aoSide=1,aoEnd=1;
   const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1),surface?:RoomSurface)=> {
     g.applyMatrix4(new T.Matrix4().compose(new T.Vector3(...p),new T.Quaternion().setFromEuler(rotation),scale));
     if(m===teak){const position=g.attributes.position,uv=g.attributes.uv;for(let i=0;i<position.count;i++)uv.setXY(i,position.getX(i)/1.8,position.getZ(i)/1.8);}
     if(m===white){const projected=metricPaintGeometry(g);g.dispose();g=projected;}
-    if(m===white||m===teak)roomOcclusionUV(g,aoFloor,aoCabin,aoSide,surface);
+    if(m===white||m===teak)roomOcclusionUV(g,aoFloor,aoCabin,aoSide,surface,aoEnd);
     if(capture&&m!==glass&&m!==cabinGlass&&m!==balconyGlass)blockers.push(g.clone());
     if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(g.index?g.toNonIndexed():g);
   };
@@ -83,13 +83,12 @@ export function buildCruiseShip() {
     if(deck===0)deckPlate(length+3,32.6,0.28,floor-0.14,z,8);
     // Recess the visual core while preserving the original closed flight envelope.
     // The back wall occupies the final 12 cm; leave 4 cm behind it to avoid coplanar caps.
-    add(deckGeometry(length-6.16,15.2,2.56),[0,y,z-3.08],white);
+    add(deckGeometry(length-(deck?12.32:6.16),15.2,2.56),[0,y,z-(deck?0:3.08)],white);
     boxes.push({min:new T.Vector3(-7.6,y-1.28,z-length/2),max:new T.Vector3(7.6,y+1.28,z+length/2),radius:6});
     // Keep the closed external glazing envelope solid to drone contacts.
     boxes.at(-1)!.min.x=-13.75;boxes.at(-1)!.max.x=13.75;
     deckPlate(length+3,32.6,0.28,y+1.44,z,8);
     capture=false;
-    add(windowRibbon(length+0.14,27.64,1.72,6.07,true,'bow'),[0,y+0.02,z],glass);
     const lounge=buildAftLounge(length);aoFloor=floor;aoCabin=lounge.front+z;
     for(const part of lounge.parts){if(deck===0&&part.finish!=='glass')aftBlockers.push(part.geometry.clone());add(part.geometry,[0,floor,z],part.finish==='glass'?cabinGlass:part.finish==='teak'?teak:white,new T.Euler(),new T.Vector3(1,1,1),part.surface);}
     for(const part of buildAftLoungeFurniture(length).parts){
@@ -97,6 +96,18 @@ export function buildCruiseShip() {
       const material=part.finish==='fabric'?quilts[deck%quilts.length]:part.finish==='teak'?teak:chrome;add(part.geometry,[0,floor,z],material);
       if(part.coarse){part.coarse.translate(0,floor,z);if(!coarseFurniture.has(material))coarseFurniture.set(material,[]);coarseFurniture.get(material)!.push(part.coarse.toNonIndexed());part.coarse.dispose();}
     }
+    if(deck){
+      const bow=buildBowLounge(length);aoCabin=bow.front+z;aoEnd=-1;
+      for(const part of bow.parts)add(part.geometry,[0,floor,z],part.finish==='glass'?cabinGlass:part.finish==='teak'?teak:white,new T.Euler(),new T.Vector3(1,1,1),part.surface);
+      for(const part of buildBowLoungeFurniture(length).parts){
+        const material=part.finish==='fabric'?quilts[deck%quilts.length]:part.finish==='teak'?teak:chrome;add(part.geometry,[0,floor,z],material);
+        if(part.coarse){part.coarse.translate(0,floor,z);if(!coarseFurniture.has(material))coarseFurniture.set(material,[]);coarseFurniture.get(material)!.push(part.coarse.toNonIndexed());part.coarse.dispose();}
+      }
+    }else{
+      // The sheer hull rises through this level; keep its bow-facing wall opaque.
+      add(windowRibbon(length+.14,27.64,1.72,6.07,true,'bow'),[0,y+.02,z],white);
+    }
+    aoEnd=1;
     for(const p of deckOutline(length+0.2,27.7,6.1).getPoints(4)) {
       if(Math.abs(p.y)>length/2-7)rod([p.x,y-0.85,z+p.y],[p.x,y+0.9,z+p.y],0.045,white);
     }

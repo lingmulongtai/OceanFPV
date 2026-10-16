@@ -44,3 +44,15 @@ export function buildAftLoungeFurniture(length:number) {
   }
   return {parts,feet};
 }
+
+/** Rotate the complete room instead of reflecting vertices and reversing winding. */
+export function buildBowLounge(length:number) {
+  const room=buildAftLounge(length);room.parts.forEach(part=>part.geometry.rotateY(Math.PI));
+  return {...room,front:-room.front,edge:room.edge.map(point=>point.multiplyScalar(-1))};
+}
+
+export function buildBowLoungeFurniture(length:number) {
+  const furniture=buildAftLoungeFurniture(length);
+  furniture.parts.forEach(part=>{part.geometry.rotateY(Math.PI);part.coarse?.rotateY(Math.PI);});
+  furniture.feet.forEach(point=>point.applyAxisAngle(new T.Vector3(0,1,0),Math.PI));return furniture;
+}
