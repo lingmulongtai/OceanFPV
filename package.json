@@ -9,7 +9,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
-    "import:islet": "node --import tsx scripts/import-measured-islet.ts"
+    "import:islet": "node --import tsx scripts/import-measured-islet.ts",
+    "import:northeast": "node --import tsx scripts/import-hornoya.ts"
   },
   "dependencies": {
     "three": "0.186.1",
