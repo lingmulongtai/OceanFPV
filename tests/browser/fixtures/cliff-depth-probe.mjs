@@ -5,6 +5,7 @@ import {CliffGround} from '../../../src/cliff-ground.ts';
 import {COASTS} from '../../../src/bathymetry.ts';
 import {terrainHeight,TERRAIN_SEGMENTS} from '../../../src/terrain.ts';
 import {nearshoreEnvelope} from '../../../src/nearshore.ts';
+import {waterOpticsCode} from '../../../src/water-optics.ts';
 
 const renderer=new T.WebGLRenderer();renderer.setSize(1,1);document.body.append(renderer.domElement);
 if(!renderer.getContext().getExtension('EXT_color_buffer_float'))throw new Error('Float target unavailable');
@@ -22,4 +23,38 @@ for(const x of [-395,-394.2,-393.7,-392.4,-391.3,-390.2,-389.1,-388.3,-387.2,-38
  heightError=Math.max(heightError,h);gradientError=Math.max(gradientError,g);envelopeError=Math.max(envelopeError,e);samples.push({x:px,z:pz,h,g,e});
 }
 const gl=renderer.getContext(),ext=gl.getExtension('WEBGL_debug_renderer_info');
-window.__CLIFF_DEPTH_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',samples,heightError,gradientError,envelopeError};
+// Exercise the production fragment body with controlled foam inputs, not a copy of its depth loop.
+renderer.outputColorSpace=T.LinearSRGBColorSpace;renderer.toneMapping=T.NoToneMapping;
+Object.assign(uniforms,{probeHeight:{value:0},probeOffset:{value:new T.Vector2()},probeNormal:{value:new T.Vector3(0,1,0)}});
+const opticalMaterial=new T.ShaderMaterial({uniforms,
+ vertexShader:'varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;uniform vec2 probePoint,probeOffset;uniform float probeHeight;void main(){worldPosition=vec3(probePoint.x,probeHeight,probePoint.y);waveCoordinate=probePoint+probeOffset;mirrorCoord=vec4(0,0,0,1);gl_Position=vec4(position.xy,0,1);}',
+ fragmentShader:ocean.material.fragmentShader.replace('void main() {','uniform vec3 probeNormal;\nvoid main() {')
+  .replace('float shoreFoam=0.0;','float shoreFoam=0.0;n=0.5;normal=probeNormal;shoreDetail=1.0;')
+  .replace('gl_FragColor=vec4(color,1.0);','gl_FragColor=vec4(depth,shoreFoam,bottomHeight,1.0);')});
+scene.children[0].material=opticalMaterial;
+const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
+const opticalSamples=[];let opticalMaximum=0;
+for(const point of samples)for(const waterHeight of [0,.9])for(const offset of [[0,0],[2.2,-.6]])for(const normal of [[0,1,0],[.8,.6,0]]) {
+ const x=point.x,z=point.z,bottom=ocean.bottomAt(x,z).height,depth=Math.max(waterHeight-bottom,0);
+ uniforms.probePoint.value.set(x,z);uniforms.probeHeight.value=waterHeight;uniforms.probeOffset.value.set(...offset);uniforms.probeNormal.value.set(...normal);
+ renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
+ const wash=.65+.35*Math.sin(uniforms.time.value*1.2+bottom*1.8),shore=(1-smooth(.4,3.2,depth))*wash*smooth(.23,.65,.5);
+ const expected=[depth,Math.max(shore,smooth(.3,.7,1-normal[1])*(1-smooth(.5,4,Math.max(-bottom,0)))),bottom];
+ const error=Math.max(...expected.map((v,i)=>Math.abs(v-pixel[i])));opticalMaximum=Math.max(opticalMaximum,error);
+ opticalSamples.push({x,z,waterHeight,offset,normal,actual:[...pixel],expected,error});
+}
+const bedColour=[.24,.18,.1],bedTexture=new T.DataTexture(new Float32Array([...bedColour,1]),1,1,T.RGBAFormat,T.FloatType);bedTexture.needsUpdate=true;
+const radianceUniforms={seabedMap:{value:bedTexture},hasSeabedMap:{value:false},probeDepth:{value:0},probeBottom:{value:new T.Vector3()},probeView:{value:new T.Vector3()},probeSun:{value:new T.Vector3()}};
+const radianceMaterial=new T.ShaderMaterial({uniforms:radianceUniforms,vertexShader:'void main(){gl_Position=vec4(position.xy,0,1);}',
+ fragmentShader:`${waterOpticsCode}\nuniform float probeDepth;uniform vec3 probeBottom,probeView,probeSun;void main(){gl_FragColor=vec4(coastalWaterRadiance(vec2(137.13,211.29),probeBottom,probeDepth,probeView,probeSun,vec3(1.0)),1.0);}`});
+scene.children[0].material=radianceMaterial;const radianceSamples=[];let radianceMaximum=0;
+for(const depth of [0,.25,1,3,5,7.5,8,9,60])for(const view of [[0,1,0],[.8,.6,0],[1,.01,0]])for(const sunlight of [[0,.8,.6],[.98,.156,.11]])for(const gradient of [[0,0],[.4,-.25],[-.8,.3]])for(const photographed of [false,true]) {
+ const v=new T.Vector3(...view).normalize(),sun=new T.Vector3(...sunlight).normalize(),normal=new T.Vector3(-gradient[0],1,-gradient[1]).normalize();
+ radianceUniforms.hasSeabedMap.value=photographed;radianceUniforms.probeDepth.value=depth;radianceUniforms.probeBottom.value.set(-depth,...gradient);radianceUniforms.probeView.value.copy(v);radianceUniforms.probeSun.value.copy(sun);
+ renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
+ const path=depth*(1/Math.sqrt(1-(1-v.y*v.y)/1.333**2)+1/Math.sqrt(1-(1-sun.y*sun.y)/1.333**2)),confidence=1-smooth(4,8,depth);
+ const deep=[.006,.045,.082],albedo=photographed?bedColour:[.12,.13,.12],light=.18+.42*Math.max(0,normal.dot(sun));
+ const expected=deep.map((scatter,i)=>{const transmission=Math.exp(-[.45,.12,.07][i]*path)*confidence;return scatter*(1-transmission)+albedo[i]*light*transmission;});
+ const error=Math.max(...expected.map((value,i)=>Math.abs(value-pixel[i])));radianceMaximum=Math.max(radianceMaximum,error);radianceSamples.push({depth,view,sunlight,gradient,photographed,actual:[...pixel],expected,error});
+}
+window.__CLIFF_DEPTH_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',samples,heightError,gradientError,envelopeError,opticalSamples,opticalMaximum,radianceSamples,radianceMaximum};

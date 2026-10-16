@@ -5,6 +5,7 @@ import { SpectralSea } from './spectrum';
 import { bathymetryData, sampleBathymetry, BATHY_SIZE, BATHY_COASTS } from './bathymetry';
 import {LighthouseReef} from './lighthouse-reef';
 import { nearshoreCode, nearshoreEnvelope } from './nearshore';
+import {waterOpticsCode} from './water-optics';
 import { WAKE_SAMPLES, WAKE_STEP } from './navigation';
 import { WaveMipmaps } from './wave-mips';
 import {type CliffSurface} from './cliff';
@@ -110,7 +111,7 @@ export class Ocean {
     this.material=this.mesh.material as T.ShaderMaterial;this.material.lights=false;this.material.side=T.DoubleSide;
     Object.assign(this.material.uniforms,{
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
-      dusk:{value:0.4},foamEnabled:{value:true},vessels:{value:Array.from({length:3},()=>new T.Vector4())},headings:{value:[0,0,0]},vesselWidths:{value:[4.4,17,4.5]},vesselSpeeds:{value:[0,0,0]},
+      dusk:{value:0.4},foamEnabled:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:3},()=>new T.Vector4())},headings:{value:[0,0,0]},vesselWidths:{value:[4.4,17,4.5]},vesselSpeeds:{value:[0,0,0]},
       chopScale:{value:this.simulation.horizontalScale},
       slopeVariance:{value:new T.Vector3()},
       heightVariance:{value:new T.Vector3()},
@@ -141,6 +142,7 @@ export class Ocean {
         gl_Position=projectionMatrix*viewMatrix*world;
       }`;
     this.material.fragmentShader=`${spectralCode}
+      ${waterOpticsCode}
       uniform sampler2D mirrorSampler;
       uniform vec3 eye,sunDirection,sunColor;uniform float time,dusk,reflectionSize;uniform bool foamEnabled;
       uniform vec4 vessels[3];uniform float headings[3],vesselWidths[3],vesselSpeeds[3];
@@ -227,19 +229,15 @@ export class Ocean {
         float mirrorFootprint=max(length(dFdx(reflectionUV)),length(dFdy(reflectionUV)))*reflectionSize;
         float reflectionLOD=log2(max(1.0,max(mirrorFootprint,sqrt(unresolvedVariance)*distortion*reflectionSize)));
         if(hullCutout)discard;
-        vec3 reflected=textureLod(mirrorSampler,clamp(reflectionUV,0.001,0.999),reflectionLOD).rgb;float shallow=0.0,shoreFoam=0.0;
-        for(int i=0;i<4;i++) {
-          vec2 uv=(p-islands[i].xy)/(islands[i].zw*2.4)+0.5;float bottomHeight=-60.0;
-          if(all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1))))bottomHeight=bottomAt(uv)[i];
-          float depth=max(worldPosition.y-bottomHeight,0.0);
-          shallow=max(shallow,pow(1.0-smoothstep(0.0,8.0,depth),2.0));
-          float wash=0.65+0.35*sin(time*1.2+bottomHeight*1.8);
-          shoreFoam=max(shoreFoam,(1.0-smoothstep(0.4,3.2,depth))*wash*smoothstep(0.23,0.65,n));
-        }
-        shoreFoam=max(shoreFoam,smoothstep(0.3,0.7,1.0-normal.y)*(1.0-smoothstep(0.5,4.0,max(-coastalBottom(waveCoordinate).x,0.0))));
+        vec3 reflected=textureLod(mirrorSampler,clamp(reflectionUV,0.001,0.999),reflectionLOD).rgb;float shoreFoam=0.0;
+        // Optical depth follows the displaced fragment and includes the detailed cliff shelf.
+        vec3 bottom=coastalBottom(p);float bottomHeight=bottom.x,depth=max(worldPosition.y-bottomHeight,0.0);
+        float wash=0.65+0.35*sin(time*1.2+bottomHeight*1.8);
+        shoreFoam=(1.0-smoothstep(0.4,3.2,depth))*wash*smoothstep(0.23,0.65,n);
+        shoreFoam=max(shoreFoam,smoothstep(0.3,0.7,1.0-normal.y)*(1.0-smoothstep(0.5,4.0,max(-bottomHeight,0.0))));
         shoreFoam*=shoreDetail;
-        vec3 absorption=mix(vec3(0.006,0.045,0.082),vec3(0.016,0.17,0.145),shallow);
-        float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);absorption+=vec3(0.018,0.11,0.078)*crestLight;
+        vec3 waterRadiance=coastalWaterRadiance(p,bottom,depth,view,sunDirection,sunColor);
+        float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);waterRadiance+=vec3(0.018,0.11,0.078)*crestLight;
         vec3 halfV=normalize(view+sunDirection);
         float a2=pow(0.12,4.0)+min(0.2,unresolvedVariance+0.15*dot(normalFootprint,normalFootprint));
         float nh=max(dot(normal,halfV),0.0),nl=max(dot(normal,sunDirection),0.001),den=nh*nh*(a2-1.0)+1.0;
@@ -247,7 +245,7 @@ export class Ocean {
         vec3 glint=sunColor*distribution*masking*fresnel*0.19/max(4.0*nv,0.1);
         float breaking=smoothstep(0.12,0.8,displacementAt(waveCoordinate).w)*smoothstep(0.42,0.76,n),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
         vec3 foamColor=mix(vec3(0.78,0.86,0.84),vec3(0.82,0.78,0.66),dusk)*(0.76+filteredGrain*0.3);
-        vec3 color=mix(absorption*(1.0-fresnel)+reflected*fresnel+min(glint,vec3(9.0)),foamColor,foam);
+        vec3 color=mix(waterRadiance*(1.0-fresnel)+reflected*fresnel+min(glint,vec3(9.0)),foamColor,foam);
         float haze=1.0-exp(-distanceToEye*0.0001);color=mix(color,mix(vec3(0.45,0.62,0.72),vec3(0.62,0.45,0.32),dusk),haze);
         gl_FragColor=vec4(color,1.0);
         #include <tonemapping_fragment>
