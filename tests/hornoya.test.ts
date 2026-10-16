@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as T from 'three';
 import {hornoyaHeight,HORNOYA_SIZE,HORNOYA_HEIGHT} from '../src/hornoya';
 import {terrainHeight,terrainSurfaceHeight,terrainSlope} from '../src/terrain';
+import {COASTS,bathymetryData,sampleBathymetry} from '../src/bathymetry';
 
 test('Hornoya runtime preserves source witnesses, extent and submerged boundaries',()=> {
   assert.equal(HORNOYA_SIZE,500);assert.equal(HORNOYA_HEIGHT,67);
@@ -24,4 +25,19 @@ test('Hornoya contact height and slope match rays against both mesh triangle hal
     assert.ok(Math.abs(terrainSlope(x,z,500,67,'hornoya')-Math.acos(Math.min(1,hit.face!.normal.y)))<.000002);count++;
   }
   assert.equal(count,12);geometry.dispose();material.dispose();
+});
+
+test('northeastern coast and uploaded green depth channel share the measured Hornoya grid',()=> {
+  const coast=COASTS[1],data=bathymetryData();assert.equal(coast.profile,'hornoya');assert.equal(coast.x,800);assert.equal(coast.z,-900);assert.equal(coast.size*2.4,1200);
+  for(let z=0;z<193;z++)for(let x=0;x<193;x++) {
+    const px=-600+x*6.25,pz=-600+z*6.25,height=hornoyaHeight(px,pz);assert.equal(data[(z*193+x)*4+1],Math.fround(height));
+    if(height>0)assert.ok(Math.hypot(coast.x+px,coast.z+pz)+Math.SQRT2*6.25<1900,'all positive terrain cells must be reachable inside the flight boundary');
+  }
+  for(const [ix,iz]of [[96,64],[80,64],[80,80],[96,96],[100,120],[62,106]])for(const [u,v]of [[.2,.3],[.7,.8]]) {
+    const x=-600+(ix+u)*6.25,z=-600+(iz+v)*6.25,sample=sampleBathymetry(data,coast.x+x,coast.z+z);
+    assert.ok(Math.abs(sample.height-terrainSurfaceHeight(x,z,500,67,'hornoya'))<.000005);
+    const e=.0001;
+    assert.ok(Math.abs(sample.dx-(terrainSurfaceHeight(x+e,z,500,67,'hornoya')-terrainSurfaceHeight(x-e,z,500,67,'hornoya'))/(2*e))<.000001);
+    assert.ok(Math.abs(sample.dz-(terrainSurfaceHeight(x,z+e,500,67,'hornoya')-terrainSurfaceHeight(x,z-e,500,67,'hornoya'))/(2*e))<.000001);
+  }
 });
