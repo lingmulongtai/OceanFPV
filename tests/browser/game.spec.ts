@@ -432,20 +432,22 @@ test('race registers actual ordered gate crossing and saves a completed run', as
     const waiting={time:app.getState().time,flightTime:app.getState().flightTime,raceTime:app.race.elapsed,next:app.race.next};
     for(let index=0;index<18;index++) {
       const g=app.world.gateMeshes[index%6];
-      // Use the mesh orientation to put flight one step before the real plane.
+      // Use the mesh orientation to put flight just before the real plane.
       const normal=app.flight.position.clone().set(0,0,1).applyQuaternion(g.quaternion);
-      const approach=()=>{app.flight.position.copy(g.position).addScaledVector(normal,-0.08);app.flight.velocity.copy(normal).multiplyScalar(24);app.flight.orientation.identity();};
+      // A catch-up frame must not carry this unattended approach into the ship after crossing.
+      const approach=()=>{app.flight.position.copy(g.position).addScaledVector(normal,-0.08);app.flight.velocity.copy(normal).multiplyScalar(2);app.flight.orientation.identity();};
       approach();let start=performance.now(),stallResumes=0;
       const progress=()=>app.race.laps.length*6+app.race.next;
       if(index===3)while(performance.now()-start<10100){/* Exercise real render-stall pause and UI recovery mid-race. */}
       // Let real animation/physics frames cross the plane without a protocol poll per frame.
       do {
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
-        if(progress()<index+1&&app.getState().paused) {
-          if(document.querySelector('#pause-title')!.textContent!=='描画が長時間止まりました'||++stallResumes>2)throw new Error('Gate crossing paused unexpectedly');
+        if(progress()<18&&app.getState().paused) {
+          const title=document.querySelector('#pause-title')!.textContent;
+          if(title!=='描画が長時間止まりました'||++stallResumes>2)throw new Error(`Gate ${index+1} paused: ${JSON.stringify({title,progress:progress(),position:app.flight.position.toArray(),crashed:app.flight.crashed,stallResumes})}`);
           // Keep the stall safeguard: resume through the same button as a player,
-          // then repeat this approach without changing race progress or physics.
-          document.querySelector<HTMLButtonElement>('#resume')!.click();approach();start=performance.now();
+          // then retry an uncrossed approach without changing race progress or physics.
+          document.querySelector<HTMLButtonElement>('#resume')!.click();if(progress()<index+1)approach();start=performance.now();
         }
       }
       while(progress()<index+1&&performance.now()-start<20000);
