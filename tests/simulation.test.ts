@@ -246,6 +246,10 @@ test('flight area follows the sailed corridor without cutting off the islands',(
   assert.equal(withinFlightArea(0,-3000,0),false);
 });
 
+test('race gates and their openings stay outside the straight liner corridor',()=> {
+  for(const gate of GATES)assert.ok(gate.position.x-gate.radius>25,'allow the hull, lifeboats and a clear flight opening');
+});
+
 test('vessel routes move continuously and the bow follows the travel direction',()=> {
   for(const kind of ['cruise','yacht'] as const)for(let t=0;t<800;t+=13) {
     const pose=vesselPose(kind,t),next=vesselPose(kind,t+0.001);

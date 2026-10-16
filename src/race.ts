@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-export const GATE_POSITIONS = [[16, 11, 28], [20, 12, -8], [9, 14, -48], [-19, 10, -27], [-20, 7, 15], [0, 7, 43]];
+export const GATE_POSITIONS = [[86, 11, 28], [90, 12, -8], [79, 14, -48], [51, 10, -27], [50, 7, 15], [70, 7, 43]];
 export const GATES = GATE_POSITIONS.map((p, i) => {
   const position = new Vector3(...p);
   const previous = new Vector3(...GATE_POSITIONS[(i + GATE_POSITIONS.length - 1) % GATE_POSITIONS.length]);
