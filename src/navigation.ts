@@ -5,7 +5,7 @@ export function vesselPose(kind:VesselKind,time:number) {
   const a=time*omega;
   let x:number,z:number,vx:number,vz:number;
   if(kind==='cruise') {x=0;z=220-4.2*time;vx=0;vz=-4.2;}
-  else {x=78+85*(1-Math.cos(a));z=75-100*Math.sin(a);vx=85*omega*Math.sin(a);vz=-100*omega*Math.cos(a);}
+  else {x=-500+45*(1-Math.cos(a));z=420-65*Math.sin(a);vx=45*omega*Math.sin(a);vz=-65*omega*Math.cos(a);}
   return {x,z,vx,vz,heading:Math.atan2(-vx,-vz),speed:Math.hypot(vx,vz)};
 }
 

@@ -56,3 +56,12 @@ test('complete vessel footprints stay in water around all island profiles',()=> 
     }
   }
 });
+
+test('small cruiser stays beside the southwest island and clear of the liner course',()=> {
+  const island=COASTS[2];
+  for(let time=0;time<240;time+=2) {
+    const pose=vesselPose('yacht',time);
+    assert.ok(Math.hypot(pose.x-island.x,pose.z-island.z)<460);
+    assert.ok(pose.x<-400);
+  }
+});
