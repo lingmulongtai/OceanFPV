@@ -1,5 +1,6 @@
 import {drainageCuts} from './drainage';
 import {measuredIsletHeight} from './measured-islet';
+import {hornoyaHeight} from './hornoya';
 
 function hash(x:number,z:number) {let h=Math.imul(x,374761393)+Math.imul(z,668265263);h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;}
 function noise(x:number,z:number) {
@@ -7,7 +8,7 @@ function noise(x:number,z:number) {
   return (hash(ix,iz)*(1-fx)+hash(ix+1,iz)*fx)*(1-fz)+(hash(ix,iz+1)*(1-fx)+hash(ix+1,iz+1)*fx)*fz;
 }
 export const TERRAIN_SEGMENTS=192;
-export type TerrainProfile='radial'|'headland'|'measured-islet';
+export type TerrainProfile='radial'|'headland'|'measured-islet'|'hornoya';
 function baseTerrainHeight(x:number,z:number,size:number,height:number,profile:TerrainProfile) {
   const coast=1+(noise(x*0.013+3,z*0.013-7)-0.5)*0.35;
   const r=Math.hypot(x,z*1.06)/size*coast;
@@ -41,6 +42,7 @@ function headlandDrainage(size:number,height:number) {
 }
 export function terrainHeight(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
   if(profile==='measured-islet')return measuredIsletHeight(x,z);
+  if(profile==='hornoya')return hornoyaHeight(x,z);
   const base=baseTerrainHeight(x,z,size,height,profile),extent=size*1.2;
   if(profile!=='headland'||base<=30||Math.abs(x)>extent||Math.abs(z)>extent)return base;
   const cuts=headlandDrainage(size,height),width=TERRAIN_SEGMENTS+1,step=extent*2/TERRAIN_SEGMENTS,gx=(x+extent)/step,gz=(z+extent)/step;
