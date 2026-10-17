@@ -30,17 +30,22 @@ export function buildPoolCabanas(floor:number) {
     box([1.1,.075,1.5],[10.95,.57,0],'teak');
     for(const x of [10.57,11.33])for(const z of [-.55,.55]){box([.045,.5325,.045],[x,.26625,z],'metal');foot(x,z);}
   }
-  const bounds=new T.Box3();for(const {solid}of parts)bounds.union(solid);
+  return {parts,feet,contains:createCabanaContacts(parts.map(part=>part.solid))};
+}
+
+/** The retained contact closure has no path back to construction geometries. */
+function createCabanaContacts(solids:T.Box3[]) {
+  const bounds=new T.Box3();for(const solid of solids)bounds.union(solid);
   const pathBounds=new T.Box3(),expanded=new T.Box3(),ray=new T.Ray(),hit=new T.Vector3();
-  return {parts,feet,contains:(position:T.Vector3,previous=position,padding=.2)=>{
+  return (position:T.Vector3,previous=position,padding=.2)=>{
     pathBounds.makeEmpty().expandByPoint(position).expandByPoint(previous);expanded.copy(bounds).expandByScalar(padding);
     if(!pathBounds.intersectsBox(expanded))return false;
     const distanceSquared=position.distanceToSquared(previous);ray.origin.copy(previous);ray.direction.copy(position).sub(previous).normalize();
-    for(const {solid}of parts) {
+    for(const solid of solids) {
       expanded.copy(solid).expandByScalar(padding);
       if(expanded.containsPoint(position)||expanded.containsPoint(previous))return true;
       if(distanceSquared&&ray.intersectBox(expanded,hit)&&hit.distanceToSquared(previous)<=distanceSquared)return true;
     }
     return false;
-  }};
+  };
 }
