@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {SpectralSea,WaveCascade} from '../src/spectrum';
+import {WaveCascade} from '../src/spectrum';
 
 test('packed spectral displacement agrees with an independent Fourier reconstruction of height',()=> {
   for(const n of [8,16])for(const direction of [0.7,-0.45]) {
@@ -27,8 +27,8 @@ test('packed spectral displacement agrees with an independent Fourier reconstruc
   }
 });
 
-test('independent swell direction crosses the wind sea while preserving its raw fields',()=> {
-  const sea=new SpectralSea(),legacyLong=new WaveCascade(128,433,173,0.85,36,433,1.8),explicitLong=new WaveCascade(128,433,173,0.85,36,433,1.8,0.7);
+test('legacy RMS profiles preserve their numeric defaults and crossing directions',()=> {
+  const swell=new WaveCascade(128,433,173,0.85,36,433,1.8,-.45),legacyLong=new WaveCascade(128,433,173,0.85,36,433,1.8),explicitLong=new WaveCascade(128,433,173,0.85,36,433,1.8,0.7);
   const wind=[new WaveCascade(128,97,519,0.34,4,36,1.3),new WaveCascade(128,23.3,831,0.085,0.45,4,0.85)];
   const direction=(c:WaveCascade)=> {
     let xx=0,xz=0,zz=0;
@@ -40,16 +40,15 @@ test('independent swell direction crosses the wind sea while preserving its raw 
     return Math.atan2(2*xz,xx-zz)/2;
   };
   for(const time of [0,6,120]) {
-    sea.update(time);legacyLong.update(time);explicitLong.update(time);wind.forEach(c=>c.update(time));
+    swell.update(time);legacyLong.update(time);explicitLong.update(time);wind.forEach(c=>c.update(time));
     for(const field of ['displacement','tangentX','tangentZ'] as const) {
       // Foam is stateful and may react to the shared lateral compression cap.
       const xyz=(c:WaveCascade)=>c[field].filter((_,i)=>i%4!==3);
       assert.deepEqual(xyz(legacyLong),xyz(explicitLong));
-      wind.forEach((c,i)=>assert.deepEqual(xyz(sea.cascades[i+1]),xyz(c)));
     }
-    const delta=Math.abs(direction(sea.cascades[0])-direction(sea.cascades[1])),crossing=Math.min(delta,Math.PI-delta);
+    const delta=Math.abs(direction(swell)-direction(wind[0])),crossing=Math.min(delta,Math.PI-delta);
     assert.ok(crossing>0.6,`Crossing direction at ${time}: ${crossing}`);
-    const ratio=sea.cascades[0].heightVariance/legacyLong.heightVariance;
+    const ratio=swell.heightVariance/legacyLong.heightVariance;
     assert.ok(ratio>0.75&&ratio<1.25,`Realized long-wave energy at ${time}: ${ratio}`);
   }
 });

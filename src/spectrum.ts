@@ -1,6 +1,7 @@
 /** Tessendorf spectral sea. CPU IFFT output is shared by rendering and contacts.
  * Unshifted frequency indexing; inverse transforms include 1/N² normalization.
  * See docs/OCEAN_RESEARCH.md and OceanLab's MIT spectrum compute reference. */
+import {createWaveSpectrum} from './wave-spectrum';
 type FFTPlan={swaps:Uint32Array;stages:{length:number;real:Float64Array;imaginary:Float64Array}[]};
 const fftPlans=new Map<number,FFTPlan>();
 function fftPlan(size:number) {
@@ -57,7 +58,7 @@ export class WaveCascade {
   compressionBound=0;
   slopeVariance=0;
 
-  constructor(readonly size: number, readonly length: number, seed: number, rms: number, minWave: number, maxWave: number, readonly chop=1.6,windDirection=0.7) {
+  constructor(readonly size: number, readonly length: number, seed: number, rms: number|((kx:number,kz:number)=>number), minWave: number, maxWave: number, readonly chop=1.6,windDirection=0.7) {
     const count=size*size;this.displacement=new Float32Array(count*4);this.tangentX=new Float32Array(count*4);this.tangentZ=new Float32Array(count*4);
     this.h0=new Float64Array(count*2);this.omega=new Float64Array(count);this.directionX=new Float64Array(count);this.directionZ=new Float64Array(count);
     this.fields=Array.from({length:2},()=>({real:new Float64Array(count),imaginary:new Float64Array(count)}));
@@ -71,11 +72,13 @@ export class WaveCascade {
       this.directionX[i]=directionK?dx/directionK*this.chop:0;this.directionZ[i]=directionK?dz/directionK*this.chop:0;
       this.omega[i]=Math.sqrt(9.81*k);
       const wavelength=k?2*Math.PI/k:Infinity,alignment=k?(kx*windX+kz*windZ)/k:0;
-      // Phillips wind spectrum, disjoint bands and Gaussian phases avoid stripes.
-      const density=wavelength>=minWave&&wavelength<=maxWave ? Math.exp(-1/Math.pow(k*windLength,2))*alignment*alignment*Math.exp(-k*k*0.025)/(k*k*k*k)*(alignment<0?0.15:1) : 0;
+      // Disjoint bands and Gaussian phases; numeric RMS profiles retain Phillips.
+      // Positive-time evolution and positive IFFT make h0(k) travel toward -k.
+      // Physical profiles describe travel directions and retain common PSD units.
+      const density=wavelength>=minWave&&wavelength<=maxWave ? typeof rms==='function'?rms(-kx,-kz)*(2*Math.PI/length)**2:Math.exp(-1/Math.pow(k*windLength,2))*alignment*alignment*Math.exp(-k*k*0.025)/(k*k*k*k)*(alignment<0?0.15:1) : 0;
       const amplitude=Math.sqrt(density/2);this.h0[i*2]=gaussian()*amplitude;this.h0[i*2+1]=gaussian()*amplitude;energy+=density;
     }
-    const factor=energy? rms*count/Math.sqrt(2*energy):0;
+    const factor=typeof rms==='function'?count/Math.SQRT2:energy?rms*count/Math.sqrt(2*energy):0;
     for(let i=0;i<this.h0.length;i++) this.h0[i]*=factor;
     this.update(0);
   }
@@ -135,7 +138,7 @@ export class WaveCascade {
 
 export type WaveBandScales=readonly [number,number,number];
 export class SpectralSea {
-  readonly cascades=[new WaveCascade(128,433,173,0.85,36,433,1.8,-0.45),new WaveCascade(128,97,519,0.34,4,36,1.3),new WaveCascade(128,23.3,831,0.085,0.45,4,0.85)];
+  readonly cascades=(()=>{const spectrum=createWaveSpectrum();return[new WaveCascade(128,433,173,spectrum,36,433,1.8),new WaveCascade(128,97,519,spectrum,4,36,1.3),new WaveCascade(128,23.3,831,spectrum,.45,4,.85)];})();
   time=0;
   private chopLimit=1;
   private initialized=false;

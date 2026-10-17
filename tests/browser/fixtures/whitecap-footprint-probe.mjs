@@ -1,7 +1,13 @@
 import*as T from'three';import{Ocean}from'../../../src/ocean.ts';import{whitecapReference}from'./whitecap-reference.mjs';
 const renderer=new T.WebGLRenderer();renderer.setSize(1,1);document.body.append(renderer.domElement);const gl=renderer.getContext();if(!gl.getExtension('EXT_color_buffer_float'))throw new Error('Float target required');
-const ocean=new Ocean(new T.Vector3(0,1,0));ocean.configureFiltering(false);ocean.advance(0,'swell');ocean.advance(120,'swell');
-for(let tick=1;tick<=30;tick++)ocean.advance(120+tick/30,'swell');ocean.refreshFields();
+// Stress the coverage filter with real spectral fields and uniform storm forcing;
+// sparse game presets must not silently remove active oracle cases.
+const ocean=new Ocean(new T.Vector3(0,1,0));ocean.configureFiltering(false);
+const forcing=[3,3,3],advance=time=>ocean.simulation.update(time,forcing);advance(0);advance(120);
+for(let tick=1;tick<=30;tick++)advance(120+tick/30);
+ocean.material.uniforms.time.value=121;ocean.material.uniforms.seaScale.value=3;
+ocean.material.uniforms.heightScales.value.fromArray(ocean.simulation.heightScales);ocean.material.uniforms.chopScales.value.fromArray(ocean.simulation.horizontalScales);ocean.material.uniforms.uniformBands.value=true;
+ocean.refreshFields();
 const agedTexels=ocean.simulation.cascades.reduce((sum,c)=>sum+c.displacement.reduce((n,value,i)=>n+(i%4===3&&value>.12&&c.tangentX[i]<value*.8?1:0),0),0);
 const oracle=whitecapReference(ocean.simulation,ocean.material.uniforms.time.value),source=ocean.material.fragmentShader,header=source.split('void main()')[0],start=source.indexOf('float breaking='),end=source.indexOf(',foam=',start);if(start<0||end<start)throw new Error('Missing production whitecap expression');
 const connected=source.slice(start+'float breaking='.length,end).replaceAll('waveCoordinate','probeQ').replace(/\bp\b/g,'probeP').replaceAll('foamQDx','probeQDx').replaceAll('foamQDy','probeQDy').replaceAll('foamPDx','probePDx').replaceAll('foamPDy','probePDy');
@@ -34,4 +40,4 @@ for(const quality of['balanced','high','ultra']){
   }
  }
 }
-const ext=gl.getExtension('WEBGL_debug_renderer_info');window.__WHITECAP_FOOTPRINT_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',floatLinearSupported,count:samples.length,agedTexels,quadratureError,denseError,manualError,unfilteredError,qualityStates,oracleConvergence:oracle.maximumConvergence,inactive:oracle.inactive,originalRMSE:Math.sqrt(originalSquared/averagedCases),filteredRMSE:Math.sqrt(filteredSquared/averagedCases),derivativesBeforeDiscard:source.indexOf('foamQDx=dFdx')<source.indexOf('if(hullCutout)discard'),error:gl.getError(),samples};
+const ext=gl.getExtension('WEBGL_debug_renderer_info');window.__WHITECAP_FOOTPRINT_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',forcing,floatLinearSupported,count:samples.length,agedTexels,quadratureError,denseError,manualError,unfilteredError,qualityStates,oracleConvergence:oracle.maximumConvergence,inactive:oracle.inactive,originalRMSE:Math.sqrt(originalSquared/averagedCases),filteredRMSE:Math.sqrt(filteredSquared/averagedCases),derivativesBeforeDiscard:source.indexOf('foamQDx=dFdx')<source.indexOf('if(hullCutout)discard'),error:gl.getError(),samples};

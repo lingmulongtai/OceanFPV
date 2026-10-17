@@ -1,6 +1,6 @@
 # Ocean realism references
 
-The [2026-10-17 web-ocean comparison](WEB_OCEAN_PORT.md) records the subsequent AgX and illuminated coastal-colour port, raw comparison images, verification and remaining foam work. It supersedes the historical ACES output description below.
+The [2026-10-17 web-ocean comparison](WEB_OCEAN_PORT.md) records subsequent lighting, reflection and wave-spectrum changes. The [shared JONSWAP/Donelan follow-up](SHARED_WAVE_SPECTRUM.md) supersedes the historical Phillips/per-band normalization below; AgX supersedes the historical ACES output description.
 
 Reviewed 2026-10-13. These are technical precedents, not claims of matching their complete renderer.
 

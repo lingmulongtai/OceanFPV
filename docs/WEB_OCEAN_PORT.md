@@ -9,6 +9,7 @@ Reviewed 2026-10-17 against [Noniv/web-ocean](https://github.com/Noniv/web-ocean
 - **Coastal chromaticity:** the reference's default water colour has RGB ratio 1:5:6. Directly copying its magnitude made this scene too bright. OceanFPV uses `(0.00933, 0.04665, 0.05598)` in linear space, approximately retaining the original albedo's photopic luminance. The result reduces the old blue bias without brightening the entire ocean. This is an authored scatter proxy, not measured volumetric water optics.
 - **Fresh/aged foam:** [separate fresh density and wind-aligned residual breakup](FRESH_FOAM.md), using spare tangent alpha and retaining the existing coverage integral.
 - **Local reflection statistics:** [filtered slope covariance and directional Gaussian sun glints](LOCAL_SLOPE_REFLECTION.md), with the distribution and masking expressed in the same resolved wave frame. The measured visible change is small.
+- **Shared wind and swell density:** [JONSWAP/Donelan spectrum across the existing three wave fields](SHARED_WAVE_SPECTRUM.md), replacing separate per-band RMS amplification while retaining shared rendering/contact geometry.
 
 The colour comparison below holds illumination, AgX, camera, FOV65, actual ten-second simulation state, vessel pose and all three displacement-field hashes identical within each pair. These are raw browser screenshots at ULTRA (1920×1280 drawing buffer), displayed by a 960×640 viewport. There is no image processing.
 
@@ -21,7 +22,7 @@ The colour comparison below holds illumination, AgX, camera, FOV65, actual ten-s
 - World-space foam histories driven by the **combined** horizontal displacement Jacobian. OceanFPV now distinguishes fresh/residual density, but its persistent foam remains a per-cascade approximation. A far history must integrate the thresholded breaking signal over its cells; sampling sub-metre waves on a two-metre grid can produce wholly missing or excessive foam.
 - Additional independent history and bubble textures. Local slope moments now bring the current water shader to 16 active sampler bindings on a native limit of 16; further textures require packing or sharing resources.
 - Spatial wind gusts for the shortest ripples. A matched prototype had only a small visible effect and is not shipped.
-- The reference's WebGPU FFT, spectrum, atmosphere and entire postprocessing pipeline. OceanFPV retains its shared CPU FFT/render/contact fields, coastal depth, moving ships, controls and WebGL2 support.
+- The reference's six-cascade WebGPU FFT, atmosphere and entire postprocessing pipeline. OceanFPV retains its shared CPU FFT/render/contact fields, coastal depth, moving ships, controls and WebGL2 support.
 
 ## Verification
 
