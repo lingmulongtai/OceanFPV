@@ -801,6 +801,14 @@ test('ocean sky reflection follows the normal and preserves premultiplied object
  expect(probe.glassObjects[3]).toBeGreaterThan(0);expect(probe.glassObjects[3]).toBeLessThan(1);expect(probe.glassError).toBeLessThan(.03);expect(probe.nestedStateError).toBe(0);expect(probe.nestedRestored).toBe(true);expect(errors).toEqual([]);
 });
 
+test('half-float array slope moments retain signed layers and filtered mip levels',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+ await page.goto('/tests/browser/fixtures/slope-moments-probe.html');
+ await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SLOPE_MOMENTS_PROBE__);},{timeout:60000}).toBe(true);
+ const probe=await page.evaluate(()=>{const{samples,...summary}=(window as any).__SLOPE_MOMENTS_PROBE__;return summary;});console.log(`Slope moments probe: ${JSON.stringify(probe)}`);
+ if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');expect(probe.count).toBe(126);expect(probe.maximum).toBeLessThan(.0003);expect(probe.fallbackError).toBe(0);expect(errors).toEqual([]);
+});
+
 test('sun glint uses its microfacet angle while sky reflection keeps the surface angle',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
  await page.goto('/tests/browser/fixtures/sun-glint-probe.html');
