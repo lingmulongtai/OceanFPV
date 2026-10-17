@@ -16,6 +16,8 @@ import {cruiseHullCode} from './cruise-hull';
 import {wakeSurfaceCode} from './wake-surface';
 import {captureReflectedGeometry,oceanReflectionCode} from './ocean-reflection';
 import {whitecapCode} from './whitecaps';
+import {SlopeMoments,slopeMomentSampleCode} from './slope-moments';
+import {localSlopeCovarianceCode} from './local-slope-covariance';
 
 function radialGeometry(quality='high') {
   const segments=quality==='ultra'?512:quality==='high'?384:192,rings=quality==='ultra'?360:quality==='high'?280:170;
@@ -86,6 +88,7 @@ export class Ocean {
   material:T.ShaderMaterial;
   readonly simulation=new SpectralSea();
   readonly waveMipmaps=this.simulation.cascades.map(c=>({displacement:new WaveMipmaps(c.displacement,c.size),tangentX:new WaveMipmaps(c.tangentX,c.size),tangentZ:new WaveMipmaps(c.tangentZ,c.size)}));
+  readonly slopeMoments=new SlopeMoments(this.simulation.cascades);
   private bottomData:Float32Array;
   private cliffDepth:CliffDepth|null=null;
   readonly islandDepth:IslandDepth;
@@ -93,6 +96,7 @@ export class Ocean {
   private textures:T.DataTexture[]=[];
   private fieldsDirty=true;
   private quality='high';
+  private localMomentsSupported=true;
   private reflectedView:T.Camera|null=null;
   bottomAt(x:number,z:number) {
     const ground=sampleCoastalDepth(this.bottomData,x,z,this.islandDepth),scan=this.cliffDepth?.sample(x,z);return scan&&scan.height>ground.height?scan:ground;
@@ -130,6 +134,7 @@ export class Ocean {
       cruiseInverse:{value:new T.Matrix4()},
       heightScales:{value:new T.Vector3(...this.simulation.heightScales)},chopScales:{value:new T.Vector3(...this.simulation.horizontalScales)},uniformBands:{value:true},
       slopeVariance:{value:new T.Vector3()},
+      localSlopeMoments:{value:this.slopeMoments.texture},localSlopeMomentsEnabled:{value:true},
       heightVariance:{value:new T.Vector3()},
       slopeMipEnergy:{value:Array.from({length:8},()=>new T.Vector3())},heightMipEnergy:{value:Array.from({length:8},()=>new T.Vector3())},
       slopeMipCross:{value:Array.from({length:8},()=>new T.Vector3())},heightMipCross:{value:Array.from({length:8},()=>new T.Vector3())},
@@ -164,6 +169,8 @@ export class Ocean {
         gl_Position=projectionMatrix*viewMatrix*world;
       }`;
     this.material.fragmentShader=`${spectralCode}
+      ${slopeMomentSampleCode}
+      ${localSlopeCovarianceCode}
       ${wakeSurfaceCode}
       ${waterOpticsCode}
       uniform sampler2D mirrorSampler;
@@ -219,7 +226,7 @@ export class Ocean {
         vec3 ripple=ripplesAt(p,waterFootprint);
         normal=normalize(vec3(normal.x-ripple.x*normal.y,normal.y,normal.z-ripple.y*normal.y));
         vec3 normalFootprint=fwidth(normal);
-        float unresolvedVariance=spectralVarianceAt(waveCoordinate,lod)+ripple.z;
+        float unresolvedVariance=localSpectralVarianceAt(waveCoordinate,lod)+ripple.z;
         // Resolve porous shoreline foam before hull discard; average subpixel pores.
         vec3 grain=vec3(noise(p*24.0),noise(p*52.08+8.6),noise(p*114.96));
         vec3 grainResolved=1.0-smoothstep(vec3(0.25),vec3(0.5),waterFootprint*vec3(24.0,52.08,114.96));
@@ -316,11 +323,14 @@ export class Ocean {
     }
   }
   heightAt(x:number,z:number) {return this.simulation.heightAt(x,z,this.simulation.heightScales,this.coastalScale);}
-  configureFiltering(floatLinear:boolean) {
+  configureFiltering(floatLinear:boolean,halfFloatMipmaps=true) {
     this.material.uniforms.manualInterpolation={value:!floatLinear};
+    this.localMomentsSupported=halfFloatMipmaps;this.slopeMoments.configureMipmaps(halfFloatMipmaps);
+    this.material.uniforms.localSlopeMomentsEnabled.value=halfFloatMipmaps&&this.quality!=='balanced';
     this.textures.forEach(texture=>{texture.magFilter=floatLinear?T.LinearFilter:T.NearestFilter;texture.minFilter=floatLinear?T.LinearMipmapLinearFilter:T.NearestMipmapNearestFilter;texture.needsUpdate=true;});
   }
   refreshFields() {
+    this.slopeMoments.update();
     this.waveMipmaps.forEach(fields=>Object.values(fields).forEach(mips=>mips.update()));this.textures.forEach(t=>t.needsUpdate=true);
     const scales=this.simulation.heightScales.map(gain=>gain*gain);
     for(let level=0;level<8;level++) {
@@ -346,6 +356,7 @@ export class Ocean {
   }
   setQuality(quality:string) {
     this.material.uniforms.whitecapFiltering.value=quality!=='balanced';
+    this.material.uniforms.localSlopeMomentsEnabled.value=this.localMomentsSupported&&quality!=='balanced';
     const size=quality==='ultra'?3072:quality==='high'?1536:512,target=this.mesh.getRenderTarget();if(target.width!==size)target.setSize(size,size);
     this.material.uniforms.reflectionSize.value=size;
     if(this.quality!==quality) {this.mesh.geometry.dispose();this.mesh.geometry=radialGeometry(quality);this.quality=quality;}

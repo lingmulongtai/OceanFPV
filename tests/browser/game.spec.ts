@@ -111,7 +111,7 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(forest).toBeGreaterThan(1000000);
   expect(rocks.triangles).toBe(14844);expect(rocks.perIsland).toEqual([51,79,79]);expect(rocks.placements).toBe(218);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
   expect(detailPrograms.length).toBeGreaterThan(0);for(const program of detailPrograms){expect(program.samplers).toBeLessThanOrEqual(program.limit);expect(program.names).toContain('groundDetailNormalMap');expect(program.names).toContain('groundDetailRoughnessMap');}
-  expect(waterPrograms.length).toBeGreaterThan(0);for(const program of waterPrograms){expect(program.samplers).toBe(15);expect(program.names).toContain('foamEnvironment');expect(program.samplers).toBeLessThanOrEqual(program.limit);}
+  expect(waterPrograms.length).toBeGreaterThan(0);for(const program of waterPrograms){expect(program.samplers).toBe(16);expect(program.names).toContain('foamEnvironment');expect(program.names).toContain('localSlopeMoments');expect(program.samplers).toBeLessThanOrEqual(program.limit);}
   console.log(`Water production samplers: ${JSON.stringify(waterPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit,foamEnvironment:program.names.includes('foamEnvironment')})))}`);
   const recovered=loading.failures.filter((failure:any)=>failure.asset==='seaside_rock'&&failure.recovered);
   expect(detailRequests.length).toBe(3+recovered.length);expect(new Set(detailRequests).size).toBe(3);
@@ -805,8 +805,9 @@ test('half-float array slope moments retain signed layers and filtered mip level
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
  await page.goto('/tests/browser/fixtures/slope-moments-probe.html');
  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SLOPE_MOMENTS_PROBE__);},{timeout:60000}).toBe(true);
- const probe=await page.evaluate(()=>{const{samples,...summary}=(window as any).__SLOPE_MOMENTS_PROBE__;return summary;});console.log(`Slope moments probe: ${JSON.stringify(probe)}`);
- if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');expect(probe.count).toBe(126);expect(probe.maximum).toBeLessThan(.0003);expect(probe.fallbackError).toBe(0);expect(errors).toEqual([]);
+ const probe=await page.evaluate(()=>{const{samples,covarianceSamples,integrationSamples,...summary}=(window as any).__SLOPE_MOMENTS_PROBE__;return summary;});console.log(`Slope moments probe: ${JSON.stringify(probe)}`);
+ if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');expect(probe.count).toBe(126);expect(probe.maximum).toBeLessThan(.0003);expect(probe.fallbackError).toBe(0);expect(probe.covarianceCount).toBe(12);expect(probe.covarianceMaximum).toBeLessThan(.000001);expect(errors).toEqual([]);
+ expect(probe.integrationCount).toBe(9);expect(probe.integrationMaximum).toBeLessThan(.000001);expect(probe.scalarMaximum).toBeLessThan(.000001);expect(probe.disabledMaximum).toBe(0);expect(probe.mipFallbackError).toBe(0);expect(probe.mipFallbackValue).toBeCloseTo(.3,6);
 });
 
 test('sun glint uses its microfacet angle while sky reflection keeps the surface angle',async({page})=>{
