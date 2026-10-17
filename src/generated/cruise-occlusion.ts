@@ -5,5 +5,5 @@ export const CRUISE_OCCLUSION = {
   "height": 384,
   "byteLength": 393216,
   "sha256": "32e69b75cea28b14ef36f331abbfb8303d686714f36e4a83e8c98e02558d317f",
-  "inputSha256": "a5b553a9792233e3d02b3a3361a0231d77f7ef8522ff8b992c0d6670975d63a3"
+  "inputSha256": "21e9f6d0eb97c9a4637ed6fea6a4d855bf1feda9c8e8e2142506a2e7c6c201db"
 } as const;
