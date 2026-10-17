@@ -167,12 +167,116 @@ for(const peer of [false,true])test(peer?'expired rock response and peer both re
   expect(errors).toEqual([]);
 });
 
-test('photographic sky downloads before material readiness but defers decoding',async({page})=>{
+for(const preset of ['day','golden'])test(`${preset} photographic sky downloads before material readiness but defers decoding`,async({page})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-  await page.goto('/tests/browser/fixtures/sky-decode-probe.html');
+  await page.goto(`/tests/browser/fixtures/sky-decode-probe.html?preset=${preset}`);
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SKY_DECODE_PROBE__);},{timeout:60000}).toBe(true);
   const probe=await page.evaluate(()=>(window as any).__SKY_DECODE_PROBE__);console.log(`Sky decode ordering: ${JSON.stringify(probe)}`);
-  expect(probe.before).toEqual({parseCalls:0,settled:false});expect(probe.parseCalls).toBe(1);expect(probe.settled).toBe(true);expect([probe.width,probe.height,probe.bytes]).toEqual([4096,2048,67108864]);expect(errors).toEqual([]);
+  expect(probe.preset).toBe(preset);expect(probe.before).toEqual({parseCalls:0,settled:false});expect(probe.parseCalls).toBe(1);expect(probe.settled).toBe(true);expect([probe.width,probe.height,probe.bytes]).toEqual([4096,2048,67108864]);expect(errors).toEqual([]);
+});
+
+test('late photographed skies keep the selected preset, deduplicate and relight the forest',async({page})=> {
+  test.setTimeout(600000);
+  const requests:string[]=[],errors:string[]=[];
+  page.on('request',request=>{if(request.url().endsWith('.hdr'))requests.push(request.url().split('/').at(-1)!);});
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(()=> {
+    localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced',light:'blue',sea:'breeze'}));
+    const read=Response.prototype.arrayBuffer;(window as any).__HDR_BODIES__=[];
+    Response.prototype.arrayBuffer=async function(){const buffer=await read.call(this);if(this.url.endsWith('.hdr'))(window as any).__HDR_BODIES__.push(this.url);return buffer;};
+    const raf=requestAnimationFrame.bind(window),frames={frozen:false};(window as any).__SKY_PRESET_FRAMES__=frames;
+    window.requestAnimationFrame=callback=>raf(time=>{if(!frames.frozen)callback(time);});
+  });
+  let releaseDay!:()=>void,releaseGolden!:()=>void;
+  const dayGate=new Promise<void>(resolve=>releaseDay=resolve),goldenGate=new Promise<void>(resolve=>releaseGolden=resolve);
+  await page.route('**/textures/*.hdr',async route=>{const response=await route.fetch();await (route.request().url().includes('kloppenheim_06')?goldenGate:dayGate);await route.fulfill({response});});
+  try {
+    await ready(page);expect(requests).toEqual([]);
+    const timing=await page.evaluate(()=> {
+      const a=(window as any).__OCEANFPV__,initial={time:a.getState().time,hidden:document.hidden,pause:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};
+      document.querySelector<HTMLButtonElement>('#open-settings')!.click();
+      // This verifies resource races and a nonzero sky rotation, independently
+      // of software-rendered frame cadence or the flight clock's 10-second cap.
+      (window as any).__SKY_PRESET_FRAMES__.frozen=true;
+      a.world.scene.backgroundRotation.set(0,.2,0);a.world.scene.environmentRotation.copy(a.world.scene.backgroundRotation);
+      const select=document.querySelector<HTMLSelectElement>('#light')!;select.value='day';select.dispatchEvent(new Event('input',{bubbles:true}));
+      // Other controls must share the same in-flight DAY request.
+      const rate=document.querySelector<HTMLInputElement>('#rate')!;for(const value of ['650','700']){rate.value=value;rate.dispatchEvent(new Event('input',{bubbles:true}));}
+      select.value='golden';select.dispatchEvent(new Event('input',{bubbles:true}));
+      return initial;
+    });
+    console.log(`Sky race initial timing: ${JSON.stringify(timing)}`);
+    await expect.poll(()=>requests.length,{timeout:60000}).toBe(2);
+    releaseDay();
+    await page.waitForFunction(()=>(window as any).__HDR_BODIES__.some((url:string)=>url.includes('kloofendal_48d')),{},{polling:50,timeout:60000});
+    const stale=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {light:w.light,photo:!!w.scene.background.isDataTexture,forest:w.forest.bakeScene.environment===w.scene.environment};});
+    expect(stale).toEqual({light:'golden',photo:false,forest:true});
+    releaseGolden();
+    await page.waitForFunction(()=>!!(window as any).__OCEANFPV__.world.scene.background.isDataTexture,{},{polling:50,timeout:60000});
+    const completed=await page.evaluate(()=> {
+      const w=(window as any).__OCEANFPV__.world,background=w.scene.background,environment=w.scene.environment;
+      const direction=w.sun.clone().set(0.7769250679233294,0.1391393441638262,0.6140257989188974).applyAxisAngle(w.sun.clone().set(0,1,0),w.scene.backgroundRotation.y);
+      const light=w.forest.bakeScene.children.find((child:any)=>child.isDirectionalLight),atlasDirection=light.position.clone().sub(light.target.position).normalize();
+      const result={rotation:w.scene.backgroundRotation.y,sun:w.sun.distanceTo(direction),atlas:atlasDirection.distanceTo(w.sun),forest:w.forest.bakeScene.environment===environment,forestRotation:w.forest.bakeScene.environmentRotation.equals(w.scene.environmentRotation)};
+      const select=document.querySelector<HTMLSelectElement>('#light')!;
+      for(const value of ['day','golden']){select.value=value;select.dispatchEvent(new Event('input',{bubbles:true}));}
+      return {...result,reused:w.scene.background===background&&w.scene.environment===environment};
+    });
+    expect(completed.rotation).toBeGreaterThan(0);expect(completed.sun).toBeLessThan(1e-12);expect(completed.atlas).toBeLessThan(1e-6);
+    expect(completed.forest).toBe(true);expect(completed.forestRotation).toBe(true);expect(completed.reused).toBe(true);
+    expect(requests.sort()).toEqual(['kloppenheim_06_puresky_4k.hdr','kloofendal_48d_partly_cloudy_puresky_4k.hdr'].sort());expect(errors).toEqual([]);
+  } finally {releaseDay();releaseGolden();}
+});
+
+test('missing golden sky stays playable and late sky delivery respects context loss',async({page})=> {
+  test.setTimeout(600000);await page.setViewportSize({width:320,height:240});
+  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(()=> {
+    localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced',light:'golden','input-source':'keyboard',volume:'0'}));
+    const prototype=WebGL2RenderingContext.prototype,read=Response.prototype.arrayBuffer;
+    (window as any).__SKY_RECOVERY__={draws:0,bodies:0};
+    for(const name of ['drawElements','drawArrays','drawElementsInstanced','drawArraysInstanced'] as const) {
+      const draw=prototype[name] as (...args:number[])=>void;
+      (prototype[name] as (...args:number[])=>void)=function(this:WebGL2RenderingContext,...args:number[]){(window as any).__SKY_RECOVERY__.draws++;return draw.apply(this,args);};
+    }
+    Response.prototype.arrayBuffer=async function(){const buffer=await read.call(this);if(this.url.endsWith('.hdr'))(window as any).__SKY_RECOVERY__.bodies++;return buffer;};
+  });
+  await page.route('**/kloppenheim_06_puresky_4k.hdr',route=>route.fulfill({status:404,body:'Missing optional sky'}));
+  let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);let requested=false;
+  await page.route('**/kloofendal_48d_partly_cloudy_puresky_4k.hdr',async route=>{const response=await route.fetch();requested=true;await gate;await route.fulfill({response});});
+  try {
+    await ready(page);
+    expect(await page.evaluate(()=>!!(window as any).__OCEANFPV__.world.scene.background.isCubeTexture)).toBe(true);
+    await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());await page.keyboard.down('Space');
+    await page.waitForFunction(()=>(window as any).__OCEANFPV__.flight.position.y>(window as any).__OCEANFPV__.world.launchPose((window as any).__OCEANFPV__.getState().time).position.y+1);
+    await page.keyboard.up('Space');
+    await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#open-settings')!.click();const select=document.querySelector<HTMLSelectElement>('#light')!;select.value='day';select.dispatchEvent(new Event('input',{bubbles:true}));});
+    await expect.poll(()=>requested,{timeout:60000}).toBe(true);
+    await page.evaluate(()=>{const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!;const extension=gl.getExtension('WEBGL_lose_context');if(!extension)throw new Error('Missing context-loss extension');extension.loseContext();});
+    await expect(page.locator('#unsupported')).toBeVisible();
+    const draws=await page.evaluate(()=>(window as any).__SKY_RECOVERY__.draws);release();
+    await page.waitForFunction(()=>(window as any).__SKY_RECOVERY__.bodies===1);
+    const recovered=await page.evaluate(()=>({draws:(window as any).__SKY_RECOVERY__.draws,disabled:document.querySelector<HTMLButtonElement>('#start')!.disabled,reason:document.querySelector('#unsupported-reason')!.textContent}));
+    expect(recovered.draws).toBe(draws);expect(recovered.disabled).toBe(true);expect(recovered.reason).toContain('GPU');expect(errors).toEqual([]);
+  } finally {release();}
+});
+
+test('optional photographed sky fence failure keeps a playable procedural fallback',async({page})=> {
+  test.setTimeout(600000);await page.setViewportSize({width:320,height:240});
+  const errors:string[]=[],requests:string[]=[];page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{if(request.url().endsWith('.hdr'))requests.push(request.url());});
+  await page.addInitScript(()=> {
+    localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced',light:'blue',sea:'breeze'}));
+    const prototype=WebGL2RenderingContext.prototype,wait=prototype.clientWaitSync;(window as any).__SKY_FENCE_FAILURE__={requested:false,failed:false};
+    prototype.clientWaitSync=function(...args){const state=(window as any).__SKY_FENCE_FAILURE__;if(state.requested){state.requested=false;state.failed=true;return this.WAIT_FAILED;}return wait.apply(this,args);};
+  });
+  await ready(page);
+  await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#open-settings')!.click();(window as any).__SKY_FENCE_FAILURE__.requested=true;const select=document.querySelector<HTMLSelectElement>('#light')!;select.value='day';select.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.waitForFunction(()=>(window as any).__SKY_FENCE_FAILURE__.failed);
+  expect(await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {light:w.light,procedural:!!w.scene.background.isCubeTexture,enabled:!document.querySelector<HTMLButtonElement>('#start')!.disabled};})).toEqual({light:'day',procedural:true,enabled:true});
+  expect(requests).toEqual([]);
+  await page.evaluate(()=>{const select=document.querySelector<HTMLSelectElement>('#light')!;select.value='golden';select.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.waitForFunction(()=>!!(window as any).__OCEANFPV__.world.scene.background.isDataTexture,{},{timeout:60000});
+  expect(requests.map(url=>url.split('/').at(-1))).toEqual(['kloppenheim_06_puresky_4k.hdr']);expect(errors).toEqual([]);
 });
 
 test('one missing rock detail map retains coherent macro terrain and grass rendering',async({page})=> {
@@ -719,13 +823,20 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
     (window as any).__pad.axes=[0,-1,0,-0.5];
     do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
     while((app.flight.position.y<=7||app.flight.position.y<=initial+1)&&performance.now()-start<20000);
-    return {initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks(),seaScale:app.world.ocean.material.uniforms.seaScale.value};
+    const climbed={initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks(),seaScale:app.world.ocean.material.uniforms.seaScale.value};
+    // Disconnect before another protocol round trip can queue a slow sea draw
+    // and make the independent render-stall safeguard win this input test.
+    (window as any).__pad=null;const disconnectedAt=performance.now();
+    do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+    while(!app.getState().paused&&performance.now()-disconnectedAt<20000);
+    return {...climbed,disconnect:{title:document.querySelector('#pause-title')!.textContent,waited:performance.now()-disconnectedAt}};
   });
   expect(climbed.altitude).toBeGreaterThan(7);expect(climbed.altitude-climbed.initial).toBeGreaterThan(1);
   expect(climbed.armed).toBe(true);expect(climbed.source).toBe('xbox');
   expect(climbed.seaScale).toBe(2.15);
   expect(climbed.sticks.throttle).toBe(1);expect(climbed.sticks.pitch).toBeLessThan(0);expect(climbed.sticks.absoluteThrottle).toBe(false);
-  await page.evaluate(()=> {(window as any).__pad=null;});await expect(page.locator('#pause-title')).toHaveText('コントローラー接続が切れました');
+  expect(climbed.disconnect.title).toBe('コントローラー接続が切れました');expect(climbed.disconnect.waited).toBeLessThanOrEqual(20000);
+  await expect(page.locator('#pause-title')).toHaveText('コントローラー接続が切れました');
   await page.locator('#resume').click();await expect(page.locator('#pause-dialog')).toBeVisible();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().paused)).toBe(true);
 });
@@ -779,24 +890,32 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
   expect(result.seaScale).toBe(2.15);
   expect(result.waiting.crashed).toBe(false);expect(result.waiting.armed).toBe(true);expect(result.waiting.flightTime).toBeGreaterThan(1);expect(result.waiting.error).toBeLessThan(1e-6);expect(result.climb).toBeGreaterThan(1);
 });
-test('lighting and sea settings persist across a full reload', async ({page})=> {
+for(const light of ['blue','golden'])test(`${light} lighting and sea settings persist across a full reload`, async ({page})=> {
   test.setTimeout(300000);
   await page.setViewportSize({width:480,height:320});
   await ready(page);
   // This test covers persistence; ordinary pointer interactions are checked in
   // the scene tests. Batch DOM events to avoid animation-frame actionability
   // waits consuming the two full software-rendered initializations.
-  const chosen=await page.evaluate(()=> {
+  const chosen=await page.evaluate(light=> {
     document.querySelector<HTMLButtonElement>('#open-settings')!.click();
-    for(const [id,value]of [['light','blue'],['sea','calm']]){const select=document.getElementById(id) as HTMLSelectElement;select.value=value;select.dispatchEvent(new Event('input',{bubbles:true}));}
+    for(const [id,value]of [['light',light],['sea','calm']]){const select=document.getElementById(id) as HTMLSelectElement;select.value=value;select.dispatchEvent(new Event('input',{bubbles:true}));}
     const saved=JSON.parse(localStorage.getItem('oceanfpv:settings')!);
     return {open:document.querySelector<HTMLDialogElement>('#settings-dialog')!.open,light:saved.light,sea:saved.sea};
-  });
-  expect(chosen).toEqual({open:true,light:'blue',sea:'calm'});
+  },light);
+  expect(chosen).toEqual({open:true,light,sea:'calm'});
   // Reload from the fixed dialog view, avoiding unrelated resumed sea draws.
+  // Count application fetches; browser cache Range retries are not duplicate
+  // preset loads. Install in the new document so the first visit is excluded.
+  await page.addInitScript(()=> {
+    const fetch=window.fetch.bind(window),requests:string[]=[];(window as any).__PERSISTED_HDR_FETCHES__=requests;
+    window.fetch=(resource,options)=>{const url=resource instanceof Request?resource.url:String(resource);if(url.endsWith('.hdr'))requests.push(url);return fetch(resource,options);};
+  });
   await loadScene(page,()=>page.reload({timeout:SCENE_LOAD_TIMEOUT}));
-  const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
-  expect(persisted).toEqual({light:'blue',sea:'calm'});
+  const persisted=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value,photo:!!w.scene.background.isDataTexture,forestEnvironment:w.forest.bakeScene.environment===w.scene.environment};});
+  expect(persisted).toEqual({light,sea:'calm',photo:light==='golden',forestEnvironment:true});
+  const hdrFetches=await page.evaluate(()=>(window as any).__PERSISTED_HDR_FETCHES__ as string[]);
+  expect(hdrFetches.map(url=>url.split('/').at(-1))).toEqual(light==='golden'?['kloppenheim_06_puresky_4k.hdr']:[]);
 });
 
 test('wake reflections follow the surface gradient on both sides and rotated headings',async({page})=> {

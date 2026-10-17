@@ -11,7 +11,7 @@ import { Race, GATES, formatTime } from './race';
 import { type SeaState } from './sea';
 import { FlightAudio } from './audio';
 import { readStored, writeStored } from './storage';
-import { loadPhotographicSky } from './sky';
+import { loadPhotographicSky, type PhotographicSkyPreset } from './sky';
 import { SimulationClock } from './clock';
 import {loadCruiseOcclusion} from './cruise-occlusion';
 import {waitForGpu} from './gpu-ready';
@@ -40,7 +40,10 @@ async function boot() {
   const skyCamera=new T.CubeCamera(1,20000,skyTarget);skyCamera.update(renderer,skyScene);
   world.scene.background=skyTarget.texture;
   const pmrem=new T.PMREMGenerator(renderer);let environment=pmrem.fromCubemap(skyTarget.texture);world.scene.environment=environment.texture;pmrem.dispose();
-  let photoSky:Awaited<ReturnType<typeof loadPhotographicSky>>=null,photoEnvironment:T.WebGLRenderTarget|null=null;
+  type PhotoEnvironment={sky:NonNullable<Awaited<ReturnType<typeof loadPhotographicSky>>>;environment:T.WebGLRenderTarget};
+  const photoEnvironments=new Map<PhotographicSkyPreset,PhotoEnvironment|null>(),pendingSkies=new Map<PhotographicSkyPreset,Promise<void>>();
+  const proceduralFog=world.scene.fog!.color.clone();
+  let activePhoto:PhotoEnvironment|null=null,skyDecodeReady:Promise<unknown>|null=null;
   const camera=new T.PerspectiveCamera(65,innerWidth/innerHeight,0.06,18000);
   const renderTarget=new T.WebGLRenderTarget(innerWidth,innerHeight,{type:T.HalfFloatType,samples:Math.min(4,renderer.capabilities.maxSamples)});
   const composer=new EffectComposer(renderer,renderTarget);composer.addPass(new RenderPass(world.scene,camera));
@@ -107,11 +110,14 @@ async function boot() {
       const generator=new T.PMREMGenerator(renderer);environment.dispose();
       environment=generator.fromCubemap(skyTarget.texture);world.scene.environment=environment.texture;generator.dispose();
     }
-    if(world.light==='day'&&photoSky&&photoEnvironment) {
-      world.scene.background=photoSky.texture;world.scene.environment=photoEnvironment.texture;world.scene.environmentIntensity=0.6;
-      world.sun.copy(photoSky.sun);world.sunlight.position.copy(world.sun).multiplyScalar(280).add(world.sunlight.target.position);
+    const previousPhoto=activePhoto;
+    activePhoto=world.light==='blue'?null:photoEnvironments.get(world.light)??null;
+    if(activePhoto) {
+      world.scene.background=activePhoto.sky.texture;world.scene.environment=activePhoto.environment.texture;world.scene.environmentIntensity=0.6;
+      world.sun.copy(activePhoto.sky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280).add(world.sunlight.target.position);
     }else {world.scene.background=skyTarget.texture;world.scene.environment=environment.texture;world.scene.environmentIntensity=1;}
-    if(lightChanged)world.forest?.relight(renderer,world.scene);
+    world.scene.fog!.color.copy(world.light==='golden'&&activePhoto?activePhoto.sky.horizon:proceduralFog);
+    if(lightChanged||previousPhoto!==activePhoto)world.forest?.relight(renderer,world.scene);
     world.ocean.material.uniforms.foamEnabled.value=checked('foam');bloom.enabled=checked('bloom')&&value('quality')!=='balanced';
     renderer.toneMappingExposure=value('light')==='day'?0.68:value('light')==='golden'?0.7:0.58;
     input.useMouse=checked('mouse');input.source=value('input-source') as Inputs['source'];input.deadzone=Number(value('deadzone'))/100;
@@ -121,7 +127,27 @@ async function boot() {
     $('rate-value').textContent=`${flight.rate}°/s`;$('expo-value').textContent=flight.expo.toFixed(2);
     $('volume-value').textContent=`${Math.round(sound.volume*100)}%`;$('deadzone-value').textContent=`${Math.round(input.deadzone*100)}%`;
     show('radio-controls',input.source==='radio');show('xbox-help',input.source!=='radio');
-    resize();saveSettings();
+    resize();saveSettings();void ensurePhotographicSky(world.light);
+  }
+  function ensurePhotographicSky(preset:LightPreset):Promise<void> {
+    // Called by settings before boot has reached the GPU/texture readiness gates.
+    if(!supported||!skyDecodeReady||preset==='blue'||photoEnvironments.has(preset))return Promise.resolve();
+    const pending=pendingSkies.get(preset);if(pending)return pending;
+    const decodeReady=skyDecodeReady;
+    const loading=waitForGpu(renderer.getContext() as WebGL2RenderingContext).catch(()=>false).then(ready=>ready&&supported?loadPhotographicSky(decodeReady,preset):null).then(sky=> {
+      if(!sky){photoEnvironments.set(preset,null);return;}
+      if(!supported){sky.texture.dispose();return;}
+      const generator=new T.PMREMGenerator(renderer);let target:T.WebGLRenderTarget;
+      try {
+        target=generator.fromEquirectangular(sky.texture);
+      } catch {sky.texture.dispose();photoEnvironments.set(preset,null);return;}
+      finally {generator.dispose();}
+      if(!supported||renderer.getContext().isContextLost()){target.dispose();sky.texture.dispose();return;}
+      photoEnvironments.set(preset,{sky,environment:target});
+      // A late request may be cached, but only the current preset can change the scene.
+      if(world.light===preset)applySettings();
+    }).finally(()=>pendingSkies.delete(preset));
+    pendingSkies.set(preset,loading);return loading;
   }
   controls.forEach(id=>$(id).addEventListener('input',()=>applySettings()));
   window.addEventListener('resize',resize);applySettings();
@@ -385,7 +411,7 @@ async function boot() {
       world.update(time,camera.position,sea,flight.position,flight.orientation,flight.motor);
       world.scene.backgroundRotation.y=time*0.00015;
       world.scene.environmentRotation.y=world.scene.backgroundRotation.y;
-      if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280).add(world.sunlight.target.position);}
+      if(activePhoto) {world.sun.copy(activePhoto.sky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280).add(world.sunlight.target.position);}
       world.ocean.setLighting(world.scene,world.sunlight,world.hemisphere);
       renderer.info.reset();composer.render();frameCount++;
       sceneDirty=false;wasFrozen=frozen;renderedFov=camera.fov;renderedPosition.copy(camera.position);renderedOrientation.copy(camera.quaternion);renderedOcean=world.ocean.material;renderedOceanVersion=world.ocean.material.version;
@@ -399,11 +425,7 @@ async function boot() {
   performance.mark('oceanfpv:initial-gpu-start');
   if(!await waitForGpu(renderer.getContext() as WebGL2RenderingContext)||!supported)return;
   performance.mark('oceanfpv:initial-gpu-ready');
-  const missingSurfaces=await world.loadSurfaceTextures(renderer,texturesReady=>loadPhotographicSky(texturesReady).then(loadedSky=> {
-    if(!supported)return;
-    photoSky=loadedSky;
-    if(photoSky){const generator=new T.PMREMGenerator(renderer);photoEnvironment=generator.fromEquirectangular(photoSky.texture);generator.dispose();applySettings();}
-  }));
+  const missingSurfaces=await world.loadSurfaceTextures(renderer,texturesReady=> {skyDecodeReady=texturesReady;return ensurePhotographicSky(world.light);});
   if(!supported)return;
   world.advanceVessels(0);
   camera.position.copy(world.cruise.root.localToWorld(new T.Vector3(180,68,-245)));camera.lookAt(world.cruise.root.localToWorld(new T.Vector3(0,20,-5)));
