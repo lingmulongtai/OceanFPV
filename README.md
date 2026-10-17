@@ -49,6 +49,8 @@ FPV送信機はOSにUSB Joystick/HIDゲームコントローラーとして認�
 
 ## 開発
 
+[波の微分ベクトル計算の負荷と精度](docs/WAVE_VECTOR_LENGTH.md)に、画質を変えない計算改善の測定結果と丸め誤差の範囲を記録しています。
+
 Node.js 22.12以上。
 
 ```sh
