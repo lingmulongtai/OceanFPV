@@ -47,7 +47,7 @@ export class World {
   light: LightPreset = 'golden';
   private propellers: T.Mesh[] = [];
   private vesselTime=-1;
-  private vesselSeaScale=NaN;
+  private vesselProfile=-1;
   private launchVelocity:T.Vector3|null=null;
   private launchSample:{time:number;position:T.Vector3}|null=null;
   private surfaceGroups:SurfaceGroup[]=[];
@@ -269,10 +269,10 @@ export class World {
     this.propellers.forEach((p,i)=>p.rotation.y=time*(i%2?-1:1)*motor*170);
   }
   advanceVessels(time:number) {
-    const scale=this.ocean.material.uniforms.seaScale.value as number;
-    if(time===this.vesselTime&&scale===this.vesselSeaScale)return;
+    const profile=this.ocean.simulation.profileVersion;
+    if(time===this.vesselTime&&profile===this.vesselProfile)return;
     this.cruise.advancePoolWater(time);
-    if(scale!==this.vesselSeaScale||time<this.vesselTime||time-this.vesselTime>=0.2) {
+    if(profile!==this.vesselProfile||time<this.vesselTime||time-this.vesselTime>=0.2) {
       this.launchSample=null;this.launchVelocity=null;
     }
     for(const [i,kind,root,length,width]of [[0,'cruise',this.cruise.root,260,17],[1,'yacht',this.yacht,28,YACHT_BEAM/2]] as const) {
@@ -294,7 +294,7 @@ export class World {
       this.launchVelocity=this.launchSample&&dt>0&&dt<0.2?position.clone().sub(this.launchSample.position).divideScalar(dt):null;
       this.launchSample={time,position};
     }
-    this.vesselTime=time;this.vesselSeaScale=scale;
+    this.vesselTime=time;this.vesselProfile=profile;
   }
   launchPose(time:number) {
     this.advanceVessels(time);const pose=vesselPose('cruise',time);
