@@ -1,15 +1,17 @@
 import*as T from'three';import{Ocean}from'../../../src/ocean.ts';import{whitecapReference}from'./whitecap-reference.mjs';
 const renderer=new T.WebGLRenderer();renderer.setSize(1,1);document.body.append(renderer.domElement);const gl=renderer.getContext();if(!gl.getExtension('EXT_color_buffer_float'))throw new Error('Float target required');
-const ocean=new Ocean(new T.Vector3(0,1,0));ocean.configureFiltering(false);ocean.advance(0,'swell');ocean.advance(120,'swell');ocean.refreshFields();
-const oracle=whitecapReference(ocean.simulation),source=ocean.material.fragmentShader,header=source.split('void main()')[0],start=source.indexOf('float breaking='),end=source.indexOf(',foam=',start);if(start<0||end<start)throw new Error('Missing production whitecap expression');
+const ocean=new Ocean(new T.Vector3(0,1,0));ocean.configureFiltering(false);ocean.advance(0,'swell');ocean.advance(120,'swell');
+for(let tick=1;tick<=30;tick++)ocean.advance(120+tick/30,'swell');ocean.refreshFields();
+const agedTexels=ocean.simulation.cascades.reduce((sum,c)=>sum+c.displacement.reduce((n,value,i)=>n+(i%4===3&&value>.12&&c.tangentX[i]<value*.8?1:0),0),0);
+const oracle=whitecapReference(ocean.simulation,ocean.material.uniforms.time.value),source=ocean.material.fragmentShader,header=source.split('void main()')[0],start=source.indexOf('float breaking='),end=source.indexOf(',foam=',start);if(start<0||end<start)throw new Error('Missing production whitecap expression');
 const connected=source.slice(start+'float breaking='.length,end).replaceAll('waveCoordinate','probeQ').replace(/\bp\b/g,'probeP').replaceAll('foamQDx','probeQDx').replaceAll('foamQDy','probeQDy').replaceAll('foamPDx','probePDx').replaceAll('foamPDy','probePDy');
-const legacy='smoothstep(0.12,0.8,displacementAt(probeQ).w)*smoothstep(0.42,0.76,n)';
+const legacy='whitecapPoint(probeQ,probeP)';
 const uniforms={...ocean.material.uniforms,probeQ:{value:new T.Vector2()},probeP:{value:new T.Vector2()},probeQDx:{value:new T.Vector2()},probeQDy:{value:new T.Vector2()},probePDx:{value:new T.Vector2()},probePDy:{value:new T.Vector2()},rasterSize:{value:4}};uniforms.centerQ=uniforms.probeQ;uniforms.centerP=uniforms.probeP;
 const vertexShader='void main(){gl_Position=vec4(position.xy,0,1);}',material=new T.ShaderMaterial({uniforms,defines:ocean.material.defines,vertexShader,fragmentShader:`${header}
 uniform vec2 probeQ,probeP,probeQDx,probeQDy,probePDx,probePDy;
 void main(){float n=foamNoise(probeP*.53+vec2(time*.12,-time*.09));float original=${legacy},filtered=${connected};gl_FragColor=vec4(original,filtered,0,1);}`});
-// Each raster fragment evaluates the former production point formula. Averaging
-// the readback independently tests the new shader's footprint integration.
+// Dense raster fragments evaluate the point coverage, independently checked by
+// the CPU oracle. Averaging readback tests the production footprint integral.
 const rasterMaterial=new T.ShaderMaterial({uniforms,defines:ocean.material.defines,vertexShader,fragmentShader:`${header}
 uniform vec2 centerQ,centerP,probeQDx,probeQDy,probePDx,probePDy;uniform float rasterSize;
 void main(){vec2 offset=gl_FragCoord.xy/rasterSize-.5,probeQ=centerQ+probeQDx*offset.x+probeQDy*offset.y,probeP=centerP+probePDx*offset.x+probePDy*offset.y;float n=foamNoise(probeP*.53+vec2(time*.12,-time*.09));gl_FragColor=vec4(${legacy},0,0,1);}`});
@@ -32,4 +34,4 @@ for(const quality of['balanced','high','ultra']){
   }
  }
 }
-const ext=gl.getExtension('WEBGL_debug_renderer_info');window.__WHITECAP_FOOTPRINT_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',floatLinearSupported,count:samples.length,quadratureError,denseError,manualError,unfilteredError,qualityStates,oracleConvergence:oracle.maximumConvergence,inactive:oracle.inactive,originalRMSE:Math.sqrt(originalSquared/averagedCases),filteredRMSE:Math.sqrt(filteredSquared/averagedCases),derivativesBeforeDiscard:source.indexOf('foamQDx=dFdx')<source.indexOf('if(hullCutout)discard'),error:gl.getError(),samples};
+const ext=gl.getExtension('WEBGL_debug_renderer_info');window.__WHITECAP_FOOTPRINT_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',floatLinearSupported,count:samples.length,agedTexels,quadratureError,denseError,manualError,unfilteredError,qualityStates,oracleConvergence:oracle.maximumConvergence,inactive:oracle.inactive,originalRMSE:Math.sqrt(originalSquared/averagedCases),filteredRMSE:Math.sqrt(filteredSquared/averagedCases),derivativesBeforeDiscard:source.indexOf('foamQDx=dFdx')<source.indexOf('if(hullCutout)discard'),error:gl.getError(),samples};

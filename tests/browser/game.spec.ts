@@ -822,7 +822,7 @@ for(const manualFallback of[false,true])test(`whitecap coverage integrates the c
   const probe=await page.evaluate(()=>{const{samples,...summary}=(window as any).__WHITECAP_FOOTPRINT_PROBE__;return summary;});
   console.log(`Whitecap footprint probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
   expect(typeof probe.floatLinearSupported).toBe('boolean');if(manualFallback)expect(probe.floatLinearSupported).toBe(false);
-  expect(probe.count).toBe(probe.floatLinearSupported?576:288);expect(probe.quadratureError).toBeLessThan(.0001);expect(probe.denseError).toBeLessThan(.001);expect(probe.manualError).toBeLessThan(.001);
+  expect(probe.count).toBe(probe.floatLinearSupported?576:288);expect(probe.agedTexels).toBeGreaterThan(100);expect(probe.quadratureError).toBeLessThan(.0001);expect(probe.denseError).toBeLessThan(.001);expect(probe.manualError).toBeLessThan(.001);
   expect(probe.unfilteredError).toBe(0);expect(probe.qualityStates).toEqual({balanced:false,high:true,ultra:true});expect(probe.oracleConvergence).toBeLessThan(.001);expect(probe.inactive).toBeGreaterThan(0);
   expect(probe.filteredRMSE).toBeLessThan(probe.originalRMSE*.35);expect(probe.derivativesBeforeDiscard).toBe(true);expect(probe.error).toBe(0);expect(errors).toEqual([]);
 });

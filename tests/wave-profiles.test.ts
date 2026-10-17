@@ -52,10 +52,10 @@ test('a short-band profile change invalidates cadence and clears foam in every c
   for(const c of sea.cascades)for(let i=3;i<c.displacement.length;i+=4)c.displacement[i]=1;
   assert.equal(sea.update(6,changed),true);assert.equal(sea.profileVersion,revision+1);
   const fresh=new SpectralSea();fresh.update(6,changed);
-  for(let i=0;i<3;i++)assert.deepEqual(sea.cascades[i].displacement,fresh.cascades[i].displacement);
+  for(let i=0;i<3;i++){assert.deepEqual(sea.cascades[i].displacement,fresh.cascades[i].displacement);assert.deepEqual(sea.cascades[i].tangentX,fresh.cascades[i].tangentX);}
   assert.equal(sea.update(6,[...changed]),false);
   changed[2]=.75;assert.deepEqual(sea.heightScales,[2.15,2.15,1.15]);assert.equal(sea.update(6,changed),true);
   const next=sea.profileVersion;assert.equal(sea.update(6.05,changed),true);assert.equal(sea.profileVersion,next);
   assert.equal(sea.update(6.04,changed),true);const rewound=new SpectralSea();rewound.update(6.04,changed);
-  for(let i=0;i<3;i++)assert.deepEqual(sea.cascades[i].displacement,rewound.cascades[i].displacement);
+  for(let i=0;i<3;i++){assert.deepEqual(sea.cascades[i].displacement,rewound.cascades[i].displacement);assert.deepEqual(sea.cascades[i].tangentX,rewound.cascades[i].tangentX);}
 });
