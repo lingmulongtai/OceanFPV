@@ -9,6 +9,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
+    "bake:cabin": "node --import tsx scripts/bake-cruise-occlusion.ts",
+    "check:cabin": "node --import tsx scripts/bake-cruise-occlusion.ts --check",
     "import:islet": "node --import tsx scripts/import-measured-islet.ts",
     "import:northeast": "node --import tsx scripts/import-hornoya.ts"
   },

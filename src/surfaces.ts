@@ -120,7 +120,8 @@ export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number,failu
       for(let attempt=1;attempt<=2;attempt++) {
         const started=performance.now(),signal=AbortSignal.timeout(25000);let phase:SurfaceFailure['phase']='fetch',phaseStarted=started,bitmap:ImageBitmap;
         try {
-          const response=await fetch(url,{signal});if(!response.ok)throw new Error(`Texture ${response.status}`);
+          // An aborted body can leave a partial HTTP cache entry; replace it on retry.
+          const response=await fetch(url,{signal,cache:attempt===1?'default':'reload'});if(!response.ok)throw new Error(`Texture ${response.status}`);
           phase='body';phaseStarted=performance.now();const blob=await response.blob();
           phase='decode';phaseStarted=performance.now();bitmap=await createImageBitmap(blob,{imageOrientation:'flipY',premultiplyAlpha:'none'});
         }catch(error) {

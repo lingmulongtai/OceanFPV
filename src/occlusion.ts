@@ -4,7 +4,14 @@ import { MeshBVH } from 'three-mesh-bvh';
 
 export type RoomSurface='floor'|'ceiling'|'back'|'partition'|'front'|'balcony'|'aft-floor'|'aft-ceiling'|'aft-back';
 const WIDTH=256,HEIGHT=384,TILE_X=128,TILE_Y=64,PAD=2;
+export const CABIN_ATLAS_BYTES=WIDTH*HEIGHT*4;
 const atlasUV=(chart:number,u:number,v:number)=>[(chart%2*TILE_X+PAD+T.MathUtils.clamp(u,0,1)*(TILE_X-2*PAD))/WIDTH,(Math.floor(chart/2)*TILE_Y+PAD+T.MathUtils.clamp(v,0,1)*(TILE_Y-2*PAD))/HEIGHT];
+
+/** Restore raw visibility bytes without image decoding or colour conversion. */
+export function cabinOcclusionTexture(pixels:Uint8Array) {
+  if(pixels.byteLength!==CABIN_ATLAS_BYTES)throw new Error('Invalid cabin visibility atlas length');
+  const texture=new T.DataTexture(pixels,WIDTH,HEIGHT,T.RGBAFormat);texture.channel=1;texture.magFilter=T.LinearFilter;texture.minFilter=T.LinearFilter;texture.generateMipmaps=false;texture.needsUpdate=true;return texture;
+}
 
 /** Dedicated charts leave photographed UV0, positions and normals intact. */
 export function roomOcclusionUV(geometry:T.BufferGeometry,floor=0,cabin=0,side=1,surface?:RoomSurface,end=1) {
@@ -64,7 +71,8 @@ export function bakeCabinOcclusion(blockers:T.BufferGeometry[],floor:number,cabi
     const [origin,u,v,normal]=chart.map(a=>new T.Vector3(...a));
     for(let y=0;y<TILE_Y;y++)for(let x=0;x<TILE_X;x++) {
       const s=T.MathUtils.clamp((x-PAD+0.5)/(TILE_X-2*PAD),0.0001,0.9999),t=T.MathUtils.clamp((y-PAD+0.5)/(TILE_Y-2*PAD),0.0001,0.9999);
-      point.copy(origin).addScaledVector(u,s).addScaledVector(v,t);const value=Math.round(255*sampler.visibility(point,normal));
+      // The cabin diagonal is about 7.5 m; include its far walls like aft rooms.
+      point.copy(origin).addScaledVector(u,s).addScaledVector(v,t);const value=Math.round(255*sampler.visibility(point,normal,8));
       const offset=((Math.floor(index/2)*TILE_Y+y)*WIDTH+index%2*TILE_X+x)*4;pixels[offset]=pixels[offset+1]=pixels[offset+2]=value;
     }
   });sampler.dispose();
@@ -79,5 +87,5 @@ export function bakeCabinOcclusion(blockers:T.BufferGeometry[],floor:number,cabi
       const pixel=((Math.floor(index/2)*TILE_Y+y)*WIDTH+index%2*TILE_X+x)*4;pixels[pixel]=pixels[pixel+1]=pixels[pixel+2]=value;
     }});room.dispose();
   }
-  const texture=new T.DataTexture(pixels,WIDTH,HEIGHT,T.RGBAFormat);texture.channel=1;texture.magFilter=T.LinearFilter;texture.minFilter=T.LinearFilter;texture.generateMipmaps=false;texture.needsUpdate=true;return texture;
+  return cabinOcclusionTexture(pixels);
 }

@@ -24,6 +24,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - run: npm run check:cabin
+        if: matrix.shard == 1
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium

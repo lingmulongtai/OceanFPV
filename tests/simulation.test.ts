@@ -49,12 +49,12 @@ test('hull paint charts cover both sides and end caps without changing triangles
     const normal=b.clone().sub(a).cross(c.clone().sub(a));
     const area=Math.abs((uv.getX(i+1)-uv.getX(i))*(uv.getY(i+2)-uv.getY(i))-(uv.getX(i+2)-uv.getX(i))*(uv.getY(i+1)-uv.getY(i)));
     if(normal.lengthSq()>1e-12)assert.ok(area>1e-10);
-    if(a.z===b.z&&b.z===c.z&&Math.abs(a.z)===130)capFaces++;
+    if(normal.x===0&&Math.abs(normal.z)>Math.abs(normal.y))capFaces++;
     if(Math.abs(a.z)<5&&Math.abs(normal.x)>Math.abs(normal.y)&&Math.abs(normal.x)>Math.abs(normal.z))for(let j=i;j<i+3;j++) {
       assert.ok(Math.abs(uv.getX(j)*2.5-p.getZ(j))<0.00002);assert.ok(Math.abs(uv.getY(j)*2.5-p.getY(j))<0.00002);
     }
   }
-  assert.equal(capFaces,12);[source,original,mapped].forEach(g=>g.dispose());
+  assert.equal(capFaces,10);[source,original,mapped].forEach(g=>g.dispose());
 });
 
 test('painted roof charts retain geometry and a 2.5 metre photographed period',()=> {
@@ -95,7 +95,7 @@ test('coastal trees root on dry rendered triangles below 35 degrees',()=> {
 test('ship names follow the curved hull at a small offset on both sides',()=> {
   const hull=cruiseHullGeometry(),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(hull,material);mesh.updateMatrixWorld();
   for(const side of [-1,1]) {
-    const name=hullNameGeometry(side),p=name.attributes.position,n=name.attributes.normal;
+    const name=hullNameGeometry(side,cruiseHullSidePose),p=name.attributes.position,n=name.attributes.normal;
     for(let i=0;i<p.count;i++) {
       const vertex=new Vector3().fromBufferAttribute(p,i),normal=new Vector3().fromBufferAttribute(n,i),hits=new Raycaster(vertex,normal.negate()).intersectObject(mesh);
       assert.ok(hits.length>0);assert.ok(hits[0].distance>0.03&&hits[0].distance<0.05);

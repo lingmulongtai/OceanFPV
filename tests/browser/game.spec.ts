@@ -1,9 +1,29 @@
 import { test, expect, type Page } from '@playwright/test';
+import {CRUISE_OCCLUSION} from '../../src/generated/cruise-occlusion';
+
+const SCENE_LOAD_TIMEOUT=360000;
+async function loadScene(page:Page,navigate:()=>Promise<unknown>) {
+  // Async boot now resolves navigation before slow software scene initialization.
+  // Bound each complete load, then preserve the original budget for assertions.
+  const info=test.info(),assertionBudget=info.timeout,started=Date.now();
+  info.setTimeout(assertionBudget+SCENE_LOAD_TIMEOUT);
+  await navigate();
+  await expect(page.locator('#start')).toBeEnabled({timeout:Math.max(1,SCENE_LOAD_TIMEOUT-(Date.now()-started))});
+  info.setTimeout(assertionBudget+Date.now()-started);
+}
+
+async function verifyCabinVisibility(page:Page) {
+  const actual=await page.evaluate(async()=>{
+    const texture=(window as any).__OCEANFPV__.world.cruise.paint[0].aoMap,pixels=texture.image.data;
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',pixels)),byte=>byte.toString(16).padStart(2,'0')).join('');
+    return {bytes:pixels.byteLength,width:texture.image.width,height:texture.image.height,channel:texture.channel,digest};
+  });
+  expect(actual).toEqual({bytes:CRUISE_OCCLUSION.byteLength,width:CRUISE_OCCLUSION.width,height:CRUISE_OCCLUSION.height,channel:1,digest:CRUISE_OCCLUSION.sha256});
+}
 
 async function ready(page: Page) {
   await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
-  await page.goto('/?test=1');
-  await expect(page.locator('#start')).toBeEnabled({timeout:90000});
+  await loadScene(page,()=>page.goto('/?test=1',{timeout:SCENE_LOAD_TIMEOUT}));
   await page.evaluate(() => {
     const quality=document.querySelector<HTMLSelectElement>('#quality')!;
     if(quality.value!=='balanced') {quality.value='balanced';quality.dispatchEvent(new Event('input',{bubbles:true}));}
@@ -23,18 +43,21 @@ async function recordGroundPrograms(page:Page) {
 }
 
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
+  const atlasResponses:number[]=[];page.on('response',response=>{if(response.url().endsWith('.rgba'))atlasResponses.push(response.status());});
   await recordGroundPrograms(page);const detailRequests:string[]=[];page.on('request',request=>{if(/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.test(request.url()))detailRequests.push(request.url());});
   const networkFailures:{url:string;error:string|undefined}[]=[];page.on('requestfailed',request=>networkFailures.push({url:request.url(),error:request.failure()?.errorText}));
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
-  const {loading,gpu,render,forest,rocks,cliff,detailPrograms,waterPrograms,unsupportedVisible}=await page.evaluate(()=> {
+  await verifyCabinVisibility(page);expect(atlasResponses).toEqual([200]);
+  const {loading,gpu,render,forest,rocks,cliff,detailPrograms,waterPrograms,unsupportedVisible,wakeDirections}=await page.evaluate(()=> {
     const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
     const rocks=app.world.rocks;
     const w=app.world;
     return {loading:{failures:w.surfaceFailures,note:document.querySelector('#start-note')!.textContent,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),bed:w.ocean.material.uniforms.hasSeabedMap.value&&w.ocean.material.uniforms.seabedMap.value===w.coastalRockDetail.map,tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)},
       detailPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap')),waterPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('islandBathymetry')),unsupportedVisible:!!document.querySelector('#unsupported')!.getClientRects().length,
       gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:w.forest?.sourceTriangles??0,cliff:w.cliff?.surface.geometry.index.count/3,
+      wakeDirections:w.ocean.material.uniforms.vesselDirections.value.map((direction:any,i:number)=>({actual:direction.toArray(),heading:(i===0?w.cruise.root:w.yacht).rotation.y})),
       rocks:{triangles:rocks?.shape.geometry.index.count/3,placements:rocks?.placements.length,instances:rocks?.group.children.reduce((sum:number,mesh:any)=>sum+mesh.count,0),reef:rocks?.placements.filter((p:any)=>Math.hypot(p.matrix.elements[12]-app.world.lighthouseReef.x,p.matrix.elements[14]-app.world.lighthouseReef.z)<50).length,
         perIsland:w.islands.map((c:any)=>rocks?.placements.filter((p:any)=>Math.abs(p.matrix.elements[12]-c.x)<c.size*1.2&&Math.abs(p.matrix.elements[14]-c.z)<c.size*1.2).length)}};
   });
@@ -45,6 +68,7 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
     expect(gpu).not.toMatch(/SwiftShader|Microsoft Basic|unavailable/i);expect(gpu).toContain('Direct3D11');
   }
   expect(unsupportedVisible).toBe(false);
+  for(const direction of wakeDirections){expect(direction.actual[0]).toBeCloseTo(Math.cos(direction.heading),8);expect(direction.actual[1]).toBeCloseTo(Math.sin(direction.heading),8);}
   expect(render.triangles).toBeGreaterThan(30000);
   expect(forest).toBeGreaterThan(1000000);
   expect(rocks.triangles).toBe(14844);expect(rocks.perIsland).toEqual([51,79,79]);expect(rocks.placements).toBe(218);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
@@ -63,8 +87,10 @@ for(const peer of [false,true])test(peer?'expired rock response and peer both re
   const requests:string[]=[],errors:string[]=[];page.on('request',request=>{const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(request.url());if(map)requests.push(map[1]);});page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(({peer})=> {
     const timeout=AbortSignal.timeout,controllers=new WeakMap<AbortSignal,AbortController>(),fetch=window.fetch.bind(window),selected=new Set<string>();
+    const cacheRequests:{map:string;cache:RequestCache}[]=[];(window as any).__SURFACE_FETCHES__=cacheRequests;
     AbortSignal.timeout=ms=>{const deadline=timeout.call(AbortSignal,ms),controller=new AbortController();deadline.addEventListener('abort',()=>controller.abort(deadline.reason),{once:true});controllers.set(controller.signal,controller);return controller.signal;};
     window.fetch=async(input,init)=> {
+      const texture=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(String(input))?.[1];if(texture)cacheRequests.push({map:texture,cache:init?.cache??'default'});
       const map=/seaside_rock_(rough|nor_gl)_4k.jpg$/.exec(String(input))?.[1],expire=!!map&&!selected.has(map)&&(map==='rough'||peer);if(expire)selected.add(map!);
       const response=await fetch(input,init);
       if(expire){const controller=controllers.get(init!.signal as AbortSignal);if(!controller)throw new Error('Missing controlled texture deadline');controller.abort(new DOMException('Controlled response deadline','TimeoutError'));}
@@ -72,14 +98,14 @@ for(const peer of [false,true])test(peer?'expired rock response and peer both re
     };
   },{peer});
   await ready(page);
-  const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {failures:w.surfaceFailures,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),note:document.querySelector('#start-note')!.textContent};});
+  const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {failures:w.surfaceFailures,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),note:document.querySelector('#start-note')!.textContent,cacheRequests:(window as any).__SURFACE_FETCHES__ as {map:string;cache:RequestCache}[]};});
   console.log(`Recovered surface delivery: ${JSON.stringify({state,requests})}`);
   expect(state.detail).toEqual([true,true,true]);expect(state.note).not.toContain('標準素材');
   const recovered=state.failures.filter((failure:any)=>failure.asset==='seaside_rock'&&failure.recovered),controlled=recovered.filter((failure:any)=>failure.map==='rough');
   expect(controlled).toEqual([expect.objectContaining({asset:'seaside_rock',map:'rough',phase:'body',message:'Controlled response deadline',aborted:true,abortReason:'TimeoutError',attempt:1,recovered:true})]);
   expect(state.failures.filter((failure:any)=>!failure.recovered)).toEqual([]);expect(['fetch','body']).toContain(controlled[0].phase);
   expect(requests.length).toBe(3+recovered.length);
-  for(const map of ['diff','nor_gl','rough']){const failures=recovered.filter((failure:any)=>failure.map===map);expect(failures.length).toBeLessThanOrEqual(1);expect(requests.filter(request=>request===map).length).toBe(1+failures.length);}
+  for(const map of ['diff','nor_gl','rough']){const failures=recovered.filter((failure:any)=>failure.map===map);expect(failures.length).toBeLessThanOrEqual(1);expect(requests.filter(request=>request===map).length).toBe(1+failures.length);expect(state.cacheRequests.filter(request=>request.map===map).map(request=>request.cache)).toEqual(failures.length?['default','reload']:['default']);}
   expect(requests.filter(map=>map==='rough').length).toBe(2);
   if(peer){expect(recovered.filter((failure:any)=>failure.map==='nor_gl')).toEqual([expect.objectContaining({phase:'body',message:'Controlled response deadline',attempt:1,recovered:true})]);expect(requests.filter(map=>map==='diff').length).toBe(1);}
   expect(errors).toEqual([]);
@@ -146,22 +172,23 @@ test('production hull water masks agree on the GPU for cruise and yacht',async({
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/hull-mask-probe.html');
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__HULL_MASK_PROBE__);},{timeout:60000}).toBe(true);
-  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(1136);
-  // SwiftShader's existing sin/pow bow profile differs by up to 1.36 mm; the new aft profile stays tighter.
-  expect(result.widthError).toBeLessThan(.002);expect(result.aftWidthError).toBeLessThan(.0005);expect(result.maskErrors).toBe(0);expect(errors).toEqual([]);
+  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(8872);expect(result.cruiseCount).toBe(8304);expect(result.poseCount).toBe(5);
+  // Retain the tighter untransformed aft bound; 15 km matrix translations use floats.
+  // SwiftShader's existing sin/pow bow profile differs by up to 1.36 mm.
+  expect(result.widthError).toBeLessThan(.002);expect(result.aftWidthError).toBeLessThan(.0005);expect(result.posedWidthError).toBeLessThan(.002);expect(result.maskErrors).toBe(0);expect(errors).toEqual([]);
 });
 
-test('cruise aft hull surfaces have matching flight contacts and clear surrounding air',async({page})=> {
+test('cruise hull surfaces have matching flight contacts and clear surrounding air',async({page})=> {
   await ready(page);
   const samples=await page.evaluate(async()=>{
     const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),hull=w.cruise.root.children.find((mesh:any)=>mesh.material===w.cruise.paint[1]),samples=[];
-    for(const side of [-1,1])for(const z of [80,100,110,120,125,129])for(const y of [4.2,7.6]) {
-      const origin=w.cruise.root.localToWorld(new T.Vector3(side*30,y,z)),direction=new T.Vector3(-side,0,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(hull)[0];if(!hit)throw new Error('Missing aft hull');
-      const outside=hit.point.clone().addScaledVector(direction,-.3);samples.push({z,y,width:Math.abs(w.cruise.root.worldToLocal(hit.point.clone()).x),contact:w.collision(hit.point,a.getState().time,'breeze'),clear:w.collision(outside,a.getState().time,'breeze')});
+    for(const side of [-1,1])for(const z of [-123.5,-110,80,100,110,120,125,129])for(const y of [4.2,7.6]) {
+      const origin=w.cruise.root.localToWorld(new T.Vector3(side*30,y,z)),direction=new T.Vector3(-side,0,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(hull)[0];if(!hit)throw new Error('Missing cruise hull');
+      const outward=hit.face!.normal.clone().transformDirection(hull.matrixWorld),outside=hit.point.clone().addScaledVector(outward,.3);samples.push({z,y,width:Math.abs(w.cruise.root.worldToLocal(hit.point.clone()).x),contact:w.collision(hit.point,a.getState().time,'breeze'),clear:w.collision(outside,a.getState().time,'breeze')});
     }
     return samples;
   });
-  expect(samples).toHaveLength(24);for(const sample of samples){expect(sample.contact).toContain('船体');expect(sample.clear).toBeNull();if(sample.z<=120)expect(sample.width).toBeGreaterThan(15);}
+  expect(samples).toHaveLength(32);for(const sample of samples){expect(sample.contact).toContain('船体');expect(sample.clear).toBeNull();if(sample.z>=80&&sample.z<=120)expect(sample.width).toBeGreaterThan(15);}
 });
 
 test('aft lounge windows reveal real room depth and retain closed flight contacts',async({page})=> {
@@ -234,8 +261,47 @@ test('stern terrace walking surfaces and supports have matching flight contacts'
   expect(result.samples).toHaveLength(3);for(const sample of result.samples){expect(sample.teak).toBe(true);expect(sample.error).toBeLessThan(.00001);expect(sample.contact).toBeTruthy();expect(sample.clear).toBeNull();expect(sample.railError).toBeLessThan(.00001);expect(sample.railContact).toBeTruthy();expect(sample.aboveRail).toBeNull();}
   for(const y of result.foundations){expect(y).not.toBeNull();expect(y).toBeGreaterThan(9.1);expect(y).toBeLessThan(9.28);}
 });
+test('sun-deck guard surfaces stop fast crossings while open air stays clear',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,root=w.cruise.root,T=await import('/node_modules/three/build/three.module.js' as string),floor=10.6+7*2.85+1.58;
+    const world=(point:number[])=>root.localToWorld(new T.Vector3(...point)),samples=[];
+    for(const [eye,direction]of [
+      [[0,floor+.55,-54],[0,0,1]],[[0,floor+.55,81],[0,0,-1]],
+      [[15,floor+1.05,0],[-1,0,0]],[[-15,floor+1.05,0],[1,0,0]]
+    ]) {
+      const ray=new T.Raycaster(world(eye),new T.Vector3(...direction).transformDirection(root.matrixWorld),0,2),hit=ray.intersectObject(root,true)[0];
+      if(!hit)throw new Error('Missing rendered sun-deck guard');
+      const previous=world(eye),current=world(eye.map((v:number,i:number)=>v+direction[i]*2));
+      samples.push({surface:w.collision(hit.point,a.getState().time,'breeze'),sweep:w.collision(current,a.getState().time,'breeze',previous),before:w.collision(previous,a.getState().time,'breeze'),after:w.collision(current,a.getState().time,'breeze')});
+    }
+    const clear=[[0,floor+1.5,-53],[0,floor+.8,-53],[10,floor+.8,0]].map(point=>w.collision(world(point),a.getState().time,'breeze'));
+    return {samples,clear};
+  });
+  expect(result.samples).toHaveLength(4);expect(result.clear).toEqual([null,null,null]);
+  for(const sample of result.samples){expect(sample.surface).toBe('客船の手すりに接触しました');expect(sample.sweep).toBe('客船の手すりに接触しました');expect(sample.before).toBeNull();expect(sample.after).toBeNull();}
+});
+test('pool cabanas have supported real surfaces, clear ocean openings and swept column contacts',async({page})=>{
+  await ready(page);
+  const result=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,root=w.cruise.root,T=await import('/node_modules/three/build/three.module.js' as string),floor=10.6+7*2.85+1.58+.18,samples=[];
+    const world=(p:number[])=>root.localToWorld(new T.Vector3(...p)),contact=(p:number[],from=p)=>w.collision(world(p),a.getState().time,'breeze',world(from));
+    for(const side of [-1,1])for(const z of [0,22,46]){
+      const ray=new T.Raycaster(world([side*10.4,floor+4,z+1]),new T.Vector3(0,-1,0).transformDirection(root.matrixWorld)),roof=ray.intersectObject(root,true)[0];
+      if(!roof)throw new Error('Missing cabana roof');
+      const furniture=root.children.filter((mesh:any)=>mesh.material?.name==='Pool cabana upholstery'),seat=new T.Raycaster(world([side*9.4,floor+1.5,z]),new T.Vector3(0,-1,0).transformDirection(root.matrixWorld)).intersectObjects(furniture)[0];
+      if(!seat)throw new Error('Missing outdoor upholstery');
+      samples.push({roofError:Math.abs(root.worldToLocal(roof.point.clone()).y-floor-3.2),roof:w.collision(roof.point,a.getState().time,'breeze'),seat:w.collision(seat.point,a.getState().time,'breeze'),opening:contact([side*8.1,floor+1.5,z],[side*13,floor+1.5,z]),column:contact([side*12.2+.8,floor+1.5,z+2.8],[side*12.2-.8,floor+1.5,z+2.8]),aisle:contact([side*13.1,floor+1.5,z])});
+    }
+    return samples;
+  });
+  expect(result).toHaveLength(6);
+  for(const sample of result){expect(sample.roofError).toBeLessThan(.00001);expect(sample.roof).toBe('客船のプール甲板の設備に接触しました');expect(sample.seat).toBe('客船のプール甲板の設備に接触しました');expect(sample.column).toBe('客船のプール甲板の設備に接触しました');expect(sample.opening).toBeNull();expect(sample.aisle).toBeNull();}
+});
 test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
+  await page.route('**/*.rgba',route=>route.fulfill({status:404,body:''}));
   await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);
+  await verifyCabinVisibility(page);
   await expect(page.locator('#start-note')).toContainText('標準素材');
   expect(await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {detailed:!!w.rocks,contacts:w.fallbackRockObstacles.length,visible:w.rockPatches.filter((patch:any)=>patch.fallback).every((patch:any)=>patch.fallback.parent===w.scene),meshPatches:w.rockPatches.filter((patch:any)=>!patch.fallback).length,tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)};})).toEqual({detailed:false,contacts:270,visible:true,meshPatches:1,tints:[true,true,true]});
   const first=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());
@@ -294,12 +360,14 @@ test('cruise departure and lighting remain valid far along the straight route',a
       for(const light of ['golden','blue','day']) {
         const select=document.querySelector<HTMLSelectElement>('#light')!;select.value=light;select.dispatchEvent(new Event('input',{bubbles:true}));
         const atlasLight=w.forest.bakeScene.children.find((child:any)=>child.isDirectionalLight),atlasDirection=atlasLight.position.clone().sub(atlasLight.target.getWorldPosition(camera.clone())).normalize();
-        samples.push({time,preset:light,position:camera.toArray(),clear:w.collision(camera,time,'breeze'),deck:w.collision(below,time,'breeze'),sky:w.sky.position.length(),target:Math.hypot(w.sunlight.target.position.x-camera.x,w.sunlight.target.position.z-camera.z),light:w.sunlight.position.clone().sub(w.sunlight.target.position).distanceTo(w.sun.clone().multiplyScalar(280)),atlas:atlasDirection.distanceTo(w.sun)});
+        const maskTransform=Math.max(...w.ocean.material.uniforms.cruiseInverse.value.clone().multiply(w.cruise.root.matrixWorld).elements.map((n:number,i:number)=>Math.abs(n-(i%5===0?1:0))));
+        const origin=w.ocean.material.uniforms.vessels.value[0],maskOrigin=camera.clone().set(origin.x,origin.y,origin.z).distanceTo(w.cruise.root.position);
+        samples.push({time,preset:light,position:camera.toArray(),clear:w.collision(camera,time,'breeze'),deck:w.collision(below,time,'breeze'),sky:w.sky.position.length(),target:Math.hypot(w.sunlight.target.position.x-camera.x,w.sunlight.target.position.z-camera.z),light:w.sunlight.position.clone().sub(w.sunlight.target.position).distanceTo(w.sun.clone().multiplyScalar(280)),atlas:atlasDirection.distanceTo(w.sun),maskTransform,maskOrigin});
       }
     }
     return samples;
   });
-  for(const sample of result){expect(sample.clear).toBeNull();expect(sample.deck).toContain('客船');expect(sample.sky).toBeLessThan(1e-6);expect(sample.target).toBeLessThan(1e-6);expect(sample.light).toBeLessThan(1e-6);expect(sample.atlas).toBeLessThan(1e-6);}
+  for(const sample of result){expect(sample.clear).toBeNull();expect(sample.deck).toContain('客船');expect(sample.sky).toBeLessThan(1e-6);expect(sample.target).toBeLessThan(1e-6);expect(sample.light).toBeLessThan(1e-6);expect(sample.atlas).toBeLessThan(1e-6);expect(sample.maskTransform).toBeLessThan(1e-8);expect(sample.maskOrigin).toBeLessThan(1e-8);}
   expect(result.at(-1)!.position[2]).toBeLessThan(-14000);
 });
 
@@ -602,9 +670,17 @@ test('lighting and sea settings persist across a full reload', async ({page})=> 
   });
   expect(chosen).toEqual({open:true,light:'blue',sea:'calm'});
   // Reload from the fixed dialog view, avoiding unrelated resumed sea draws.
-  await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
+  await loadScene(page,()=>page.reload({timeout:SCENE_LOAD_TIMEOUT}));
   const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
   expect(persisted).toEqual({light:'blue',sea:'calm'});
+});
+
+test('wake reflections follow the surface gradient on both sides and rotated headings',async({page})=> {
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto('/tests/browser/fixtures/wake-slope-probe.html');
+  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__WAKE_SLOPE_PROBE__);},{timeout:60000}).toBe(true);
+  const probe=await page.evaluate(()=>(window as any).__WAKE_SLOPE_PROBE__);console.log(`Wake slope probe: ${JSON.stringify(probe)}`);
+  expect(probe.count).toBe(4035);expect(probe.maximum).toBeLessThan(.00005);expect(probe.symmetryError).toBeLessThan(.00001);expect(probe.rotationError).toBeLessThan(.00001);expect(errors).toEqual([]);
 });
 
 test('mobile help fits the viewport and closes with the keyboard', async ({page})=> {

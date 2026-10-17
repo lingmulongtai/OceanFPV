@@ -3,9 +3,11 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { foredeckGeometry, hullDeckHeight, hullHalfWidth, hullNameGeometry } from './hull';
 import { metricPaintGeometry } from './paint';
-import { bakeCabinOcclusion,roomOcclusionUV,type RoomSurface } from './occlusion';
+import { bakeCabinOcclusion,cabinOcclusionTexture,roomOcclusionUV,type RoomSurface } from './occlusion';
 import {buildTenderModel,TENDER_MOUNTS} from './tender';
 import {buildSternTerraces} from './stern-terraces';
+import {buildSundeckGuards} from './sundeck-guards';
+import {buildPoolCabanas} from './pool-cabanas';
 import {cruiseHullGeometry,cruiseHullSidePose} from './cruise-hull';
 import {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
 import {buildAftLounge,buildAftLoungeFurniture,buildBowLounge,buildBowLoungeFurniture} from './aft-lounge';
@@ -21,7 +23,8 @@ export function vesselBoxContains(box:VesselBox,p:T.Vector3,padding=0.2) {
   const radius=r+padding;
   return Math.hypot(Math.max(0,x-(halfX-radius)),Math.max(0,z-(halfZ-radius)))<radius;
 }
-export function buildCruiseShip() {
+/** Shared DOM-free geometry and exact visibility inputs for offline baking. */
+export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
   const root=new T.Group();root.name='Ocean Meridian · 260 m';
   const white=new T.MeshStandardMaterial({color:0xf2f0e5,roughness:0.45,metalness:0});
   const navy=new T.MeshStandardMaterial({color:0x172f48,roughness:0.4,metalness:0.25});
@@ -39,6 +42,8 @@ export function buildCruiseShip() {
   const curtain=new T.MeshPhysicalMaterial({color:0xb7ad96,roughness:0.94,sheen:0.7,sheenColor:0xd4c8af,sheenRoughness:0.9,side:T.DoubleSide});
   const tenderUpholstery=new T.MeshPhysicalMaterial({color:0xc4b89d,roughness:0.92,sheen:0.35,sheenColor:0xe6dcc6,sheenRoughness:0.85});
   tenderUpholstery.name='Tender upholstery';
+  const outdoorFabric=new T.MeshPhysicalMaterial({color:0x719396,roughness:.94,sheen:.65,sheenColor:0xc2d4cf,sheenRoughness:.85});
+  outdoorFabric.name='Pool cabana upholstery';
   const boxes:VesselBox[]=[],buckets=new Map<T.Material,T.BufferGeometry[]>();
   const furnitureMaterials=new Set<T.Material>([linen,...quilts]),coarseFurniture=new Map<T.Material,T.BufferGeometry[]>();
   const blockers:T.BufferGeometry[]=[],aftBlockers:T.BufferGeometry[]=[];let capture=false,aoFloor=0,aoCabin=0,aoSide=1,aoEnd=1;
@@ -194,6 +199,8 @@ export function buildCruiseShip() {
       for(const dx of [-0.22,0.22])for(const dz of [-0.55,0.55])rod([side*6.4+dx,sunDeck+0.09,z+offset+dz],[side*6.4+dx,sunDeck+0.165,z+offset+dz],0.025);
     }
   }
+  const cabanas=buildPoolCabanas(sunDeck+.09),cabanaMaterials={paint:white,teak,metal:chrome,fabric:outdoorFabric};
+  for(const part of cabanas.parts)add(part.geometry,[0,0,0],cabanaMaterials[part.finish]);
   const sternTerraces=buildSternTerraces();for(const part of sternTerraces.parts)add(part.geometry,[0,0,0],part.finish==='paint'?white:part.finish==='teak'?teak:chrome);
   const tender=buildTenderModel(),tenderMaterials={orange,white,glass:cabinGlass,rubber:black,metal:chrome,upholstery:tenderUpholstery},hoists:{line:T.Line3;radius:number}[]=[],nearTender=new T.Vector3();
   const hoist=(a:T.Vector3,b:T.Vector3,radius:number,material:T.MeshStandardMaterial)=>{rod(a.toArray(),b.toArray(),radius,material);hoists.push({line:new T.Line3(a,b),radius});};
@@ -216,9 +223,11 @@ export function buildCruiseShip() {
   const mastBase=10.6+6*2.85+1.58;
   rod([0,mastBase,-59],[0,47,-59],0.22,white);rod([-7,42,-59],[7,42,-59],0.09,chrome);
   for(let x=-4;x<=4;x+=2)rod([x,42,-59],[x,44,-59],0.035);
-  for(const side of [-1,1])for(const [base,y,start,end,width]of [[upperRoof,upperRoof+1.05,-53,80,14],[9,10,101,123,13]]) {
-    rod([side*width,y,start],[side*width,y,end]);rod([side*width,y-0.5,start],[side*width,y-0.5,end],0.025);
-    for(let z=start;z<=end;z+=2.2)rod([side*width,base,z],[side*width,y,z]);
+  const sundeckGuards=buildSundeckGuards(upperRoof);
+  for(const {line,radius}of sundeckGuards.segments)rod(line.start.toArray(),line.end.toArray(),radius);
+  for(const side of [-1,1]) {
+    rod([side*13,10,101],[side*13,10,123]);rod([side*13,9.5,101],[side*13,9.5,123],0.025);
+    for(let z=101;z<=123;z+=2.2)rod([side*13,9,z],[side*13,10,z]);
   }
   // Hull portholes, seam bands, anchor recesses and bow mooring machinery.
   for(const side of [-1,1])for(let z=-85;z<99;z+=3.4) {
@@ -234,16 +243,21 @@ export function buildCruiseShip() {
     rod(top.point.addScaledVector(top.normal,0.12).toArray(),bottom.point.addScaledVector(bottom.normal,0.12).toArray(),0.1,chrome);
   }
   for(const x of [-5,5])for(const z of [-113,116]) {const y=hullDeckHeight((z+130)/260,260,9)+0.15;add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,y+0.45,z],chrome);box([1.9,0.12,1.2],[x,y,z],navy);}
-  const bakeStarted=performance.now(),ao=bakeCabinOcclusion(blockers,9.33,-87,{blockers:aftBlockers,front:92}),occlusionBakeMs=performance.now()-bakeStarted;[...blockers,...aftBlockers].forEach(g=>g.dispose());white.aoMap=teak.aoMap=ao;white.aoMapIntensity=teak.aoMapIntensity=0.75;
+  const bakeStarted=performance.now(),ao=bake(blockers,9.33,-87,{blockers:aftBlockers,front:92}),occlusionBakeMs=performance.now()-bakeStarted;[...blockers,...aftBlockers].forEach(g=>g.dispose());white.aoMap=teak.aoMap=ao;white.aoMapIntensity=teak.aoMapIntensity=0.75;
   const furnitureLods:{mesh:T.Mesh;fine:T.BufferGeometry;coarse:T.BufferGeometry}[]=[];
   for(const [m,geometries]of buckets) {
-    const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=m!==cabinGlass;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());
+    const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=m!==cabinGlass&&m!==balconyGlass;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());
     const low=coarseFurniture.get(m);
     if(low){const coarse=mergeGeometries(low);if(!coarse)throw new Error('Furniture geometry merge failed');low.forEach(g=>g.dispose());furnitureLods.push({mesh,fine:geo,coarse});}
   }
   const setQuality=(quality:string)=>furnitureLods.forEach(({mesh,fine,coarse})=>{mesh.geometry=quality==='balanced'?coarse:fine;});
+  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,terraceContains:sternTerraces.contains,guardContacts:sundeckGuards.contacts,cabanaContacts:cabanas.contains,hoistSegments:hoists};
+}
+
+export function buildCruiseShip(pixels?:Uint8Array|null) {
+  const ship=buildCruiseGeometry(pixels?()=>cabinOcclusionTexture(pixels):undefined);
   const labelCanvas=document.createElement('canvas');labelCanvas.width=1024;labelCanvas.height=128;const ctx=labelCanvas.getContext('2d')!;ctx.fillStyle='#d8dfe0';ctx.font='600 68px Arial';ctx.textAlign='center';ctx.fillText('OCEAN  MERIDIAN',512,87);
   const label=new T.CanvasTexture(labelCanvas);label.colorSpace=T.SRGBColorSpace;
-  for(const side of [-1,1])root.add(new T.Mesh(hullNameGeometry(side),new T.MeshStandardMaterial({map:label,transparent:true,depthWrite:false,roughness:0.5})));
-  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,terraceContains:sternTerraces.contains,hoistSegments:hoists};
+  for(const side of [-1,1])ship.root.add(new T.Mesh(hullNameGeometry(side,cruiseHullSidePose),new T.MeshStandardMaterial({map:label,transparent:true,depthWrite:false,roughness:0.5})));
+  return ship;
 }

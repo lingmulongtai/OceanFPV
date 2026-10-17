@@ -39,7 +39,7 @@ export class World {
   sunlight = new T.DirectionalLight(0xffe3bf, 3.3);
   hemisphere = new T.HemisphereLight(0xbdddea, 0x243b41, 1.75);
   ocean: Ocean;
-  cruise=buildCruiseShip();
+  cruise:ReturnType<typeof buildCruiseShip>;
   yacht=new T.Group();
   private yachtContact:((p:T.Vector3)=>boolean)=()=>false;
   gateMeshes: T.Group[] = [];
@@ -70,7 +70,8 @@ export class World {
   private headlandMesh:T.Mesh<T.BufferGeometry,T.MeshStandardMaterial>|null=null;
   quality='high';
 
-  constructor() {
+  constructor(cabinVisibility?:Uint8Array|null) {
+    this.cruise=buildCruiseShip(cabinVisibility);
     wetCoastalSurface(this.rockMaterial,this.shorelineWash);
     this.scene.add(this.cruise.root,this.yacht,this.drone,this.sky,this.sunlight,this.sunlight.target,this.hemisphere);
     this.sky.scale.setScalar(10000);
@@ -272,7 +273,8 @@ export class World {
       const h=this.ocean.heightAt(p.x,p.z)*(kind==='cruise'?0.2:0.45),half=length*0.3;
       const front=this.ocean.heightAt(p.x+forward.x*half,p.z+forward.z*half),back=this.ocean.heightAt(p.x-forward.x*half,p.z-forward.z*half);
       root.position.set(p.x,h,p.z);root.rotation.set((front-back)/(half*2)*0.55,p.heading,0,'YXZ');root.updateMatrixWorld(true);
-      this.ocean.material.uniforms.vessels.value[i].set(p.x,0,p.z,length);this.ocean.material.uniforms.headings.value[i]=p.heading;
+      if(kind==='cruise')this.ocean.material.uniforms.cruiseInverse.value.copy(root.matrixWorld).invert();
+      this.ocean.material.uniforms.vessels.value[i].set(p.x,h,p.z,length);this.ocean.material.uniforms.vesselDirections.value[i].set(Math.cos(p.heading),Math.sin(p.heading));
       this.ocean.material.uniforms.vesselWidths.value[i]=width;this.ocean.material.uniforms.vesselSpeeds.value[i]=p.speed;
       const trail=vesselWakeTrail(kind,time,length),bounds=new T.Box2(),padding=3*Math.sqrt(width*width+trail.at(-1)!.age*Math.max(...trail.map(point=>point.speed))*1.1);
       trail.forEach((point,j)=> {this.ocean.material.uniforms.wakePoints.value[i*WAKE_SAMPLES+j].set(point.x,point.z,point.age,point.speed);bounds.expandByPoint(new T.Vector2(point.x,point.z));});
@@ -300,6 +302,8 @@ export class World {
     for(const c of this.cruise.boxes)if(vesselBoxContains(c,passenger))return '客船の構造物に接触しました';
     if(this.cruise.tenderContains(passenger))return '客船の救命艇・吊り機構に接触しました';
     if(this.cruise.terraceContains(passenger))return '客船のテラスに接触しました';
+    if(this.cruise.guardContacts(passenger,this.cruise.root.worldToLocal(previous.clone())))return '客船の手すりに接触しました';
+    if(this.cruise.cabanaContacts(passenger,this.cruise.root.worldToLocal(previous.clone())))return '客船のプール甲板の設備に接触しました';
     for(const island of this.islands) {
       const h=this.cliffGround&&island.x===COASTS[0].x&&island.z===COASTS[0].z?this.cliffGround.heightAt(p.x,p.z):this.terrain(p.x-island.x,p.z-island.z,island.size,island.height,island.profile);
       if(p.y<h+0.25) return '島に接触しました';

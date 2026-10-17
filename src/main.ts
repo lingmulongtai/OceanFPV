@@ -13,6 +13,7 @@ import { FlightAudio } from './audio';
 import { readStored, writeStored } from './storage';
 import { loadPhotographicSky } from './sky';
 import { SimulationClock } from './clock';
+import {loadCruiseOcclusion} from './cruise-occlusion';
 
 const $ = <E extends HTMLElement = HTMLElement>(id:string) => document.getElementById(id) as E;
 const value = (id:string) => $<HTMLInputElement>(id).value;
@@ -30,7 +31,7 @@ async function boot() {
   renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=0.7;
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;
   renderer.info.autoReset=false;
-  const world=new World();
+  const world=new World(await loadCruiseOcclusion());
   world.ocean.configureFiltering(renderer.extensions.has('OES_texture_float_linear'));
   // Bake the expensive procedural atmosphere once; the visible background and
   // water reflection sample the same HDR sky. Slow rotation gives cloud drift.
