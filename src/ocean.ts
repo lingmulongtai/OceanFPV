@@ -15,6 +15,7 @@ import {CliffDepth,CLIFF_DEPTH_SIZE} from './cliff-depth';
 import {cruiseHullCode} from './cruise-hull';
 import {wakeSurfaceCode} from './wake-surface';
 import {captureReflectedGeometry,oceanReflectionCode} from './ocean-reflection';
+import {whitecapCode} from './whitecaps';
 
 function radialGeometry(quality='high') {
   const segments=quality==='ultra'?512:quality==='high'?384:192,rings=quality==='ultra'?360:quality==='high'?280:170;
@@ -121,7 +122,7 @@ export class Ocean {
     Object.assign(this.material.defines,{ENVMAP_TYPE_CUBE_UV:'',CUBEUV_TEXEL_WIDTH:1/336,CUBEUV_TEXEL_HEIGHT:1/64,CUBEUV_MAX_MIP:'4.0'});
     Object.assign(this.material.uniforms,{
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
-      dusk:{value:0.4},foamEnabled:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:2},()=>new T.Vector4())},vesselDirections:{value:Array.from({length:2},()=>new T.Vector2(1,0))},vesselWidths:{value:[17,4.5]},vesselSpeeds:{value:[0,0]},
+      dusk:{value:0.4},foamEnabled:{value:true},whitecapFiltering:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:2},()=>new T.Vector4())},vesselDirections:{value:Array.from({length:2},()=>new T.Vector2(1,0))},vesselWidths:{value:[17,4.5]},vesselSpeeds:{value:[0,0]},
       cruiseInverse:{value:new T.Matrix4()},
       chopScale:{value:this.simulation.horizontalScale},
       slopeVariance:{value:new T.Vector3()},
@@ -185,6 +186,7 @@ export class Ocean {
       }
       float noise(vec2 p) {vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.0),f.x),f.y);}
       float foamNoise(vec2 p) {return noise(p)*0.55+noise(p*2.17+8.6)*0.3+noise(p*4.79)*0.15;}
+      ${whitecapCode}
       vec3 shortWave(vec2 p,float footprint,float wavelength,float angle,float steepness,float phase) {
         float k=6.28318530718/wavelength,omega=sqrt(9.81*k+0.000074*k*k*k);
         vec2 direction=vec2(cos(angle),sin(angle));
@@ -205,6 +207,7 @@ export class Ocean {
       void main() {
         vec3 view=normalize(eye-worldPosition);float distanceToEye=length(eye-worldPosition);vec2 p=worldPosition.xz;
         float footprint=max(length(dFdx(waveCoordinate)),length(dFdy(waveCoordinate)));
+        vec2 foamQDx=dFdx(waveCoordinate),foamQDy=dFdy(waveCoordinate),foamPDx=dFdx(p),foamPDy=dFdy(p);
         // Transfer subpixel wave slopes into the BRDF before the hull discard.
         vec3 lod=waveLod(footprint);
         vec3 normal=normalAt(waveCoordinate,lod);
@@ -277,7 +280,7 @@ export class Ocean {
         float nh=max(dot(normal,halfV),0.0),nl=max(dot(normal,sunDirection),0.001),den=nh*nh*(a2-1.0)+1.0;
         float distribution=a2/(3.14159*den*den+0.000001),masking=2.0*nv/(nv+sqrt(a2+(1.0-a2)*nv*nv));masking*=2.0*nl/(nl+sqrt(a2+(1.0-a2)*nl*nl));
         vec3 glint=sunColor*distribution*masking*sunFresnel*0.19/max(4.0*nv,0.1);
-        float breaking=smoothstep(0.12,0.8,displacementAt(waveCoordinate).w)*smoothstep(0.42,0.76,n),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
+        float breaking=whitecapFootprint(waveCoordinate,p,foamQDx,foamQDy,foamPDx,foamPDy),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
         vec3 foamColor=vec3(0.78,0.86,0.84)*(0.76+filteredGrain*0.3)*foamIllumination(normal);
         vec3 color=mix(waterRadiance*(1.0-fresnel)+reflected*fresnel+min(glint,vec3(9.0)),foamColor,foam);
         float haze=1.0-exp(-distanceToEye*0.0001);color=mix(color,mix(vec3(0.45,0.62,0.72),vec3(0.62,0.45,0.32),dusk),haze);
@@ -338,6 +341,7 @@ export class Ocean {
     this.material.uniforms.eye.value.copy(camera);this.mesh.position.x=camera.x;this.mesh.position.z=camera.z;
   }
   setQuality(quality:string) {
+    this.material.uniforms.whitecapFiltering.value=quality!=='balanced';
     const size=quality==='ultra'?3072:quality==='high'?1536:512,target=this.mesh.getRenderTarget();if(target.width!==size)target.setSize(size,size);
     this.material.uniforms.reflectionSize.value=size;
     if(this.quality!==quality) {this.mesh.geometry.dispose();this.mesh.geometry=radialGeometry(quality);this.quality=quality;}

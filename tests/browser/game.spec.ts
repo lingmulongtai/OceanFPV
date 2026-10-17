@@ -794,6 +794,23 @@ test('sun glint uses its microfacet angle while sky reflection keeps the surface
  expect(probe.count).toBe(54);expect(probe.changed).toBeGreaterThan(6);expect(probe.sunError).toBeLessThan(.000002);expect(probe.skyError).toBeLessThan(.000002);expect(probe.normalSpread).toBeLessThan(.000002);expect(probe.peakError).toBeLessThan(.000002);expect(errors).toEqual([]);
 });
 
+for(const manualFallback of[false,true])test(`whitecap coverage integrates the coupled wave and noise footprint${manualFallback?' without float-linear support':''}`,async({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  if(manualFallback)await page.addInitScript(()=>{
+    WebGL2RenderingContext.prototype.getExtension=new Proxy(WebGL2RenderingContext.prototype.getExtension,{
+      apply(target,context,args){return args[0]==='OES_texture_float_linear'?null:Reflect.apply(target,context,args);}
+    });
+  });
+  await page.goto('/tests/browser/fixtures/whitecap-footprint-probe.html');
+  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__WHITECAP_FOOTPRINT_PROBE__);},{timeout:60000}).toBe(true);
+  const probe=await page.evaluate(()=>{const{samples,...summary}=(window as any).__WHITECAP_FOOTPRINT_PROBE__;return summary;});
+  console.log(`Whitecap footprint probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
+  expect(typeof probe.floatLinearSupported).toBe('boolean');if(manualFallback)expect(probe.floatLinearSupported).toBe(false);
+  expect(probe.count).toBe(probe.floatLinearSupported?576:288);expect(probe.quadratureError).toBeLessThan(.0001);expect(probe.denseError).toBeLessThan(.001);expect(probe.manualError).toBeLessThan(.001);
+  expect(probe.unfilteredError).toBe(0);expect(probe.qualityStates).toEqual({balanced:false,high:true,ultra:true});expect(probe.oracleConvergence).toBeLessThan(.001);expect(probe.inactive).toBeGreaterThan(0);
+  expect(probe.filteredRMSE).toBeLessThan(probe.originalRMSE*.35);expect(probe.derivativesBeforeDiscard).toBe(true);expect(probe.error).toBe(0);expect(errors).toEqual([]);
+});
+
 test('sea foam follows scene lighting and the rotated diffuse environment',async({page})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/foam-lighting-probe.html');
