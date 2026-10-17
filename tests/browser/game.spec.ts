@@ -384,8 +384,10 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
 });
 test('render delays keep world and flight coupled and unsafe gaps pause without a jump',async({page})=> {
   test.setTimeout(300000);
-  await ready(page);await page.locator('#start').click();
+  await ready(page);
   const result=await page.evaluate(async()=> {
+    // Start and the controlled stall share one task, excluding slow click replies.
+    document.querySelector<HTMLButtonElement>('#start')!.click();
     const app=(window as any).__OCEANFPV__,world=app.world,flight=app.flight;
     flight.position.set(400,100,400);flight.previous.copy(flight.position);flight.velocity.set(0,0,0);
     let ticks=0,mismatches=0;const original=flight.step;
