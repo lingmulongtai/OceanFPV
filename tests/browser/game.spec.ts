@@ -670,7 +670,11 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
           const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
           for(;;){
             const state=a.getState(),flight=a.flight,value=kind==='altitude'?flight.position.y:flight.velocity.x*forward[0]+flight.velocity.z*forward[2];
-            if(flight.crashed||state.paused||value>threshold)return {value,paused:state.paused,crashed:flight.crashed};
+            if(flight.crashed||state.paused||value>threshold) {
+              // Space-up must not activate a Resume button focused by the safety dialog.
+              if(state.paused&&document.activeElement instanceof HTMLElement)document.activeElement.blur();
+              return {value,paused:state.paused,crashed:flight.crashed};
+            }
             if(performance.now()>deadline)throw new Error(`Keyboard ${kind} did not advance: ${JSON.stringify({...state,value,threshold})}`);
             await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
           }
@@ -691,8 +695,19 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
     return {altitude:flight.position.y,forward:forward.toArray(),speed:flight.velocity.dot(forward)};
   });
   expect(beforePitch.altitude).toBeGreaterThan(launchAltitude+2);
-  // Reproduce the observed 11.3 s CI key-up stall and exercise normal recovery.
-  await page.evaluate(async()=>{const start=performance.now();while(performance.now()-start<10100){/* Actual main-thread stall. */}await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));});
+  // A slow key-up may already have paused flight. Recover it as incidental first;
+  // the deliberate witness must begin in active flight in the same browser task.
+  let injected=false;const stallDeadline=Date.now()+60000;
+  while(!injected&&Date.now()<stallDeadline) {
+    injected=await page.evaluate(async()=> {
+      const a=(window as any).__OCEANFPV__;if(a.getState().paused)return false;
+      if(a.flight.crashed)throw new Error('Controlled keyboard stall began after a crash');
+      const start=performance.now();while(performance.now()-start<10100){/* Actual main-thread stall. */}
+      await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));return true;
+    });
+    if(!injected)await recoverRenderPause();
+  }
+  expect(injected,'controlled keyboard stall began in active flight').toBe(true);
   await expect(page.locator('#pause-title')).toHaveText('描画が長時間止まりました');
   // This required witness is separate from incidental software-renderer stalls.
   await recoverRenderPause(true);
