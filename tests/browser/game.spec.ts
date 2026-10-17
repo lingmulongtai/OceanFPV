@@ -249,6 +249,26 @@ test('stern terrace walking surfaces and supports have matching flight contacts'
   expect(result.samples).toHaveLength(3);for(const sample of result.samples){expect(sample.teak).toBe(true);expect(sample.error).toBeLessThan(.00001);expect(sample.contact).toBeTruthy();expect(sample.clear).toBeNull();expect(sample.railError).toBeLessThan(.00001);expect(sample.railContact).toBeTruthy();expect(sample.aboveRail).toBeNull();}
   for(const y of result.foundations){expect(y).not.toBeNull();expect(y).toBeGreaterThan(9.1);expect(y).toBeLessThan(9.28);}
 });
+test('sun-deck guard surfaces stop fast crossings while open air stays clear',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,root=w.cruise.root,T=await import('/node_modules/three/build/three.module.js' as string),floor=10.6+7*2.85+1.58;
+    const world=(point:number[])=>root.localToWorld(new T.Vector3(...point)),samples=[];
+    for(const [eye,direction]of [
+      [[0,floor+.55,-54],[0,0,1]],[[0,floor+.55,81],[0,0,-1]],
+      [[15,floor+1.05,0],[-1,0,0]],[[-15,floor+1.05,0],[1,0,0]]
+    ]) {
+      const ray=new T.Raycaster(world(eye),new T.Vector3(...direction).transformDirection(root.matrixWorld),0,2),hit=ray.intersectObject(root,true)[0];
+      if(!hit)throw new Error('Missing rendered sun-deck guard');
+      const previous=world(eye),current=world(eye.map((v:number,i:number)=>v+direction[i]*2));
+      samples.push({surface:w.collision(hit.point,a.getState().time,'breeze'),sweep:w.collision(current,a.getState().time,'breeze',previous),before:w.collision(previous,a.getState().time,'breeze'),after:w.collision(current,a.getState().time,'breeze')});
+    }
+    const clear=[[0,floor+1.5,-53],[0,floor+.8,-53],[10,floor+.8,0]].map(point=>w.collision(world(point),a.getState().time,'breeze'));
+    return {samples,clear};
+  });
+  expect(result.samples).toHaveLength(4);expect(result.clear).toEqual([null,null,null]);
+  for(const sample of result.samples){expect(sample.surface).toBe('客船の手すりに接触しました');expect(sample.sweep).toBe('客船の手すりに接触しました');expect(sample.before).toBeNull();expect(sample.after).toBeNull();}
+});
 test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
   await page.route('**/*.rgba',route=>route.fulfill({status:404,body:''}));
   await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);

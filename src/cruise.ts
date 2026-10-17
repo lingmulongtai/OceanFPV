@@ -6,6 +6,7 @@ import { metricPaintGeometry } from './paint';
 import { bakeCabinOcclusion,cabinOcclusionTexture,roomOcclusionUV,type RoomSurface } from './occlusion';
 import {buildTenderModel,TENDER_MOUNTS} from './tender';
 import {buildSternTerraces} from './stern-terraces';
+import {buildSundeckGuards} from './sundeck-guards';
 import {cruiseHullGeometry,cruiseHullSidePose} from './cruise-hull';
 import {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
 import {buildAftLounge,buildAftLoungeFurniture,buildBowLounge,buildBowLoungeFurniture} from './aft-lounge';
@@ -217,9 +218,11 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
   const mastBase=10.6+6*2.85+1.58;
   rod([0,mastBase,-59],[0,47,-59],0.22,white);rod([-7,42,-59],[7,42,-59],0.09,chrome);
   for(let x=-4;x<=4;x+=2)rod([x,42,-59],[x,44,-59],0.035);
-  for(const side of [-1,1])for(const [base,y,start,end,width]of [[upperRoof,upperRoof+1.05,-53,80,14],[9,10,101,123,13]]) {
-    rod([side*width,y,start],[side*width,y,end]);rod([side*width,y-0.5,start],[side*width,y-0.5,end],0.025);
-    for(let z=start;z<=end;z+=2.2)rod([side*width,base,z],[side*width,y,z]);
+  const sundeckGuards=buildSundeckGuards(upperRoof);
+  for(const {line,radius}of sundeckGuards.segments)rod(line.start.toArray(),line.end.toArray(),radius);
+  for(const side of [-1,1]) {
+    rod([side*13,10,101],[side*13,10,123]);rod([side*13,9.5,101],[side*13,9.5,123],0.025);
+    for(let z=101;z<=123;z+=2.2)rod([side*13,9,z],[side*13,10,z]);
   }
   // Hull portholes, seam bands, anchor recesses and bow mooring machinery.
   for(const side of [-1,1])for(let z=-85;z<99;z+=3.4) {
@@ -243,7 +246,7 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
     if(low){const coarse=mergeGeometries(low);if(!coarse)throw new Error('Furniture geometry merge failed');low.forEach(g=>g.dispose());furnitureLods.push({mesh,fine:geo,coarse});}
   }
   const setQuality=(quality:string)=>furnitureLods.forEach(({mesh,fine,coarse})=>{mesh.geometry=quality==='balanced'?coarse:fine;});
-  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,terraceContains:sternTerraces.contains,hoistSegments:hoists};
+  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,terraceContains:sternTerraces.contains,guardContacts:sundeckGuards.contacts,hoistSegments:hoists};
 }
 
 export function buildCruiseShip(pixels?:Uint8Array|null) {
