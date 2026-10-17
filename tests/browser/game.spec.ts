@@ -77,12 +77,29 @@ async function verifyTreeBounds(page:Page) {
 }
 
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
+  await page.addInitScript(()=> {
+    const prototype=WebGL2RenderingContext.prototype,wait=prototype.clientWaitSync,fetch=window.fetch.bind(window);
+    const gate={completed:0,requests:[] as {url:string;time:number}[]};(window as any).__INITIAL_GPU_GATE__=gate;
+    prototype.clientWaitSync=function(sync,flags,timeout) {
+      const status=wait.call(this,sync,flags,timeout);
+      if(!gate.completed&&(status===this.ALREADY_SIGNALED||status===this.CONDITION_SATISFIED))gate.completed=performance.now();
+      return status;
+    };
+    window.fetch=(input,init)=> {
+      const url=String(input);if(/\.(jpg|hdr|glb)$/.test(url))gate.requests.push({url,time:performance.now()});
+      return fetch(input,init);
+    };
+  });
   const atlasResponses:number[]=[];page.on('response',response=>{if(response.url().endsWith('.rgba'))atlasResponses.push(response.status());});
   await recordGroundPrograms(page);const detailRequests:string[]=[];page.on('request',request=>{if(/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.test(request.url()))detailRequests.push(request.url());});
   const networkFailures:{url:string;error:string|undefined}[]=[];page.on('requestfailed',request=>networkFailures.push({url:request.url(),error:request.failure()?.errorText}));
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
+  const gate=await page.evaluate(()=>({...(window as any).__INITIAL_GPU_GATE__,ready:performance.getEntriesByName('oceanfpv:initial-gpu-ready')[0]?.startTime}));
+  console.log(`Initial GPU gate: ${JSON.stringify(gate)}`);
+  expect(gate.completed).toBeGreaterThan(0);expect(gate.ready).toBeGreaterThanOrEqual(gate.completed);expect(gate.requests.length).toBeGreaterThan(10);
+  for(const request of gate.requests)expect(request.time).toBeGreaterThanOrEqual(gate.ready);
   // Keep this static scene audit from queuing an animated software-GPU frame
   // between every assertion and the lazy Three.js imports used for tree bounds.
   await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#open-help')!.click());
