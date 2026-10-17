@@ -16,6 +16,8 @@ An audit of the actual merged timber meshes found 39,092 collapsed triangles out
 
 All rendered positions, normals, ambient-occlusion UV1 coordinates and contact boxes retain the same combined digest. All 393,216 cabin-atlas bytes remain identical. The generated input fingerprint changes because the timber blockers are expanded from indexed to non-indexed geometry; the visibility data itself does not change.
 
-Verification: 167 unit tests, the strict TypeScript/Vite build, the byte-identical cabin-atlas check and minified native ULTRA at 1,920 × 1,280 pass, with 36 photographic asset responses and no unexpected errors. The projection keeps the existing texture and colour. Material ageing, the strong red hue and chart seams on curved furniture are separate remaining limitations; this correction does not claim continuous cylindrical wood grain.
+Verification: 168 unit tests, the strict TypeScript/Vite build, the byte-identical cabin-atlas check and minified native ULTRA at 1,920 × 1,280 pass, with 36 photographic asset responses and no unexpected errors. The projection keeps the existing texture and colour. Material ageing, the strong red hue and chart seams on curved furniture are separate remaining limitations; this correction does not claim continuous cylindrical wood grain.
 
-Production bundle (unchanged by the later test-fixture integration): `index-hJilH_3-.js`, SHA-256 `d13bdcc9bdecd8bae49c22cf17cf6e07a67eb4d742ac062fee525fe431c0555e`. Public deployment and physical-controller acceptance remain separate checks.
+The integrated build also includes the pool's per-camera backface exclusion, with nested visibility restoration, to avoid invisible transmission passes. This leaves the timber geometry and photographic projection unchanged. The pool-only build and matched rendering measurements are recorded in [CRUISE_POOLS.md](CRUISE_POOLS.md).
+
+Integrated production bundle: `index-CQwA0i0d.js`, SHA-256 `d9b8d24724d7b1459ab25b1762d24f259dd2e42d201d8f52eefed1e2e380c3eb`. Public deployment and physical-controller acceptance remain separate checks.
