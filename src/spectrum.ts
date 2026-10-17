@@ -111,8 +111,8 @@ export class WaveCascade {
     // Height and Dx occupy the real/imaginary outputs; Dz remains Hermitian.
     if(count!==this.fields[0].real.length) throw new Error('Invalid ocean field');
   }
-  updateFoam(time:number,heightScale:number,horizontalScale:number) {
-    const reset=heightScale!==this.foamScale||time<this.foamTime,dt=Number.isFinite(this.foamTime)?Math.min(Math.abs(time-this.foamTime),0.1):0;
+  updateFoam(time:number,heightScale:number,horizontalScale:number,profileChanged=false) {
+    const reset=profileChanged||heightScale!==this.foamScale||time<this.foamTime,dt=Number.isFinite(this.foamTime)?Math.min(Math.abs(time-this.foamTime),0.1):0;
     this.foamTime=time;this.foamScale=heightScale;
     for(let i=0;i<this.displacement.length;i+=4) {
       const xx=1+horizontalScale*this.tangentX[i],xz=horizontalScale*this.tangentZ[i],zx=horizontalScale*this.tangentX[i+2],zz=1+horizontalScale*this.tangentZ[i+2];
@@ -130,30 +130,42 @@ export class WaveCascade {
   }
 }
 
+export type WaveBandScales=readonly [number,number,number];
 export class SpectralSea {
   readonly cascades=[new WaveCascade(128,433,173,0.85,36,433,1.8,-0.45),new WaveCascade(128,97,519,0.34,4,36,1.3),new WaveCascade(128,23.3,831,0.085,0.45,4,0.85)];
   time=0;
-  private scale=1;
   private chopLimit=1;
   private initialized=false;
-  horizontalScale=1;
+  readonly heightScales:[number,number,number]=[1,1,1];
+  readonly horizontalScales:[number,number,number]=[1,1,1];
+  profileVersion=0;
   constructor(){this.update(0);}
-  update(time:number,scale=1) {
-    if(this.initialized&&time>=this.time&&time-this.time<1/30&&scale===this.scale)return false;
+  private horizontalFor(scales:WaveBandScales):WaveBandScales {
+    if(scales[0]===scales[1]&&scales[1]===scales[2]) {
+      const horizontal=Math.min(scales[0],this.chopLimit);return [horizontal,horizontal,horizontal];
+    }
+    const compression=this.cascades.reduce((sum,c,i)=>sum+c.compressionBound*scales[i],0),factor=Math.min(1,0.82/Math.max(compression,0.001));
+    return [scales[0]*factor,scales[1]*factor,scales[2]*factor];
+  }
+  update(time:number,scale:number|WaveBandScales=1) {
+    const scales:WaveBandScales=typeof scale==='number'?[scale,scale,scale]:scale,changed=scales.some((value,i)=>value!==this.heightScales[i]);
+    if(this.initialized&&time>=this.time&&time-this.time<1/30&&!changed)return false;
     this.initialized=true;
-    this.time=time;this.scale=scale;this.cascades.forEach(c=>c.update(time));
+    this.time=time;if(changed)this.profileVersion++;scales.forEach((value,i)=>this.heightScales[i]=value);this.cascades.forEach(c=>c.update(time));
     // Bound the summed symmetric compression before it inverts the surface.
     this.chopLimit=0.82/Math.max(this.cascades.reduce((sum,c)=>sum+c.compressionBound,0),0.001);
-    this.horizontalScale=Math.min(scale,this.chopLimit);
-    this.cascades.forEach(c=>c.updateFoam(time,scale,this.horizontalScale));return true;
+    this.horizontalFor(scales).forEach((value,i)=>this.horizontalScales[i]=value);
+    this.cascades.forEach((c,i)=>c.updateFoam(time,scales[i],this.horizontalScales[i],changed));return true;
   }
-  heightAt(x:number,z:number,scale=1,envelope?:(x:number,z:number)=>number) {
-    let qx=x,qz=z;const horizontal=Math.min(scale,this.chopLimit);
+  heightAt(x:number,z:number,scale:number|WaveBandScales=1,envelope?:(x:number,z:number)=>number) {
+    const scales:WaveBandScales=typeof scale==='number'?[scale,scale,scale]:scale,uniform=scales[0]===scales[1]&&scales[1]===scales[2];
+    const horizontal=scales.every((value,i)=>value===this.heightScales[i])?this.horizontalScales:this.horizontalFor(scales);
+    let qx=x,qz=z;
     // Shore gradients amplify inverse-map error; refine before sampling their envelope.
     for(let i=0;i<(envelope?12:3);i++) {
-      let dx=0,dz=0;for(const c of this.cascades){dx+=c.sample(qx,qz,0);dz+=c.sample(qx,qz,2);}
-      const nextX=x-dx*horizontal,nextZ=z-dz*horizontal,converged=Math.hypot(nextX-qx,nextZ-qz)<.000001;qx=nextX;qz=nextZ;if(envelope&&converged)break;
+      let dx=0,dz=0;for(const [band,c]of this.cascades.entries()){const gain=uniform?1:horizontal[band];dx+=c.sample(qx,qz,0)*gain;dz+=c.sample(qx,qz,2)*gain;}
+      const nextX=x-dx*(uniform?horizontal[0]:1),nextZ=z-dz*(uniform?horizontal[0]:1),converged=Math.hypot(nextX-qx,nextZ-qz)<.000001;qx=nextX;qz=nextZ;if(envelope&&converged)break;
     }
-    return this.cascades.reduce((h,c)=>h+c.sample(qx,qz),0)*scale*(envelope?.(qx,qz)??1);
+    return this.cascades.reduce((h,c,i)=>h+c.sample(qx,qz)*(uniform?1:scales[i]),0)*(uniform?scales[0]:1)*(envelope?.(qx,qz)??1);
   }
 }

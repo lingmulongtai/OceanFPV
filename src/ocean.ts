@@ -124,7 +124,7 @@ export class Ocean {
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
       dusk:{value:0.4},foamEnabled:{value:true},whitecapFiltering:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:2},()=>new T.Vector4())},vesselDirections:{value:Array.from({length:2},()=>new T.Vector2(1,0))},vesselWidths:{value:[17,4.5]},vesselSpeeds:{value:[0,0]},
       cruiseInverse:{value:new T.Matrix4()},
-      chopScale:{value:this.simulation.horizontalScale},
+      chopScale:{value:this.simulation.horizontalScales[0]},
       slopeVariance:{value:new T.Vector3()},
       heightVariance:{value:new T.Vector3()},
       slopeMipEnergy:{value:Array.from({length:8},()=>new T.Vector3())},heightMipEnergy:{value:Array.from({length:8},()=>new T.Vector3())},
@@ -331,7 +331,7 @@ export class Ocean {
     this.state=state;
     if(this.simulation.update(time,SEA_SCALE[state]))this.fieldsDirty=true;
     this.material.uniforms.time.value=time;this.material.uniforms.seaScale.value=SEA_SCALE[state];
-    this.material.uniforms.chopScale.value=this.simulation.horizontalScale;
+    this.material.uniforms.chopScale.value=this.simulation.horizontalScales[0];
     this.material.uniforms.slopeVariance.value.set(...this.simulation.cascades.map(c=>c.slopeVariance*SEA_SCALE[state]**2));
     this.material.uniforms.heightVariance.value.set(...this.simulation.cascades.map(c=>c.heightVariance*SEA_SCALE[state]**2));
   }

@@ -68,7 +68,7 @@ test('contact heights sample the coastal envelope after inverse lateral displace
     let changed=0;
     for(const coast of BATHY_COASTS)for(let i=0;i<80;i++) {
       const x=coast.x-coast.size+(i*17.31)%(coast.size*2),z=coast.z-coast.size+(i*41.73)%(coast.size*2);
-      const expected=1.5*scale*envelope(x-6*sea.horizontalScale,z+3*sea.horizontalScale);
+      const expected=1.5*scale*envelope(x-6*sea.horizontalScales[0],z+3*sea.horizontalScales[0]);
       assert.ok(Math.abs(sea.heightAt(x,z,scale,envelope)-expected)<1e-10);
       assert.ok(Number.isFinite(expected));
       if(Math.abs(expected-1.5*scale*envelope(x,z))>0.001)changed++;
@@ -85,7 +85,7 @@ test('natural shoreline world points reconstruct contact heights within four mil
     for(const coast of BATHY_COASTS)for(let i=0;i<2200;i++) {
       const x=coast.x-coast.size+(i*17.31)%(coast.size*2),z=coast.z-coast.size+(i*41.73)%(coast.size*2),depth=-sampleBathymetry(data,x,z).height;
       if(depth<0||depth>=8)continue;
-      const px=x+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,0),0)*sea.horizontalScale,pz=z+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,2),0)*sea.horizontalScale;
+      const px=x+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,0),0)*sea.horizontalScales[0],pz=z+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,2),0)*sea.horizontalScales[0];
       const expected=sea.cascades.reduce((sum,c)=>sum+c.sample(x,z),0)*scale*envelope(x,z);
       assert.ok(Math.abs(sea.heightAt(px,pz,scale,envelope)-expected)<0.004);count++;
     }
@@ -98,7 +98,7 @@ test('inverse displacement converges on measured shelves under strong crossed sw
   for(const time of [6,12]) {
     sea.update(time,2.15);
     for(const [x,z]of [[-742.65,255.05],[-927.09,426.53]]) {
-      const px=x+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,0),0)*sea.horizontalScale,pz=z+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,2),0)*sea.horizontalScale;
+      const px=x+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,0),0)*sea.horizontalScales[0],pz=z+sea.cascades.reduce((sum,c)=>sum+c.sample(x,z,2),0)*sea.horizontalScales[0];
       const rendered=sea.cascades.reduce((sum,c)=>sum+c.sample(x,z),0)*2.15*envelope(x,z);
       assert.ok(Math.abs(sea.heightAt(px,pz,2.15,envelope)-rendered)<.001);
     }
