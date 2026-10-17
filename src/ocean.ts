@@ -254,10 +254,11 @@ export class Ocean {
         vec3 waterRadiance=coastalWaterRadiance(p,bottom,depth,view,sunDirection,sunColor);
         float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);waterRadiance+=vec3(0.018,0.11,0.078)*crestLight;
         vec3 halfV=normalize(view+sunDirection);
+        float sunFresnel=0.0204+0.9796*pow(1.0-clamp(dot(view,halfV),0.0,1.0),5.0);
         float a2=pow(0.12,4.0)+min(0.2,unresolvedVariance+0.15*dot(normalFootprint,normalFootprint));
         float nh=max(dot(normal,halfV),0.0),nl=max(dot(normal,sunDirection),0.001),den=nh*nh*(a2-1.0)+1.0;
         float distribution=a2/(3.14159*den*den+0.000001),masking=2.0*nv/(nv+sqrt(a2+(1.0-a2)*nv*nv));masking*=2.0*nl/(nl+sqrt(a2+(1.0-a2)*nl*nl));
-        vec3 glint=sunColor*distribution*masking*fresnel*0.19/max(4.0*nv,0.1);
+        vec3 glint=sunColor*distribution*masking*sunFresnel*0.19/max(4.0*nv,0.1);
         float breaking=smoothstep(0.12,0.8,displacementAt(waveCoordinate).w)*smoothstep(0.42,0.76,n),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
         vec3 foamColor=mix(vec3(0.78,0.86,0.84),vec3(0.82,0.78,0.66),dusk)*(0.76+filteredGrain*0.3);
         vec3 color=mix(waterRadiance*(1.0-fresnel)+reflected*fresnel+min(glint,vec3(9.0)),foamColor,foam);
