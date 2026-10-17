@@ -79,7 +79,6 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(detailRequests.length).toBe(3+recovered.length);expect(new Set(detailRequests).size).toBe(3);
   for(const url of new Set(detailRequests)){const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(url)![1];expect(detailRequests.filter(request=>request===url).length).toBe(1+recovered.filter((failure:any)=>failure.map===map).length);}
   console.log(`Ground production samplers: ${JSON.stringify(detailPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit})))}`);
-  await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
 });
 
@@ -246,6 +245,8 @@ test('bridge foundation connects to the deck and matches flight contacts',async(
 test('stern terrace walking surfaces and supports have matching flight contacts',async({page})=> {
   await ready(page);
   const result=await page.evaluate(async()=>{
+    // Freeze unrelated menu redraws through the normal fixed-scene dialog cache.
+    document.querySelector<HTMLButtonElement>('#open-help')!.click();
     const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),model=await import('/src/stern-terraces.ts' as string),samples=[];
     for(const deck of model.STERN_TERRACES) {
       const local=new T.Vector3(deck.width/2-.3,deck.y+.8,deck.z+3.6),origin=w.cruise.root.localToWorld(local),direction=new T.Vector3(0,-1,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(w.cruise.root,true)[0];
@@ -256,7 +257,7 @@ test('stern terrace walking surfaces and supports have matching flight contacts'
     }
     const proxies=w.cruise.root.children.filter((mesh:any)=>mesh.isMesh&&mesh.material===w.cruise.teak).map((mesh:any)=>{const proxy=new T.Mesh(mesh.geometry,new T.MeshBasicMaterial({side:T.DoubleSide}));proxy.matrixAutoUpdate=false;proxy.matrixWorld.copy(mesh.matrixWorld);return proxy;});
     const supports=model.buildSternTerraces().solids.slice(2,4),foundations=supports.map((support:any)=>{const centre=support.getCenter(new T.Vector3()),origin=w.cruise.root.localToWorld(new T.Vector3(centre.x,9.279,centre.z)),direction=new T.Vector3(0,-1,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObjects(proxies)[0];return hit?w.cruise.root.worldToLocal(hit.point.clone()).y:null;});
-    proxies.forEach((mesh:any)=>mesh.material.dispose());return {samples,foundations};
+    proxies.forEach((mesh:any)=>mesh.material.dispose());document.querySelector<HTMLButtonElement>('[data-close="help-dialog"]')!.click();return {samples,foundations};
   });
   expect(result.samples).toHaveLength(3);for(const sample of result.samples){expect(sample.teak).toBe(true);expect(sample.error).toBeLessThan(.00001);expect(sample.contact).toBeTruthy();expect(sample.clear).toBeNull();expect(sample.railError).toBeLessThan(.00001);expect(sample.railContact).toBeTruthy();expect(sample.aboveRail).toBeNull();}
   for(const y of result.foundations){expect(y).not.toBeNull();expect(y).toBeGreaterThan(9.1);expect(y).toBeLessThan(9.28);}
@@ -546,12 +547,34 @@ test('lost WebGL context closes modal layers and leaves recovery reachable',asyn
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(false);
 });
 test('race registers actual ordered gate crossing and saves a completed run', async ({page})=> {
-  test.setTimeout(300000);
+  // Reserve the existing 18 × 20 s crossings and 60 s warmup without relaxing either phase.
+  test.setTimeout(600000);
+  page.on('console',message=>{if(message.text().startsWith('Race progress: '))console.log(message.text());});
   await page.setViewportSize({width:320,height:240});
+  // Use a supported FPV lens for this physics case; native ULTRA captures cover wide scenery.
+  await page.addInitScript(()=>localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced',fov:'65',tilt:'0'})));
   await ready(page);
-  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.getState().time),{timeout:60000}).toBeGreaterThan(2);
-  await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#race-mode')!.click());
+  // CI protocol polls held each menu frame for >10 s, correctly discarding its
+  // unsafe clock gap. Warm a normal flight in one task and retain the safeguard.
+  const warmup=await page.evaluate(async()=>{
+    document.querySelector<HTMLButtonElement>('#start')!.click();
+    const app=(window as any).__OCEANFPV__,deadline=performance.now()+60000;let stallResumes=0;
+    while(app.getState().time<=2){
+      const state=app.getState();if(app.flight.crashed||performance.now()>deadline)throw new Error(`Race warmup did not advance: ${JSON.stringify(state)}`);
+      if(state.paused){
+        const title=document.querySelector('#pause-title')!.textContent;
+        if(title!=='描画が長時間止まりました'||!document.querySelector<HTMLDialogElement>('#pause-dialog')!.open||++stallResumes>2)throw new Error(`Race warmup paused: ${JSON.stringify({title,stallResumes,state})}`);
+        document.querySelector<HTMLButtonElement>('#resume')!.click();
+        if(app.getState().paused)throw new Error('Race warmup resume was rejected');
+      }
+      await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+    }
+    return {time:app.getState().time,flightTime:app.getState().flightTime,stallResumes,fov:app.camera.fov,quality:app.world.quality};
+  });
+  expect(warmup.time).toBeGreaterThan(2);expect(warmup.flightTime).toBeCloseTo(warmup.time,6);expect(warmup.fov).toBe(65);expect(warmup.quality).toBe('balanced');console.log(`Race warmup: ${JSON.stringify(warmup)}`);
   const resetTime=await page.evaluate(()=> {
+    document.querySelector<HTMLButtonElement>('#home')!.click();document.querySelector<HTMLButtonElement>('#back-menu')!.click();
+    document.querySelector<HTMLButtonElement>('#race-mode')!.click();
     document.querySelector<HTMLButtonElement>('#start')!.click();
     return (window as any).__OCEANFPV__.getState().time;
   });
@@ -567,7 +590,7 @@ test('race registers actual ordered gate crossing and saves a completed run', as
       const normal=app.flight.position.clone().set(0,0,1).applyQuaternion(g.quaternion);
       // A catch-up frame must not carry this unattended approach into the ship after crossing.
       const approach=()=>{app.flight.position.copy(g.position).addScaledVector(normal,-0.08);app.flight.velocity.copy(normal).multiplyScalar(2);app.flight.orientation.identity();};
-      approach();let start=performance.now(),stallResumes=0;
+      approach();let start=performance.now(),stallResumes=0;console.log(`Race progress: ${JSON.stringify({approach:index+1,...app.getState()})}`);
       const progress=()=>app.race.laps.length*6+app.race.next;
       if(index===3)while(performance.now()-start<10100){/* Exercise real render-stall pause and UI recovery mid-race. */}
       // Let real animation/physics frames cross the plane without a protocol poll per frame.
@@ -582,7 +605,7 @@ test('race registers actual ordered gate crossing and saves a completed run', as
         }
       }
       while(progress()<index+1&&performance.now()-start<20000);
-      const crossed={progress:progress(),waited:performance.now()-start,stallResumes};crossings.push(crossed);
+      const crossed={progress:progress(),waited:performance.now()-start,stallResumes};crossings.push(crossed);console.log(`Race progress: ${JSON.stringify({gate:index+1,...crossed})}`);
       if(crossed.progress!==index+1||crossed.waited>20000)break;
     }
     return {waiting,crossings};
