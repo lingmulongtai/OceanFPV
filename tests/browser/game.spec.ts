@@ -279,6 +279,23 @@ test('sun-deck guard surfaces stop fast crossings while open air stays clear',as
   expect(result.samples).toHaveLength(4);expect(result.clear).toEqual([null,null,null]);
   for(const sample of result.samples){expect(sample.surface).toBe('客船の手すりに接触しました');expect(sample.sweep).toBe('客船の手すりに接触しました');expect(sample.before).toBeNull();expect(sample.after).toBeNull();}
 });
+test('pool cabanas have supported real surfaces, clear ocean openings and swept column contacts',async({page})=>{
+  await ready(page);
+  const result=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,root=w.cruise.root,T=await import('/node_modules/three/build/three.module.js' as string),floor=10.6+7*2.85+1.58+.18,samples=[];
+    const world=(p:number[])=>root.localToWorld(new T.Vector3(...p)),contact=(p:number[],from=p)=>w.collision(world(p),a.getState().time,'breeze',world(from));
+    for(const side of [-1,1])for(const z of [0,22,46]){
+      const ray=new T.Raycaster(world([side*10.4,floor+4,z+1]),new T.Vector3(0,-1,0).transformDirection(root.matrixWorld)),roof=ray.intersectObject(root,true)[0];
+      if(!roof)throw new Error('Missing cabana roof');
+      const furniture=root.children.filter((mesh:any)=>mesh.material?.name==='Pool cabana upholstery'),seat=new T.Raycaster(world([side*9.4,floor+1.5,z]),new T.Vector3(0,-1,0).transformDirection(root.matrixWorld)).intersectObjects(furniture)[0];
+      if(!seat)throw new Error('Missing outdoor upholstery');
+      samples.push({roofError:Math.abs(root.worldToLocal(roof.point.clone()).y-floor-3.2),roof:w.collision(roof.point,a.getState().time,'breeze'),seat:w.collision(seat.point,a.getState().time,'breeze'),opening:contact([side*8.1,floor+1.5,z],[side*13,floor+1.5,z]),column:contact([side*12.2+.8,floor+1.5,z+2.8],[side*12.2-.8,floor+1.5,z+2.8]),aisle:contact([side*13.1,floor+1.5,z])});
+    }
+    return samples;
+  });
+  expect(result).toHaveLength(6);
+  for(const sample of result){expect(sample.roofError).toBeLessThan(.00001);expect(sample.roof).toBe('客船のプール甲板の設備に接触しました');expect(sample.seat).toBe('客船のプール甲板の設備に接触しました');expect(sample.column).toBe('客船のプール甲板の設備に接触しました');expect(sample.opening).toBeNull();expect(sample.aisle).toBeNull();}
+});
 test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
   await page.route('**/*.rgba',route=>route.fulfill({status:404,body:''}));
   await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);

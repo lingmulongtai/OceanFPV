@@ -303,6 +303,7 @@ export class World {
     if(this.cruise.tenderContains(passenger))return '客船の救命艇・吊り機構に接触しました';
     if(this.cruise.terraceContains(passenger))return '客船のテラスに接触しました';
     if(this.cruise.guardContacts(passenger,this.cruise.root.worldToLocal(previous.clone())))return '客船の手すりに接触しました';
+    if(this.cruise.cabanaContacts(passenger,this.cruise.root.worldToLocal(previous.clone())))return '客船のプール甲板の設備に接触しました';
     for(const island of this.islands) {
       const h=this.cliffGround&&island.x===COASTS[0].x&&island.z===COASTS[0].z?this.cliffGround.heightAt(p.x,p.z):this.terrain(p.x-island.x,p.z-island.z,island.size,island.height,island.profile);
       if(p.y<h+0.25) return '島に接触しました';
