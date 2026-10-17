@@ -582,21 +582,30 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   test.setTimeout(600000);
   // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
   await page.setViewportSize({width:320,height:240});
-  await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());
+  await ready(page);let safetyRecoveries=0;
   // Observe elapsed time and the supported launch pose in one browser task; slow
   // software-renderer protocol responses must not consume a separate poll budget.
-  const waiting=await page.evaluate(async()=>{
-    const a=(window as any).__OCEANFPV__,deadline=performance.now()+60000;
-    while(a.getState().time<=9) {
-      const state=a.getState();
-      if(state.paused||a.flight.crashed||performance.now()>deadline)throw new Error(`Departure did not advance: ${JSON.stringify(state)}`);
-      await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
+  const waiting=await (async()=>{
+    const deadline=Date.now()+60000;
+    for(let attempt=0;Date.now()<deadline;attempt++) {
+      const observed=await page.evaluate(async({start,budget})=>{
+        const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
+        if(start)document.querySelector<HTMLButtonElement>('#start')!.click();
+        while(a.getState().time<=9) {
+          const state=a.getState();
+          if(a.flight.crashed||performance.now()>deadline)throw new Error(`Departure did not advance: ${JSON.stringify(state)}`);
+          if(state.paused)break;
+          await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
+        }
+        const launch=a.world.launchPose(a.getState().time);
+        return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused};
+      },{start:attempt===0,budget:Math.max(0,deadline-Date.now())});
+      if(!observed.paused)return observed;
+      await recoverRenderPause();
     }
-    const launch=a.world.launchPose(a.getState().time);
-    return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused};
-  });
+    throw new Error('Departure exceeded the 60 s phase deadline');
+  })();
   expect(waiting.worldTime).toBeGreaterThan(9);expect(waiting.error).toBeLessThan(1e-6);expect(waiting.flightTime).toBeCloseTo(waiting.worldTime,6);expect(waiting.crashed).toBe(false);expect(waiting.armed).toBe(true);expect(waiting.paused).toBe(false);
-  let safetyRecoveries=0;
   async function recoverRenderPause() {
     const state=await page.evaluate(()=>{const a=(window as any).__OCEANFPV__;return {...a.getState(),crashed:a.flight.crashed,title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};});
     expect(state.crashed).toBe(false);if(!state.paused)return;
