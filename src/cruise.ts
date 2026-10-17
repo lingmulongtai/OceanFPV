@@ -237,7 +237,7 @@ export function buildCruiseShip() {
   const bakeStarted=performance.now(),ao=bakeCabinOcclusion(blockers,9.33,-87,{blockers:aftBlockers,front:92}),occlusionBakeMs=performance.now()-bakeStarted;[...blockers,...aftBlockers].forEach(g=>g.dispose());white.aoMap=teak.aoMap=ao;white.aoMapIntensity=teak.aoMapIntensity=0.75;
   const furnitureLods:{mesh:T.Mesh;fine:T.BufferGeometry;coarse:T.BufferGeometry}[]=[];
   for(const [m,geometries]of buckets) {
-    const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=m!==cabinGlass;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());
+    const geo=mergeGeometries(geometries);if(!geo)throw new Error('Cruise geometry merge failed');const mesh=new T.Mesh(geo,m);mesh.castShadow=m!==cabinGlass&&m!==balconyGlass;mesh.receiveShadow=true;root.add(mesh);geometries.forEach(g=>g.dispose());
     const low=coarseFurniture.get(m);
     if(low){const coarse=mergeGeometries(low);if(!coarse)throw new Error('Furniture geometry merge failed');low.forEach(g=>g.dispose());furnitureLods.push({mesh,fine:geo,coarse});}
   }
