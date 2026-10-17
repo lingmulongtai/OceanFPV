@@ -40,3 +40,18 @@ test('ocean rendering, contact and mip statistics use the same unequal band prof
     assert.equal(ocean.simulation.profileVersion,revision+1);assert.equal(ocean.material.uniforms.heightScales.value.z,.75);
   }finally{SEA_BANDS.swell=saved;}
 });
+
+test('local slope moments share render snapshots and respect quality and mip support',()=>{
+  const ocean=new Ocean(new T.Vector3(0,1,0)),camera=new T.Vector3(50,20,0),texture=ocean.slopeMoments.texture,initial=texture.version;
+  ocean.configureFiltering(false,true);assert.equal(ocean.material.uniforms.localSlopeMomentsEnabled.value,true);
+  ocean.advance(6,'swell');assert.equal(texture.version,initial);ocean.update(6,camera,'swell');assert.equal(texture.version,initial+1);
+  const encoded=ocean.slopeMoments.data[0],slope=ocean.simulation.cascades[0].tangentX[1];assert.equal(encoded,T.DataUtils.toHalfFloat(slope*slope));
+  ocean.update(6,camera,'swell');assert.equal(texture.version,initial+1);
+  ocean.advance(6,'calm');ocean.update(6,camera,'calm');assert.equal(texture.version,initial+2);
+  ocean.advance(0,'calm');ocean.update(0,camera,'calm');assert.equal(texture.version,initial+3);
+  ocean.setQuality('balanced');assert.equal(ocean.material.uniforms.localSlopeMomentsEnabled.value,false);
+  ocean.setQuality('ultra');assert.equal(ocean.material.uniforms.localSlopeMomentsEnabled.value,true);
+  ocean.configureFiltering(false,false);assert.equal(texture.generateMipmaps,false);assert.equal(ocean.material.uniforms.localSlopeMomentsEnabled.value,false);
+  ocean.setQuality('high');assert.equal(ocean.material.uniforms.localSlopeMomentsEnabled.value,false);
+  ocean.configureFiltering(false,true);assert.equal(texture.generateMipmaps,true);assert.equal(ocean.material.uniforms.localSlopeMomentsEnabled.value,true);
+});

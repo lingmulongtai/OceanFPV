@@ -16,6 +16,9 @@ import {cruiseHullCode} from './cruise-hull';
 import {wakeSurfaceCode} from './wake-surface';
 import {captureReflectedGeometry,oceanReflectionCode} from './ocean-reflection';
 import {whitecapCode} from './whitecaps';
+import {SlopeMoments,slopeMomentSampleCode} from './slope-moments';
+import {localSlopeCovarianceCode} from './local-slope-covariance';
+import {anisotropicGlintCode} from './anisotropic-glint';
 
 function radialGeometry(quality='high') {
   const segments=quality==='ultra'?512:quality==='high'?384:192,rings=quality==='ultra'?360:quality==='high'?280:170;
@@ -86,6 +89,7 @@ export class Ocean {
   material:T.ShaderMaterial;
   readonly simulation=new SpectralSea();
   readonly waveMipmaps=this.simulation.cascades.map(c=>({displacement:new WaveMipmaps(c.displacement,c.size),tangentX:new WaveMipmaps(c.tangentX,c.size),tangentZ:new WaveMipmaps(c.tangentZ,c.size)}));
+  readonly slopeMoments=new SlopeMoments(this.simulation.cascades);
   private bottomData:Float32Array;
   private cliffDepth:CliffDepth|null=null;
   readonly islandDepth:IslandDepth;
@@ -93,6 +97,7 @@ export class Ocean {
   private textures:T.DataTexture[]=[];
   private fieldsDirty=true;
   private quality='high';
+  private localMomentsSupported=true;
   private reflectedView:T.Camera|null=null;
   bottomAt(x:number,z:number) {
     const ground=sampleCoastalDepth(this.bottomData,x,z,this.islandDepth),scan=this.cliffDepth?.sample(x,z);return scan&&scan.height>ground.height?scan:ground;
@@ -130,6 +135,7 @@ export class Ocean {
       cruiseInverse:{value:new T.Matrix4()},
       heightScales:{value:new T.Vector3(...this.simulation.heightScales)},chopScales:{value:new T.Vector3(...this.simulation.horizontalScales)},uniformBands:{value:true},
       slopeVariance:{value:new T.Vector3()},
+      localSlopeMoments:{value:this.slopeMoments.texture},localSlopeMomentsEnabled:{value:true},
       heightVariance:{value:new T.Vector3()},
       slopeMipEnergy:{value:Array.from({length:8},()=>new T.Vector3())},heightMipEnergy:{value:Array.from({length:8},()=>new T.Vector3())},
       slopeMipCross:{value:Array.from({length:8},()=>new T.Vector3())},heightMipCross:{value:Array.from({length:8},()=>new T.Vector3())},
@@ -164,6 +170,9 @@ export class Ocean {
         gl_Position=projectionMatrix*viewMatrix*world;
       }`;
     this.material.fragmentShader=`${spectralCode}
+      ${slopeMomentSampleCode}
+      ${localSlopeCovarianceCode}
+      ${anisotropicGlintCode}
       ${wakeSurfaceCode}
       ${waterOpticsCode}
       uniform sampler2D mirrorSampler;
@@ -219,7 +228,8 @@ export class Ocean {
         vec3 ripple=ripplesAt(p,waterFootprint);
         normal=normalize(vec3(normal.x-ripple.x*normal.y,normal.y,normal.z-ripple.y*normal.y));
         vec3 normalFootprint=fwidth(normal);
-        float unresolvedVariance=spectralVarianceAt(waveCoordinate,lod)+ripple.z;
+        vec3 unresolvedCovariance=localSpectralCovarianceAt(waveCoordinate,lod)+vec3(ripple.z,ripple.z,0.0);
+        float unresolvedVariance=0.5*(unresolvedCovariance.x+unresolvedCovariance.y);
         // Resolve porous shoreline foam before hull discard; average subpixel pores.
         vec3 grain=vec3(noise(p*24.0),noise(p*52.08+8.6),noise(p*114.96));
         vec3 grainResolved=1.0-smoothstep(vec3(0.25),vec3(0.5),waterFootprint*vec3(24.0,52.08,114.96));
@@ -283,6 +293,14 @@ export class Ocean {
         float a2=pow(0.12,4.0)+min(0.2,unresolvedVariance+0.15*dot(normalFootprint,normalFootprint));
         float nh=max(dot(normal,halfV),0.0),nl=max(dot(normal,sunDirection),0.001),den=nh*nh*(a2-1.0)+1.0;
         float distribution=a2/(3.14159*den*den+0.000001),masking=2.0*nv/(nv+sqrt(a2+(1.0-a2)*nv*nv));masking*=2.0*nl/(nl+sqrt(a2+(1.0-a2)*nl*nl));
+        if(localSlopeMomentsEnabled) {
+          mat3 slopeFrame=slopeNormalFrame(normal);
+          vec3 covariance=unresolvedCovariance*min(1.0,0.2/max(max(unresolvedCovariance.x,unresolvedCovariance.y),0.0000001));
+          covariance=slopeFrameCovariance(slopeFrame,covariance);
+          float base=pow(0.12,4.0)+0.15*dot(normalFootprint,normalFootprint);covariance+=vec3(base,base,0.0);
+          distribution=gaussianSlopeDistribution(slopeFrameDirection(slopeFrame,halfV),covariance);
+          masking=gaussianSlopeMasking(slopeFrameDirection(slopeFrame,view),slopeFrameDirection(slopeFrame,sunDirection),covariance);
+        }
         vec3 glint=sunColor*distribution*masking*sunFresnel*0.19/max(4.0*nv,0.1);
         float breaking=whitecapFootprint(waveCoordinate,p,foamQDx,foamQDy,foamPDx,foamPDy),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
         vec3 foamColor=vec3(0.78,0.86,0.84)*(0.76+filteredGrain*0.3)*foamIllumination(normal);
@@ -316,11 +334,14 @@ export class Ocean {
     }
   }
   heightAt(x:number,z:number) {return this.simulation.heightAt(x,z,this.simulation.heightScales,this.coastalScale);}
-  configureFiltering(floatLinear:boolean) {
+  configureFiltering(floatLinear:boolean,halfFloatMipmaps=true) {
     this.material.uniforms.manualInterpolation={value:!floatLinear};
+    this.localMomentsSupported=halfFloatMipmaps;this.slopeMoments.configureMipmaps(halfFloatMipmaps);
+    this.material.uniforms.localSlopeMomentsEnabled.value=halfFloatMipmaps&&this.quality!=='balanced';
     this.textures.forEach(texture=>{texture.magFilter=floatLinear?T.LinearFilter:T.NearestFilter;texture.minFilter=floatLinear?T.LinearMipmapLinearFilter:T.NearestMipmapNearestFilter;texture.needsUpdate=true;});
   }
   refreshFields() {
+    this.slopeMoments.update();
     this.waveMipmaps.forEach(fields=>Object.values(fields).forEach(mips=>mips.update()));this.textures.forEach(t=>t.needsUpdate=true);
     const scales=this.simulation.heightScales.map(gain=>gain*gain);
     for(let level=0;level<8;level++) {
@@ -346,6 +367,7 @@ export class Ocean {
   }
   setQuality(quality:string) {
     this.material.uniforms.whitecapFiltering.value=quality!=='balanced';
+    this.material.uniforms.localSlopeMomentsEnabled.value=this.localMomentsSupported&&quality!=='balanced';
     const size=quality==='ultra'?3072:quality==='high'?1536:512,target=this.mesh.getRenderTarget();if(target.width!==size)target.setSize(size,size);
     this.material.uniforms.reflectionSize.value=size;
     if(this.quality!==quality) {this.mesh.geometry.dispose();this.mesh.geometry=radialGeometry(quality);this.quality=quality;}

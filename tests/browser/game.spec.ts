@@ -128,7 +128,7 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(forest).toBeGreaterThan(1000000);
   expect(rocks.triangles).toBe(14844);expect(rocks.perIsland).toEqual([51,79,79]);expect(rocks.placements).toBe(218);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
   expect(detailPrograms.length).toBeGreaterThan(0);for(const program of detailPrograms){expect(program.samplers).toBeLessThanOrEqual(program.limit);expect(program.names).toContain('groundDetailNormalMap');expect(program.names).toContain('groundDetailRoughnessMap');}
-  expect(waterPrograms.length).toBeGreaterThan(0);for(const program of waterPrograms){expect(program.samplers).toBe(15);expect(program.names).toContain('foamEnvironment');expect(program.samplers).toBeLessThanOrEqual(program.limit);}
+  expect(waterPrograms.length).toBeGreaterThan(0);for(const program of waterPrograms){expect(program.samplers).toBe(16);expect(program.names).toContain('foamEnvironment');expect(program.names).toContain('localSlopeMoments');expect(program.samplers).toBeLessThanOrEqual(program.limit);}
   console.log(`Water production samplers: ${JSON.stringify(waterPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit,foamEnvironment:program.names.includes('foamEnvironment')})))}`);
   const recovered=loading.failures.filter((failure:any)=>failure.asset==='seaside_rock'&&failure.recovered);
   expect(detailRequests.length).toBe(3+recovered.length);expect(new Set(detailRequests).size).toBe(3);
@@ -818,13 +818,33 @@ test('ocean sky reflection follows the normal and preserves premultiplied object
  expect(probe.glassObjects[3]).toBeGreaterThan(0);expect(probe.glassObjects[3]).toBeLessThan(1);expect(probe.glassError).toBeLessThan(.03);expect(probe.nestedStateError).toBe(0);expect(probe.nestedRestored).toBe(true);expect(errors).toEqual([]);
 });
 
+test('half-float array slope moments retain signed layers and filtered mip levels',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+ await page.goto('/tests/browser/fixtures/slope-moments-probe.html');
+ await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SLOPE_MOMENTS_PROBE__);},{timeout:60000}).toBe(true);
+ const probe=await page.evaluate(()=>{const{samples,covarianceSamples,integrationSamples,...summary}=(window as any).__SLOPE_MOMENTS_PROBE__;return summary;});console.log(`Slope moments probe: ${JSON.stringify(probe)}`);
+ if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');expect(probe.count).toBe(126);expect(probe.maximum).toBeLessThan(.0003);expect(probe.fallbackError).toBe(0);expect(probe.covarianceCount).toBe(12);expect(probe.covarianceMaximum).toBeLessThan(.000001);expect(errors).toEqual([]);
+ expect(probe.integrationCount).toBe(9);expect(probe.integrationMaximum).toBeLessThan(.000001);expect(probe.scalarMaximum).toBeLessThan(.000001);expect(probe.disabledMaximum).toBe(0);expect(probe.mipFallbackError).toBe(0);expect(probe.mipFallbackValue).toBeCloseTo(.3,6);
+});
+
 test('sun glint uses its microfacet angle while sky reflection keeps the surface angle',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
  await page.goto('/tests/browser/fixtures/sun-glint-probe.html');
  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SUN_GLINT_PROBE__);},{timeout:60000}).toBe(true);
- const probe=await page.evaluate(()=>{const p=(window as any).__SUN_GLINT_PROBE__;return {gpu:p.gpu,count:p.count,sunError:p.sunError,skyError:p.skyError,normalSpread:p.normalSpread,peakError:p.peakError,changed:p.changed};});
+ const probe=await page.evaluate(()=>{const p=(window as any).__SUN_GLINT_PROBE__;return {gpu:p.gpu,count:p.count,sunError:p.sunError,skyError:p.skyError,normalSpread:p.normalSpread,peakError:p.peakError,radianceError:p.radianceError,changed:p.changed};});
  console.log(`Sun glint probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
- expect(probe.count).toBe(54);expect(probe.changed).toBeGreaterThan(6);expect(probe.sunError).toBeLessThan(.000002);expect(probe.skyError).toBeLessThan(.000002);expect(probe.normalSpread).toBeLessThan(.000002);expect(probe.peakError).toBeLessThan(.000002);expect(errors).toEqual([]);
+ expect(probe.count).toBe(54);expect(probe.changed).toBeGreaterThan(6);expect(probe.sunError).toBeLessThan(.000002);expect(probe.skyError).toBeLessThan(.000002);expect(probe.normalSpread).toBeLessThan(.000002);expect(probe.peakError).toBeLessThan(.000002);expect(probe.radianceError).toBeLessThan(.000002);expect(errors).toEqual([]);
+});
+
+test('Gaussian glints normalize in the wave frame and retain anisotropic masking',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+ await page.goto('/tests/browser/fixtures/gaussian-glint-probe.html');
+ await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__GAUSSIAN_GLINT_PROBE__);},{timeout:60000}).toBe(true);
+ const p=await page.evaluate(()=>(window as any).__GAUSSIAN_GLINT_PROBE__);console.log(`Gaussian glint probe: ${JSON.stringify(p)}`);
+ if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(p.gpu).toContain('Direct3D11');
+ expect(p.covarianceCount).toBe(15);expect(p.covarianceError).toBeLessThan(.000001);expect(p.normalizationCount).toBe(15);expect(p.normalizationError).toBeLessThan(.002);
+ expect(p.invarianceCount).toBe(15);expect(p.invarianceError).toBeLessThan(.00001);expect(p.smithCount).toBe(54);expect(p.smithError).toBeLessThan(.000002);expect(p.smithModelError).toBeLessThan(.006);
+ expect(p.backfaceCount).toBe(3);expect(p.backfaceError).toBe(0);expect(p.glError).toBe(0);expect(errors).toEqual([]);
 });
 
 for(const manualFallback of[false,true])test(`whitecap coverage integrates the coupled wave and noise footprint${manualFallback?' without float-linear support':''}`,async({page})=>{
