@@ -17,9 +17,10 @@ uniform vec2 probePoint;uniform int probeMode;uniform vec3 probeLod;uniform floa
 void main(){if(probeMode==0)gl_FragColor=vec4(displacementAt(probePoint).xyz,nearshoreAt(probePoint).x);else if(probeMode==1)gl_FragColor=vec4(normalAt(probePoint,probeLod),1);else if(probeMode==2)gl_FragColor=vec4(spectralVarianceAt(probePoint,probeLod),0,0,1);else if(probeMode==3)gl_FragColor=fieldSampleLod(tangentX0,cascadeUV(probePoint,433.0),probeLod.x);else if(probeMode==4)gl_FragColor=vec4(waveLod(probeFootprint),1);else gl_FragColor=vec4(coastalBottom(probePoint),1);}`});
 const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,0.1,10),target=new T.WebGLRenderTarget(1,1,{type:T.FloatType});
 scene.add(new T.Mesh(new T.PlaneGeometry(2,2),material));camera.position.z=1;
-const data=uniforms.bathymetry.value.image.data,detailImage=uniforms.islandBathymetry.value.image,detail=new IslandDepth(uniforms.islandDepthChannel.value,detailImage.data,detailImage.width,uniforms.islandBounds.value),bottomSample=(x,z)=>sampleCoastalDepth(data,x,z,detail),points=[];
-for(const [coastIndex,coast]of BATHY_COASTS.entries())for(const [u,v]of coastIndex===1?[[.23,.31],[.73,.61]]:[[.23,.31]])for(const depth of [-5,0,0.2,0.8,1.5,2,2.5,3,4,6,8,8.2]) {
-  let closest;const size=coastIndex===detail.channel?detail.width:BATHY_SIZE,stride=coastIndex===detail.channel?4:1;
+const data=uniforms.bathymetry.value.image.data,detailImage=uniforms.islandBathymetry.value.image,unpack=component=>Float32Array.from({length:detailImage.width**2},(_,i)=>detailImage.data[i*2+component]);
+const detail=new IslandDepth(uniforms.islandDepthChannel.value,unpack(0),detailImage.width,uniforms.islandBounds.value),headland=new IslandDepth(0,unpack(1),detailImage.width,uniforms.headlandBounds.value),bottomSample=(x,z)=>sampleCoastalDepth(data,x,z,detail,headland),points=[];
+for(const [coastIndex,coast]of BATHY_COASTS.entries())for(const [u,v]of coastIndex<=1?[[.23,.31],[.73,.61]]:[[.23,.31]])for(const depth of [-5,0,0.2,0.8,1.5,2,2.5,3,4,6,8,8.2]) {
+  let closest;const fine=coastIndex===detail.channel?detail:coastIndex===headland.channel?headland:null,size=fine?.width??BATHY_SIZE,stride=fine?4:1;
   for(let z=0;z<size-1;z+=stride)for(let x=0;x<size-1;x+=stride) {
     const px=coast.x+((x+u)/(size-1)*2-1)*coast.size*1.2,pz=coast.z+((z+v)/(size-1)*2-1)*(coast.sizeZ??coast.size)*1.2;
     const bottom=bottomSample(px,pz),error=Math.abs(-bottom.height-depth);
@@ -31,12 +32,12 @@ points.push({x:10000,z:10000});
 // Land heights clamp the wave envelope to zero, so read the actual bottom field
 // directly as well: these cells cover the tall cliff, summit and both triangles.
 const bottomSamples=[];let bottomError=0;
-for(const [cx,cz]of [[217,487],[251,419],[384,384],[320,256],[35,35],[0,0]])for(const [u,v]of [[.2,.3],[.7,.8]]) {
-  const x=detail.bounds.x+(cx+u)/(detail.width-1)*detail.bounds.z,z=detail.bounds.y+(cz+v)/(detail.width-1)*detail.bounds.w;
+for(const fine of [detail,headland])for(const [cx,cz]of fine.channel===1?[[217,487],[251,419],[384,384],[320,256],[35,35],[0,0]]:[[260,350],[450,390],[580,350],[385,487],[35,35],[0,0]])for(const [u,v]of [[.2,.3],[.7,.8]]) {
+  const x=fine.bounds.x+(cx+u)/(fine.width-1)*fine.bounds.z,z=fine.bounds.y+(cz+v)/(fine.width-1)*fine.bounds.w;
   uniforms.probePoint.value.set(x,z);uniforms.probeMode.value=5;
   renderer.setRenderTarget(target);renderer.render(scene,camera);const actual=new Float32Array(4);renderer.readRenderTargetPixels(target,0,0,1,1,actual);
   const bottom=bottomSample(x,z),expected=[bottom.height,bottom.dx,bottom.dz],error=Math.max(...expected.map((value,i)=>Math.abs(value-actual[i])));
-  bottomSamples.push({cell:[cx,cz],upper:u+v>1,x,z,actual:[...actual],expected,error});bottomError=Math.max(bottomError,error);
+  bottomSamples.push({channel:fine.channel,cell:[cx,cz],upper:u+v>1,x,z,actual:[...actual],expected,error});bottomError=Math.max(bottomError,error);
   if(!Number.isFinite(error)||error>0.003)throw new Error(`Detailed bottom mismatch ${JSON.stringify(bottomSamples.at(-1))}`);
 }
 const samples=[];let heightError=0,normalError=0,varianceError=0,varianceRelativeError=0,shadingVarianceError=0,contactError=0;

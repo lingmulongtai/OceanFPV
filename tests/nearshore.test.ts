@@ -19,11 +19,11 @@ test('shore envelope is continuous, bounded and identical before terrain grid ed
 
 test('coarse coastal input triangles retain uploaded heights and independent spatial gradients',()=> {
   const data=bathymetryData(),epsilon=0.0001;
-  for(const coast of COASTS)for(let i=0;i<140;i++) {
+  for(const [channel,coast]of COASTS.entries())for(let i=0;i<140;i++) {
     const step=coast.size*2.4/192,x=coast.x-coast.size*1.2+(3+(i*31)%180+0.23)*step,z=coast.z-coast.size*1.2+(3+(i*17)%180+0.31)*step;
     const sample=sampleBathymetry(data,x,z),exact=terrainSurfaceHeight(x-coast.x,z-coast.z,coast.size,coast.height,coast.profile);
-    if(coast.profile!=='hornoya')assert.ok(Math.abs(sample.height-exact)<0.00002);
-    else {const gx=(x-coast.x+coast.size*1.2)/step,gz=(z-coast.z+coast.size*1.2)/step,ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz,at=(i:number,j:number)=>data[(j*BATHY_SIZE+i)*4+1],a=at(ix,iz),b=at(ix,iz+1),d=at(ix+1,iz),c=at(ix+1,iz+1),expected=u+v<=1?a+(b-a)*v+(d-a)*u:c+(b-c)*(1-u)+(d-c)*(1-v);assert.ok(Math.abs(sample.height-expected)<.00002);}
+    if(coast.profile!=='hornoya'&&coast.profile!=='trenyken')assert.ok(Math.abs(sample.height-exact)<0.00002);
+    else {const gx=(x-coast.x+coast.size*1.2)/step,gz=(z-coast.z+coast.size*1.2)/step,ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz,at=(i:number,j:number)=>data[(j*BATHY_SIZE+i)*4+channel],a=at(ix,iz),b=at(ix,iz+1),d=at(ix+1,iz),c=at(ix+1,iz+1),expected=u+v<=1?a+(b-a)*v+(d-a)*u:c+(b-c)*(1-u)+(d-c)*(1-v);assert.ok(Math.abs(sample.height-expected)<.00002);}
     assert.ok(Math.abs(sample.dx-(sampleBathymetry(data,x+epsilon,z).height-sampleBathymetry(data,x-epsilon,z).height)/(epsilon*2))<0.00001);
     assert.ok(Math.abs(sample.dz-(sampleBathymetry(data,x,z+epsilon).height-sampleBathymetry(data,x,z-epsilon).height)/(epsilon*2))<0.00001);
   }

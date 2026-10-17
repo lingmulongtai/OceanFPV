@@ -77,7 +77,7 @@ test('painted roof charts retain geometry and a 2.5 metre photographed period',(
 
 test('coastal trees root on dry rendered triangles below 35 degrees',()=> {
   for(const coast of COASTS) {
-    const measured=coast.profile==='measured-islet'||coast.profile==='hornoya';
+    const measured=coast.profile==='measured-islet'||coast.profile==='hornoya'||coast.profile==='trenyken';
     const sites=coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile);assert.ok(sites.length>(measured?0:60)&&sites.length<=170);
     assert.deepEqual(sites,coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile));
     const geometry=new PlaneGeometry(coast.size*2.4,coast.size*2.4,terrainSegments(coast.profile),terrainSegments(coast.profile));geometry.rotateX(-Math.PI/2);
@@ -171,7 +171,7 @@ test('coarse water inputs retain each supplied channel triangle and unchanged sh
     const expected=terrainSurfaceHeight((gx/(n-1)*2-1)*coast.size*1.2,(gz/(n-1)*2-1)*coast.size*1.2,coast.size,coast.height,coast.profile);
     const px=coast.x+(gx/(n-1)*2-1)*coast.size*1.2,pz=coast.z+(gz/(n-1)*2-1)*coast.size*1.2;
     assert.ok(Math.abs(sampled-sampleBathymetry(data,px,pz).height)<.00002);
-    if(coast.profile!=='hornoya')assert.ok(Math.abs(sampled-expected)<0.00002);
+    if(coast.profile!=='hornoya'&&coast.profile!=='trenyken')assert.ok(Math.abs(sampled-expected)<0.00002);
   }
 });
 

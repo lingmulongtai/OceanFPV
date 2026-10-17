@@ -19,6 +19,19 @@ test('detailed island triangles retain independent slopes, both halves and bound
   }
 });
 
+test('two detailed islands independently replace their own coarse channel without filling fine valleys',()=> {
+  const data=bathymetryData(),northwest=COASTS[0],northeast=COASTS[1];
+  for(let i=0;i<data.length;i+=4){data[i]=100;data[i+1]=200;}
+  const west=new IslandDepth(0,new Float32Array([-9,-7,-8,-3]),2,new Vector4(northwest.x-600,northwest.z-600,1200,1200));
+  const east=new IslandDepth(1,new Float32Array([1,3,5,9]),2,new Vector4(northeast.x-600,northeast.z-600,1200,1200));
+  for(const depth of [west,east])for(const [u,v]of [[.2,.3],[.7,.8],[0,0],[1,1]]) {
+    const x=depth.bounds.x+u*1200,z=depth.bounds.y+v*1200;
+    assert.deepEqual(sampleCoastalDepth(data,x,z,east,west),depth.sample(x,z));
+  }
+  assert.equal(data[0],100);assert.equal(data[1],200);
+  assert.deepEqual(sampleCoastalDepth(data,10000,10000,east,west),{height:-60,dx:0,dz:0});
+});
+
 test('explicit depth replacement exposes fine valleys without changing the supplied coarse array',()=> {
   const data=bathymetryData(),coast=COASTS[1];for(let i=1;i<data.length;i+=4)data[i]=30;
   const detail=new IslandDepth(1,new Float32Array([-9,-9,-9,-9]),2,new Vector4(coast.x-600,coast.z-600,1200,1200));

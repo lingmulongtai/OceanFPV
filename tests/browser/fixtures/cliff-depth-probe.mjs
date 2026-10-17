@@ -3,14 +3,14 @@ import {Ocean} from '../../../src/ocean.ts';
 import {CliffSurface} from '../../../src/cliff.ts';
 import {CliffGround} from '../../../src/cliff-ground.ts';
 import {COASTS} from '../../../src/bathymetry.ts';
-import {terrainHeight,TERRAIN_SEGMENTS} from '../../../src/terrain.ts';
+import {terrainHeight,terrainSegments} from '../../../src/terrain.ts';
 import {nearshoreEnvelope} from '../../../src/nearshore.ts';
 import {waterOpticsCode} from '../../../src/water-optics.ts';
 
 const renderer=new T.WebGLRenderer();renderer.setSize(1,1);document.body.append(renderer.domElement);
 if(!renderer.getContext().getExtension('EXT_color_buffer_float'))throw new Error('Float target unavailable');
 const source=new T.BufferGeometry();source.setAttribute('position',new T.Float32BufferAttribute([-394,-8,-470,-386,6,-470,-386,6,-430,-394,-8,-430],3));source.setIndex([0,2,1,0,3,2]);
-const scan=new CliffSurface(source),coast=COASTS[0],island=new T.PlaneGeometry(coast.size*2.4,coast.size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS).rotateX(-Math.PI/2),p=island.attributes.position;
+const scan=new CliffSurface(source),coast=COASTS[0],segments=terrainSegments(coast.profile),island=new T.PlaneGeometry(coast.size*2.4,coast.size*2.4,segments,segments).rotateX(-Math.PI/2),p=island.attributes.position;
 for(let i=0;i<p.count;i++)p.setY(i,terrainHeight(p.getX(i),p.getZ(i),coast.size,coast.height,coast.profile));
 const ground=new CliffGround(island,coast),ocean=new Ocean(new T.Vector3(0,1,0));ocean.installIslandDepth(0,ground.geometry,scan);
 const uniforms={...ocean.material.uniforms,probePoint:{value:new T.Vector2()}},header=ocean.material.vertexShader.split('uniform mat4 textureMatrix;')[0];

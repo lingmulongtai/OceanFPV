@@ -2,9 +2,10 @@ import * as T from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { SEA_SCALE, SEA_BANDS, type SeaState } from './sea';
 import { SpectralSea } from './spectrum';
-import { bathymetryData, sampleBathymetry, sampleCoastalDepth, BATHY_SIZE, BATHY_COASTS } from './bathymetry';
+import { bathymetryData, sampleCoastalDepth, BATHY_SIZE, BATHY_COASTS } from './bathymetry';
 import {IslandDepth} from './island-depth';
 import {hornoyaDepthData,HORNOYA_SEGMENTS} from './hornoya';
+import {trenykenDepthData,TRENYKEN_SEGMENTS} from './trenyken';
 import {LighthouseReef} from './lighthouse-reef';
 import { nearshoreCode, nearshoreEnvelope } from './nearshore';
 import {waterOpticsCode} from './water-optics';
@@ -93,6 +94,7 @@ export class Ocean {
   private bottomData:Float32Array;
   private cliffDepth:CliffDepth|null=null;
   readonly islandDepth:IslandDepth;
+  readonly headlandDepth:IslandDepth;
   private coastalScale=(x:number,z:number)=>nearshoreEnvelope(-this.bottomAt(x,z).height).value;
   private textures:T.DataTexture[]=[];
   private fieldsDirty=true;
@@ -100,23 +102,30 @@ export class Ocean {
   private localMomentsSupported=true;
   private reflectedView:T.Camera|null=null;
   bottomAt(x:number,z:number) {
-    const ground=sampleCoastalDepth(this.bottomData,x,z,this.islandDepth),scan=this.cliffDepth?.sample(x,z);return scan&&scan.height>ground.height?scan:ground;
+    const ground=sampleCoastalDepth(this.bottomData,x,z,this.islandDepth,this.headlandDepth),scan=this.cliffDepth?.sample(x,z);return scan&&scan.height>ground.height?scan:ground;
   }
   /** One atomic upload serves CPU wave/contact sampling and the water shader. */
   installIslandDepth(channel:number,geometry:T.BufferGeometry,scan:CliffSurface) {
     const position=geometry.attributes.position;
-    if(channel<0||channel>=3||position.count!==BATHY_SIZE*BATHY_SIZE)throw new Error('Invalid island depth grid');
-    const data=this.bottomData.slice();
-    for(let i=0;i<position.count;i++)data[i*4+channel]=position.getY(i);
-    const depth=new CliffDepth(scan,(x,z)=>sampleBathymetry(data,x,z).height);
+    const width=this.headlandDepth.width,stride=(width-1)/(BATHY_SIZE-1);
+    if(channel!==this.headlandDepth.channel||position.count!==width*width||!Number.isInteger(stride))throw new Error('Invalid island depth grid');
+    const data=this.bottomData.slice(),heights=Float32Array.from({length:position.count},(_,i)=>position.getY(i));
+    for(let z=0;z<BATHY_SIZE;z++)for(let x=0;x<BATHY_SIZE;x++)data[(z*BATHY_SIZE+x)*4+channel]=heights[z*stride*width+x*stride];
+    const headland=new IslandDepth(channel,heights,width,this.headlandDepth.bounds);
+    const depth=new CliffDepth(scan,(x,z)=>sampleCoastalDepth(data,x,z,this.islandDepth,headland).height);
     const detail=new T.DataTexture(depth.data,CLIFF_DEPTH_SIZE,CLIFF_DEPTH_SIZE,T.RedFormat,T.FloatType);detail.magFilter=detail.minFilter=T.NearestFilter;detail.needsUpdate=true;
     this.bottomData=data;const texture=this.material.uniforms.bathymetry.value as T.DataTexture;texture.image.data=data;texture.needsUpdate=true;
+    this.headlandDepth.data.set(heights);const packed=this.material.uniforms.islandBathymetry.value as T.DataTexture,values=packed.image.data as Float32Array;
+    for(let i=0;i<heights.length;i++)values[i*2+1]=heights[i];packed.needsUpdate=true;
     this.cliffDepth=depth;(this.material.uniforms.cliffBathymetry.value as T.Texture).dispose();this.material.uniforms.cliffBathymetry.value=detail;this.material.uniforms.cliffBounds.value.copy(depth.bounds);
   }
   constructor(sun:T.Vector3,reef=new LighthouseReef()) {
     this.bottomData=bathymetryData(reef);
     const coast=BATHY_COASTS[1],extent=coast.size*1.2;
     this.islandDepth=new IslandDepth(1,hornoyaDepthData(),HORNOYA_SEGMENTS+1,new T.Vector4(coast.x-extent,coast.z-extent,extent*2,extent*2));
+    const headland=BATHY_COASTS[0],headlandExtent=headland.size*1.2;
+    this.headlandDepth=new IslandDepth(0,trenykenDepthData(),TRENYKEN_SEGMENTS+1,new T.Vector4(headland.x-headlandExtent,headland.z-headlandExtent,headlandExtent*2,headlandExtent*2));
+    if(this.headlandDepth.width!==this.islandDepth.width)throw new Error('Detailed island texture dimensions differ');
     this.mesh=new Reflector(radialGeometry(),{textureWidth:1536,textureHeight:1536,multisample:0,clipBias:0.012});
     const reflect=this.mesh.onBeforeRender.bind(this.mesh);
     this.mesh.onBeforeRender=(renderer,scene,camera,...args)=> {
@@ -148,9 +157,11 @@ export class Ocean {
     });
     const cliffBottom=new T.DataTexture(new Float32Array([-60]),1,1,T.RedFormat,T.FloatType);cliffBottom.needsUpdate=true;
     this.material.uniforms.cliffBathymetry={value:cliffBottom};this.material.uniforms.cliffBounds={value:new T.Vector4()};
-    const islandBottom=new T.DataTexture(this.islandDepth.data,this.islandDepth.width,this.islandDepth.width,T.RedFormat,T.FloatType);
+    const packedDepth=new Float32Array(this.islandDepth.data.length*2);
+    for(let i=0;i<this.islandDepth.data.length;i++){packedDepth[i*2]=this.islandDepth.data[i];packedDepth[i*2+1]=this.headlandDepth.data[i];}
+    const islandBottom=new T.DataTexture(packedDepth,this.islandDepth.width,this.islandDepth.width,T.RGFormat,T.FloatType);
     islandBottom.magFilter=islandBottom.minFilter=T.NearestFilter;islandBottom.needsUpdate=true;
-    Object.assign(this.material.uniforms,{islandBathymetry:{value:islandBottom},islandBounds:{value:this.islandDepth.bounds},islandDepthSize:{value:this.islandDepth.width},islandDepthChannel:{value:this.islandDepth.channel}});
+    Object.assign(this.material.uniforms,{islandBathymetry:{value:islandBottom},islandBounds:{value:this.islandDepth.bounds},islandDepthSize:{value:this.islandDepth.width},islandDepthChannel:{value:this.islandDepth.channel},headlandBounds:{value:this.headlandDepth.bounds},headlandDepthSize:{value:this.headlandDepth.width}});
     const bottom=new T.DataTexture(this.bottomData,BATHY_SIZE,BATHY_SIZE,T.RGBAFormat,T.FloatType);
     bottom.magFilter=bottom.minFilter=T.NearestFilter;bottom.needsUpdate=true;this.material.uniforms.bathymetry={value:bottom};
     this.simulation.cascades.forEach((c,i)=> {
