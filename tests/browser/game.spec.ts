@@ -22,7 +22,7 @@ async function verifyCabinVisibility(page:Page) {
 }
 
 async function ready(page: Page) {
-  await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
+  await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced',sea:'breeze'})); });
   await loadScene(page,()=>page.goto('/?test=1',{timeout:SCENE_LOAD_TIMEOUT}));
   await page.evaluate(() => {
     const quality=document.querySelector<HTMLSelectElement>('#quality')!;
@@ -514,7 +514,10 @@ test('fixed dialog views stop GPU draws and redraw changed settings',async({page
     const app=(window as any).__OCEANFPV__;
     return {draws:(window as any).__glDraws,time:app.getState().time,fov:app.camera.fov,quality:app.world.quality,reflection:app.world.ocean.mesh.getRenderTarget().width};
   });
-  await ready(page);await page.locator('#open-help').click();
+  await ready(page);
+  // Reach the fixed-view handler in one task before software menu frames delay actionability probes.
+  await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#open-help')!.click());
+  await expect(page.locator('#help-dialog')).toBeVisible();
   const help=await snapshot();expect(await snapshot()).toEqual(help);
   await page.locator('[data-close="help-dialog"]').last().click();
   const moving=await snapshot();expect(moving.time).toBeGreaterThan(help.time);expect(moving.draws).toBeGreaterThan(help.draws);
@@ -552,7 +555,7 @@ test('race registers actual ordered gate crossing and saves a completed run', as
   page.on('console',message=>{if(message.text().startsWith('Race progress: '))console.log(message.text());});
   await page.setViewportSize({width:320,height:240});
   // Use a supported FPV lens for this physics case; native ULTRA captures cover wide scenery.
-  await page.addInitScript(()=>localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced',fov:'65',tilt:'0'})));
+  await page.addInitScript(()=>localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced',sea:'breeze',fov:'65',tilt:'0'})));
   await ready(page);
   // CI protocol polls held each menu frame for >10 s, correctly discarding its
   // unsafe clock gap. Warm a normal flight in one task and retain the safeguard.
@@ -634,6 +637,7 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
     const tab=document.querySelector<HTMLButtonElement>('[data-tab="controller"]')!;tab.click();
     const selected=tab.getAttribute('aria-pressed');
     const source=document.querySelector<HTMLSelectElement>('#input-source')!;source.value='xbox';source.dispatchEvent(new Event('input',{bubbles:true}));
+    const sea=document.querySelector<HTMLSelectElement>('#sea')!;sea.value='swell';sea.dispatchEvent(new Event('input',{bubbles:true}));
     const applied=(window as any).__OCEANFPV__.input.source;
     document.querySelectorAll<HTMLButtonElement>('[data-close="settings-dialog"]').item(1).click();
     return {opened,selected,source:applied,closed:!dialog.open};
@@ -646,10 +650,11 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
     (window as any).__pad.axes=[0,-1,0,-0.5];
     do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
     while((app.flight.position.y<=7||app.flight.position.y<=initial+1)&&performance.now()-start<20000);
-    return {initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks()};
+    return {initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks(),seaScale:app.world.ocean.material.uniforms.seaScale.value};
   });
   expect(climbed.altitude).toBeGreaterThan(7);expect(climbed.altitude-climbed.initial).toBeGreaterThan(1);
   expect(climbed.armed).toBe(true);expect(climbed.source).toBe('xbox');
+  expect(climbed.seaScale).toBe(2.15);
   expect(climbed.sticks.throttle).toBe(1);expect(climbed.sticks.pitch).toBeLessThan(0);expect(climbed.sticks.absoluteThrottle).toBe(false);
   await page.evaluate(()=> {(window as any).__pad=null;});await expect(page.locator('#pause-title')).toHaveText('コントローラー接続が切れました');
   await page.locator('#resume').click();await expect(page.locator('#pause-dialog')).toBeVisible();
@@ -675,6 +680,7 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
     };
     click('#open-settings');click('[data-tab="controller"]');
     const source=document.querySelector<HTMLSelectElement>('#input-source')!;source.value='radio';source.dispatchEvent(new Event('input',{bubbles:true}));
+    const sea=document.querySelector<HTMLSelectElement>('#sea')!;sea.value='swell';sea.dispatchEvent(new Event('input',{bubbles:true}));
     const dialog=document.querySelector<HTMLDialogElement>('#settings-dialog')!,opened=dialog.open;
     await until(()=>app.input.pad?.id===pad.id,'device');click('#calibrate');
     pad.axes=[-0.8,-0.8,-0.8,-0.8];await until(()=>app.input.profile.calibration[0].min===-0.8,'minimum');
@@ -696,11 +702,12 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
     const startTime=app.getState().time;await until(()=>app.getState().time>startTime+1,'zero-throttle deck wait');
     const launch=app.world.launchPose(app.getState().time),waiting={crashed:app.flight.crashed,armed:app.flight.armed,flightTime:app.getState().flightTime,error:app.flight.position.distanceTo(launch.position)},altitude=app.flight.position.y;
     pad.axes=[0,0,0,-0.8];await until(()=>app.flight.position.y>altitude+1,'radio takeoff');
-    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,warmup,waiting,climb:app.flight.position.y-altitude,started:document.querySelector('#intro')!.classList.contains('hidden')};
+    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,warmup,waiting,climb:app.flight.position.y-altitude,seaScale:app.world.ocean.material.uniforms.seaScale.value,started:document.querySelector('#intro')!.classList.contains('hidden')};
   });
   expect(result.opened).toBe(true);expect(result.source).toBe('radio');expect(result.min).toBe(-0.8);expect(result.max).toBe(0.9);expect(result.saved).toBe(-0.8);
   expect(result.rejected.dialog).toBe(true);expect(result.rejected.toast).toContain('スロットルを下げ');expect(result.rejected.playing).toBe(false);expect(result.started).toBe(true);
   expect(result.warmup).toEqual({paused:true,time:0,flightTime:0,cameraError:0});
+  expect(result.seaScale).toBe(2.15);
   expect(result.waiting.crashed).toBe(false);expect(result.waiting.armed).toBe(true);expect(result.waiting.flightTime).toBeGreaterThan(1);expect(result.waiting.error).toBeLessThan(1e-6);expect(result.climb).toBeGreaterThan(1);
 });
 test('lighting and sea settings persist across a full reload', async ({page})=> {
@@ -729,6 +736,17 @@ test('wake reflections follow the surface gradient on both sides and rotated hea
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__WAKE_SLOPE_PROBE__);},{timeout:60000}).toBe(true);
   const probe=await page.evaluate(()=>(window as any).__WAKE_SLOPE_PROBE__);console.log(`Wake slope probe: ${JSON.stringify(probe)}`);
   expect(probe.count).toBe(4035);expect(probe.maximum).toBeLessThan(.00005);expect(probe.symmetryError).toBeLessThan(.00001);expect(probe.rotationError).toBeLessThan(.00001);expect(errors).toEqual([]);
+});
+
+test('ocean sky reflection follows the normal and preserves premultiplied object coverage',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+ await page.goto('/tests/browser/fixtures/sky-reflection-probe.html');
+ await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SKY_REFLECTION_PROBE__);},{timeout:60000}).toBe(true);
+ const probe=await page.evaluate(()=>{const {samples,...summary}=(window as any).__SKY_REFLECTION_PROBE__;return summary;});
+ console.log(`Sky reflection probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
+ expect(probe.count).toBe(165);expect(probe.maximum).toBeLessThan(.000003);expect(probe.alphaError).toBeLessThan(.000001);expect(probe.compositeError).toBeLessThan(.000001);
+ // Three.js transmission alpha omits the Fresnel term: bound its known neutral-glass approximation.
+ expect(probe.glassObjects[3]).toBeGreaterThan(0);expect(probe.glassObjects[3]).toBeLessThan(1);expect(probe.glassError).toBeLessThan(.03);expect(probe.nestedStateError).toBe(0);expect(probe.nestedRestored).toBe(true);expect(errors).toEqual([]);
 });
 
 test('sun glint uses its microfacet angle while sky reflection keeps the surface angle',async({page})=>{

@@ -16,7 +16,7 @@ const constant=generator.fromScene(constantScene,0,.1,100,{size:16});world.scene
 const normals=[[0,1,0],[.8,.6,0],[-.8,.6,0],[0,.6,.8],[0,.6,-.8]].map(v=>new T.Vector3(...v)),albedo=[.78,.86,.84],samples=[];
 let maximum=0,rotationError=0,environmentSpread=0,lastVersion=-1;
 function draw(normal,grain){
- ocean.setFoamLighting?.(world.scene,world.sunlight,world.hemisphere);
+ ocean.setLighting(world.scene,world.sunlight,world.hemisphere);
  if(lastVersion!==ocean.material.version){material.needsUpdate=true;lastVersion=ocean.material.version;}
  uniforms.probeNormal.value.copy(normal);uniforms.probeGrain.value=grain;renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
  if(!pixel.every(Number.isFinite))throw new Error('Non-finite production foam radiance');return [...pixel].slice(0,3);

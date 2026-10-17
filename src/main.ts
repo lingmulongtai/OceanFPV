@@ -45,7 +45,7 @@ async function boot() {
   const composer=new EffectComposer(renderer,renderTarget);composer.addPass(new RenderPass(world.scene,camera));
   const bloom=new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),0.035,0.35,2.4);composer.addPass(bloom);composer.addPass(new OutputPass());
   const flight=new Flight(),input=new Inputs(),race=new Race(),sound=new FlightAudio();
-  let sea:SeaState='breeze', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0,launchHeld=false;
+  let sea:SeaState='swell', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0,launchHeld=false;
   const departureAnchor=new T.Vector3();
   const clock=new SimulationClock();
   let lastHUD=0,lastControllerUI=0,frameCount=0,fpsTime=performance.now(),toastUntil=0;
@@ -385,7 +385,7 @@ async function boot() {
       world.scene.backgroundRotation.y=time*0.00015;
       world.scene.environmentRotation.y=world.scene.backgroundRotation.y;
       if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280).add(world.sunlight.target.position);}
-      world.ocean.setFoamLighting(world.scene,world.sunlight,world.hemisphere);
+      world.ocean.setLighting(world.scene,world.sunlight,world.hemisphere);
       renderer.info.reset();composer.render();frameCount++;
       sceneDirty=false;wasFrozen=frozen;renderedFov=camera.fov;renderedPosition.copy(camera.position);renderedOrientation.copy(camera.quaternion);renderedOcean=world.ocean.material;renderedOceanVersion=world.ocean.material.version;
     }
@@ -405,7 +405,7 @@ async function boot() {
   world.advanceVessels(0);
   camera.position.copy(world.cruise.root.localToWorld(new T.Vector3(180,68,-245)));camera.lookAt(world.cruise.root.localToWorld(new T.Vector3(0,20,-5)));
   world.update(0,camera.position,sea,flight.position,flight.orientation,0);
-  world.ocean.setFoamLighting(world.scene,world.sunlight,world.hemisphere);
+  world.ocean.setLighting(world.scene,world.sunlight,world.hemisphere);
   composer.render();
   $<HTMLButtonElement>('start').disabled=false;
   $('start-note').textContent=missingSurfaces.length?'一部の素材を読み込めませんでした。標準素材でプレイできます。':innerWidth<600?'PCのキーボードまたは接続コントローラーでプレイできます。':'インストール不要 · キーボード / Xbox / USB送信機';
