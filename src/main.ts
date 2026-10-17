@@ -15,6 +15,8 @@ import { loadPhotographicSky, type PhotographicSkyPreset } from './sky';
 import { SimulationClock } from './clock';
 import {loadCruiseOcclusion} from './cruise-occlusion';
 import {waitForGpu} from './gpu-ready';
+import {loadWaveFFT} from './wave-fft-load';
+import {installWaveFFT} from './spectrum';
 
 const $ = <E extends HTMLElement = HTMLElement>(id:string) => document.getElementById(id) as E;
 const value = (id:string) => $<HTMLInputElement>(id).value;
@@ -425,6 +427,7 @@ async function boot() {
   performance.mark('oceanfpv:initial-gpu-start');
   if(!await waitForGpu(renderer.getContext() as WebGL2RenderingContext)||!supported)return;
   performance.mark('oceanfpv:initial-gpu-ready');
+  void loadWaveFFT().then(exports=>{if(exports)installWaveFFT(exports);});
   const missingSurfaces=await world.loadSurfaceTextures(renderer,texturesReady=> {skyDecodeReady=texturesReady;return ensurePhotographicSky(world.light);});
   if(!supported)return;
   world.advanceVessels(0);
