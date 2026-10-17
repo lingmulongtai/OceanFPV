@@ -64,7 +64,8 @@ export function bakeCabinOcclusion(blockers:T.BufferGeometry[],floor:number,cabi
     const [origin,u,v,normal]=chart.map(a=>new T.Vector3(...a));
     for(let y=0;y<TILE_Y;y++)for(let x=0;x<TILE_X;x++) {
       const s=T.MathUtils.clamp((x-PAD+0.5)/(TILE_X-2*PAD),0.0001,0.9999),t=T.MathUtils.clamp((y-PAD+0.5)/(TILE_Y-2*PAD),0.0001,0.9999);
-      point.copy(origin).addScaledVector(u,s).addScaledVector(v,t);const value=Math.round(255*sampler.visibility(point,normal));
+      // The cabin diagonal is about 7.5 m; include its far walls like aft rooms.
+      point.copy(origin).addScaledVector(u,s).addScaledVector(v,t);const value=Math.round(255*sampler.visibility(point,normal,8));
       const offset=((Math.floor(index/2)*TILE_Y+y)*WIDTH+index%2*TILE_X+x)*4;pixels[offset]=pixels[offset+1]=pixels[offset+2]=value;
     }
   });sampler.dispose();
