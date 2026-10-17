@@ -11,6 +11,7 @@ import {buildPoolCabanas} from './pool-cabanas';
 import {buildCruisePools} from './cruise-pools';
 import {createPoolTiles,createPoolWater} from './pool-materials';
 import {cruiseHullGeometry,cruiseHullSidePose} from './cruise-hull';
+import {buildCruiseMoorings} from './cruise-moorings';
 import {deckOutline,deckGeometry,windowRibbon} from './ship-outline';
 import {buildAftLounge,buildAftLoungeFurniture,buildBowLounge,buildBowLoungeFurniture} from './aft-lounge';
 
@@ -54,7 +55,8 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
     if(m===white||m===teak){const projected=metricPaintGeometry(g,m===teak?1.8:2.5);g.dispose();g=projected;}
     if(m===white||m===teak)roomOcclusionUV(g,aoFloor,aoCabin,aoSide,surface,aoEnd);
     if(capture&&m!==glass&&m!==cabinGlass&&m!==balconyGlass)blockers.push(g.clone());
-    if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(g.index?g.toNonIndexed():g);
+    const buffered=g.index?g.toNonIndexed():g;
+    if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(buffered);return buffered;
   };
   const box=(s:number[],p:number[],m=white,solid=false,round=0,surface?:RoomSurface)=> {
     add(round?new RoundedBoxGeometry(s[0],s[1],s[2],2,round):new T.BoxGeometry(s[0],s[1],s[2]),p,m,new T.Euler(),new T.Vector3(1,1,1),surface);
@@ -184,7 +186,9 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
   box([34.2,0.42,12],[0,33.82,-70],white);
   for(const side of [-1,1]) {box([0.08,1.6,8],[side*15.58,32.6,-70],glass);box([2.8,0.2,10],[side*16.2,31,-70],white);}
   // Teak promenade, bow foredeck, stern terraces and pool deck.
-  add(foredeckGeometry(),[0,0,0],teak);
+  const bowTimber=foredeckGeometry(),moorings=buildCruiseMoorings(bowTimber,9.2+.16/2);
+  const foredeck=add(bowTimber,[0,0,0],teak),foredeckUV=foredeck.getAttribute('uv');
+  for(let i=0;i<foredeckUV.count;i++)foredeckUV.setXY(i,foredeckUV.getY(i),-foredeckUV.getX(i));
   for(const side of [-1,1])for(let station=2;station<=15;station++) {
     const u=station/128,z=(u-0.5)*260,x=side*(hullHalfWidth(u,34)-0.3),y=hullDeckHeight(u,260,9);
     if(station%2===0||station===15)rod([x,y,z],[x,y+1.05,z],0.035);
@@ -245,7 +249,7 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
     const top=cruiseHullSidePose(7.2,-113,side),bottom=cruiseHullSidePose(4.8,-113,side);
     rod(top.point.addScaledVector(top.normal,0.12).toArray(),bottom.point.addScaledVector(bottom.normal,0.12).toArray(),0.1,chrome);
   }
-  for(const x of [-5,5])for(const z of [-113,116]) {const y=hullDeckHeight((z+130)/260,260,9)+0.15;add(new T.CylinderGeometry(0.4,0.4,0.9,20),[x,y+0.45,z],chrome);box([1.9,0.12,1.2],[x,y,z],navy);}
+  for(const part of moorings.parts)add(part.geometry,[0,0,0],part.finish==='base'?navy:chrome);
   const bakeStarted=performance.now(),ao=bake(blockers,9.33,-87,{blockers:aftBlockers,front:92}),occlusionBakeMs=performance.now()-bakeStarted;[...blockers,...aftBlockers].forEach(g=>g.dispose());white.aoMap=teak.aoMap=ao;white.aoMapIntensity=teak.aoMapIntensity=0.75;
   const furnitureLods:{mesh:T.Mesh;fine:T.BufferGeometry;coarse:T.BufferGeometry}[]=[];
   for(const [m,geometries]of buckets) {
@@ -265,7 +269,7 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
     }
   };
   const endPoolView=()=>{const previous=poolViewStates.pop();if(previous!==undefined)waterSurface.visible=previous;};
-  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,terraceContains:sternTerraces.contains,guardContacts:sundeckGuards.contacts,cabanaContacts:cabanas.contains,poolContact:pools.contact,advancePoolWater:poolWater.advance,beginPoolView,endPoolView,hoistSegments:hoists};
+  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,terraceContains:sternTerraces.contains,guardContacts:sundeckGuards.contacts,cabanaContacts:cabanas.contains,mooringContacts:moorings.contacts,poolContact:pools.contact,advancePoolWater:poolWater.advance,beginPoolView,endPoolView,hoistSegments:hoists};
 }
 
 export function buildCruiseShip(pixels?:Uint8Array|null) {

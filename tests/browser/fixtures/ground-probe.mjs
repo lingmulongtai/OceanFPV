@@ -39,14 +39,14 @@ const phaseSample=(uv,size,read)=>{
  }
  return value;
 };
-const sampleColour=(point,metres,normal,fine=false)=>{
+const sampleColour=(point,metres,normal,fine=false,size=64)=>{
  const weights=normal.toArray().map(v=>Math.abs(v)**4),sum=weights.reduce((a,b)=>a+b),pairs=[[point.z,point.y],[point.x,point.z],[point.x,point.y]],colour=[0,0,0];
- pairs.forEach((uv,i)=>{const values=fine?phaseSample(uv.map(v=>v/metres),64,(x,y)=>[(x+.5)/64,(y+.5)/64,.25]):[...uv.map(v=>(Math.floor(((v/metres)%1+1)%1*64)+0.5)/64),.25];values.forEach((v,j)=>colour[j]+=v*weights[i]/sum);});return colour;
+ pairs.forEach((uv,i)=>{const values=fine?phaseSample(uv.map(v=>v/metres),size,(x,y)=>[(x+.5)/size,(y+.5)/size,.25]):[...uv.map(v=>(Math.floor(((v/metres)%1+1)%1*64)+0.5)/64),.25];values.forEach((v,j)=>colour[j]+=v*weights[i]/sum);});return colour;
 };
 // Analytical gradients of planar coordinate fields, independent of screen derivatives.
-const mappedNormal=(normal,mapNormal)=>{
+const mappedNormal=(normal,mapNormal,strength=0.65,metres=[1,1])=>{
  const axes=[[new T.Vector3(0,0,1),new T.Vector3(0,1,0)],[new T.Vector3(1,0,0),new T.Vector3(0,0,1)],[new T.Vector3(1,0,0),new T.Vector3(0,1,0)]],weights=normal.toArray().map(v=>Math.abs(v)**4),sum=weights.reduce((a,b)=>a+b),result=new T.Vector3();
- axes.forEach(([u,v],i)=>{const sample=Array.isArray(mapNormal[0])?mapNormal[i]:mapNormal;u.addScaledVector(normal,-u.dot(normal));v.addScaledVector(normal,-v.dot(normal));const scale=Math.sqrt(Math.max(u.lengthSq(),v.lengthSq()));const n=normal.clone().multiplyScalar(sample[2]);if(scale>0)n.addScaledVector(u,sample[0]*0.65/scale).addScaledVector(v,sample[1]*0.65/scale);result.addScaledVector(n.normalize(),weights[i]/sum);});return result.normalize();
+ axes.forEach(([u,v],i)=>{const sample=Array.isArray(mapNormal[0])?mapNormal[i]:mapNormal;u.divideScalar(metres[0]);v.divideScalar(metres[1]);u.addScaledVector(normal,-u.dot(normal));v.addScaledVector(normal,-v.dot(normal));const scale=Math.sqrt(Math.max(u.lengthSq(),v.lengthSq()));const n=normal.clone().multiplyScalar(sample[2]);if(scale>0)n.addScaledVector(u,sample[0]*strength/scale).addScaledVector(v,sample[1]*strength/scale);result.addScaledVector(n.normalize(),weights[i]/sum);});return result.normalize();
 };
 const samples=[];let maximum=0;
 for(const {field,kind,material}of materials)for(const normal of axes)for(const cover of [0,0.5,1]) {
@@ -107,6 +107,55 @@ for(const field of detailFields)for(const kind of ['colour','normal','roughness'
   }
  }
 }
+// Independent planar gradients cover the actual cliff material, including
+// opposing near-tangent normals and cached fallback/restoration on one carrier.
+const cliffMetres=[20.0020694732666,20.001800537109375],cliffMean=[.31,.27,.61],cliffColour=dataTexture(gradient,64,64);
+cliffColour.mipmaps=[{data:new Float32Array(gradient),width:64,height:64}];
+for(let size=32;size>=1;size/=2){const data=new Float32Array(size*size*4);for(let i=0;i<data.length;i+=4)data.set([...cliffMean,1],i);cliffColour.mipmaps.push({data,width:size,height:size});}
+cliffColour.minFilter=T.NearestMipmapNearestFilter;cliffColour.needsUpdate=true;
+const cliffFineMean=[.23,.47,.32],fineGradient=[];for(let y=0;y<8;y++)for(let x=0;x<8;x++)fineGradient.push((x+.5)/8,(y+.5)/8,.25,1);
+const cliffFineColour=dataTexture(fineGradient,8,8);cliffFineColour.mipmaps=[{data:new Float32Array(fineGradient),width:8,height:8}];
+for(let size=4;size>=1;size/=2){const data=new Float32Array(size*size*4);for(let i=0;i<data.length;i+=4)data.set([...cliffFineMean,1],i);cliffFineColour.mipmaps.push({data,width:size,height:size});}cliffFineColour.minFilter=T.NearestMipmapNearestFilter;cliffFineColour.needsUpdate=true;
+const grazing=Math.sqrt(1-.04**2),cliffFields=[{name:'flat',large:flat,fine:flat},{name:'large-only',large:rockTilt,fine:flat},{name:'fine-only',large:flat,fine:coverTilt},{name:'both',large:rockTilt,fine:coverTilt},{name:'opposed-grazing',large:[grazing,0,.04],fine:[-grazing,0,.04]},{name:'patterned',large:rockTilt,fine:coverTilt,pattern:true}],cliffSamples=[];let cliffMaximum=0;
+const projectedCliffColour=(point,metres,normal)=> {
+ const weights=normal.toArray().map(v=>Math.abs(v)**4),sum=weights.reduce((a,b)=>a+b),values=[0,0,0];
+ [[point.z,point.y],[point.x,point.z],[point.x,point.y]].forEach((uv,j)=>phaseSample(uv.map((v,i)=>v/metres[i]),64,(x,y)=>[(x+.5)/64,(y+.5)/64,.25]).forEach((v,i)=>values[i]+=v*weights[j]/sum));return values;
+};
+for(const kind of ['normal','colour','roughness'])for(const field of kind==='normal'?cliffFields:cliffFields.slice(3,4)) {
+ const fine=new T.MeshStandardMaterial({map:cliffFineColour,normalMap:field.pattern?patternedNormal:normalTexture(field.fine),roughnessMap:colour}),large=new T.MeshStandardMaterial({map:cliffColour,normalMap:field.pattern?patternedNormal:normalTexture(field.large),roughnessMap:colour});fine.normalScale.set(.65,.65);
+ const fineNormal=fine.normalMap,largeRough=large.roughnessMap,material=new T.MeshStandardMaterial({map:macroColour,normalMap:normalTexture(rockTilt),roughnessMap:rough});material.normalScale.set(.65,.65);
+ blendGroundCover(material,new T.MeshStandardMaterial({map:colour,normalMap:normalTexture(coverTilt),roughnessMap:rough}),fine,large);wetCoastalSurface(material,{value:1.15});
+ const compile=material.onBeforeCompile,key=material.customProgramCacheKey.bind(material),completeOutputs=new Map();
+ material.onBeforeCompile=(shader,renderer)=>{compile.call(material,shader,renderer);shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',`gl_FragColor=vec4(${kind==='normal'?'normal':kind==='roughness'?'vec3(roughnessFactor)':'diffuseColor.rgb'},1.0);`);};material.customProgramCacheKey=()=>key()+kind;mesh.material=material;
+ for(const state of ['complete','incomplete','missing-fine','restored']) {
+  const full=state==='complete'||state==='restored',hasFine=state!=='missing-fine';large.roughnessMap=state==='incomplete'?null:largeRough;fine.normalMap=hasFine?fineNormal:null;material.needsUpdate=true;
+  for(const normal of state==='complete'?axes:[axes[6]])for(const cover of state==='complete'?[0,.5,1]:[.5])for(const position of state==='complete'?[[137.13,41.37,211.29],[-137.57,.1,-211.67]]:[[137.13,41.37,211.29]]) {
+   mesh.position.set(...position);mesh.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),normal);coverAttribute.array.fill(cover);coverAttribute.needsUpdate=true;
+   camera.up.set(...(Math.abs(normal.y)>.99?[0,0,1]:[0,1,0]));camera.position.copy(mesh.position).addScaledVector(normal,6);camera.lookAt(mesh.position);camera.updateMatrixWorld(true);mesh.updateMatrixWorld(true);
+   renderer.setRenderTarget(target);renderer.render(scene,camera);const actual=new Float32Array(4);renderer.readRenderTargetPixels(target,32,32,1,1,actual);
+   const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2(2*32.5/64-1,2*32.5/64-1),camera);const point=ray.ray.intersectPlane(new T.Plane().setFromNormalAndCoplanarPoint(normal,mesh.position),new T.Vector3());
+   const reach=1.15*1.5*(.9+.1*Math.sin(point.x*.19+Math.sin(point.z*.23)*2)*Math.sin(point.z*.13)),t=T.MathUtils.clamp((point.y-.15)/(reach-.15),0,1),wet=1-t*t*(3-2*t);let expected;
+   if(kind==='normal') {
+    const sample=(metres,n)=>field.pattern?[[point.z,point.y],[point.x,point.z],[point.x,point.y]].map(uv=>phaseSample(uv.map((v,i)=>v/metres[i]),8,(x,y)=>detailVectors[y*8+x])):n;
+    let rock=hasFine?mappedNormal(normal,sample([2,2],field.fine)):mappedNormal(normal,rockTilt);
+    if(full) {
+     const big=mappedNormal(normal,sample(cliffMetres,field.large),1,cliffMetres),sum=normal.clone();
+     for(const n of [big,rock]){const d=n.dot(normal);sum.add(n.clone().addScaledVector(normal,-d).divideScalar(Math.max(d,.2)));}rock=sum.normalize();
+     if(rock.dot(normal)<.01)throw new Error('Combined cliff normal left the front hemisphere');
+    }
+    expected=rock.multiplyScalar(1-cover).addScaledVector(mappedNormal(normal,coverTilt),cover).normalize().transformDirection(camera.matrixWorldInverse).toArray();
+   }else if(kind==='roughness') {
+    const fineR=sampleColour(point,2,normal,true)[1],rock=full?projectedCliffColour(point,cliffMetres,normal)[1]*.8+fineR*.2:hasFine?.7*.35+fineR*.65:.7;expected=Array(3).fill((rock*(1-cover)+.7*cover)*(1-.55*wet));
+   }else {
+    const big=projectedCliffColour(point,cliffMetres,normal),small=sampleColour(point,2,normal,true,8),macro=sampleColour(point,90,normal),grass=sampleColour(point,15,normal),q=T.MathUtils.clamp((Math.abs(normal.y)-.45)/.3,0,1),weight=.35*q*q*(3-2*q);
+    expected=big.map((v,i)=>((full?cliffFineMean[i]*v/cliffMean[i]*(.8+.2*small[i]/cliffFineMean[i]):hasFine?small[i]*(1-weight+weight*macro[i]/macroMean[i]):macro[i])*(1-cover)+grass[i]*cover)*(1-.38*wet));
+   }
+   const error=Math.max(...expected.map((v,i)=>Math.abs(v-actual[i])));cliffMaximum=Math.max(cliffMaximum,error);cliffSamples.push({kind,field:field.name,state,normal:normal.toArray(),cover,position,actual:[...actual],expected,error});
+   if(!Number.isFinite(error)||error>.002)throw new Error(`Cliff material mismatch ${JSON.stringify(cliffSamples.at(-1))}`);
+   const sampleKey=JSON.stringify({normal:normal.toArray(),cover,position});if(state==='complete')completeOutputs.set(sampleKey,[...actual]);if(state==='restored'&&Math.max(...completeOutputs.get(sampleKey).map((v,i)=>Math.abs(v-actual[i])))>.000002)throw new Error('Restored cliff material changed its complete output');
+  }
+ }
+}
 // Direct production-helper reads cover signed cells and both sides of tile
 // boundaries without relying on a projected mesh's floating-point ray position.
 const phasePoints=[[2.2,3.7],[-1.2,-2.7],[-1.5,2.5],[-1.0001,.41],[-.9999,.41],[.41,1.9999],[.41,2.0001]],stochasticSamples=[];
@@ -163,4 +212,4 @@ try {
  if(missing.length||!material.map||!material.normalMap||!material.roughnessMap||requests.get('diff')!==1||requests.get('nor_gl')!==1||requests.get('rough')!==2||recoveryFailures.length!==1||!recoveryFailures[0].recovered||recoveryFailures[0].attempt!==1)throw new Error(`Timeout recovery did not retain successful maps: ${JSON.stringify({missing,requests:[...requests],recoveryFailures})}`);
  for(const texture of [material.map,material.normalMap,material.roughnessMap]){texture.dispose();texture.image.close();}material.dispose();
 }finally{globalThis.fetch=originalFetch;globalThis.createImageBitmap=originalBitmap;AbortSignal.timeout=originalTimeout;}
-const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');if(gl.getError()!==gl.NO_ERROR)throw new Error('Ground probe WebGL error');window.__GROUND_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,maximum,detailSamples,detailMaximum,stochasticSamples,stochasticMaximum,continuityMaximum,loadingFailures};
+const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');if(gl.getError()!==gl.NO_ERROR)throw new Error('Ground probe WebGL error');window.__GROUND_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),samples,maximum,detailSamples,detailMaximum,cliffSamples,cliffMaximum,stochasticSamples,stochasticMaximum,continuityMaximum,loadingFailures};

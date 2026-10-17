@@ -25,16 +25,19 @@ export function blendRockScale(material:T.MeshStandardMaterial,macro:T.MeshStand
   };
 }
 /** World-space projections keep photographed scale on ground and steep cliffs. */
-export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshStandardMaterial,detail?:T.MeshStandardMaterial) {
+export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshStandardMaterial,detail?:T.MeshStandardMaterial,cliff?:T.MeshStandardMaterial) {
   const available=()=>!!(material.map&&material.normalMap&&material.roughnessMap&&cover.map&&cover.normalMap&&cover.roughnessMap);
   const detailed=()=>!!(detail?.map&&detail.normalMap&&detail.roughnessMap);
+  const cliffed=()=>detailed()&&!!(cliff?.map&&cliff.normalMap&&cliff.roughnessMap);
   // Cached program variants reuse the last uniform set; keep optional bindings present and current.
   const detailUniforms={groundDetailMap:{get value(){return detail?.map??null;}},groundDetailNormalMap:{get value(){return detail?.normalMap??null;}},groundDetailRoughnessMap:{get value(){return detail?.roughnessMap??null;}},groundDetailNormalScale:{get value(){return detail?.normalScale??material.normalScale;}}};
-  material.customProgramCacheKey=()=>`coastal-cover-triplanar-phase-${available()}-${detailed()}`;
+  const cliffUniforms={groundCliffMap:{get value(){return cliff?.map??null;}},groundCliffNormalMap:{get value(){return cliff?.normalMap??null;}},groundCliffRoughnessMap:{get value(){return cliff?.roughnessMap??null;}}};
+  material.customProgramCacheKey=()=>`coastal-cover-triplanar-phase-${available()}-${detailed()}-${cliffed()}`;
   material.onBeforeCompile=shader=> {
     if(!available())return;
     Object.assign(shader.uniforms,{coverMap:{value:cover.map},coverNormalMap:{value:cover.normalMap},coverRoughnessMap:{value:cover.roughnessMap}});
     Object.assign(shader.uniforms,detailUniforms);
+    Object.assign(shader.uniforms,cliffUniforms);
     shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nattribute float groundCover;varying float vGroundCover;varying vec3 vGroundPosition,vGroundNormal;')
       .replace('#include <begin_vertex>','#include <begin_vertex>\nvGroundCover=groundCover;')
       .replace('#include <project_vertex>',`#include <project_vertex>
@@ -43,6 +46,7 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
     shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>
       uniform sampler2D coverMap,coverNormalMap,coverRoughnessMap;
       ${detailed()?'uniform sampler2D groundDetailMap,groundDetailNormalMap,groundDetailRoughnessMap;uniform vec2 groundDetailNormalScale;':''}
+      ${cliffed()?'uniform sampler2D groundCliffMap,groundCliffNormalMap,groundCliffRoughnessMap;':''}
       varying float vGroundCover;varying vec3 vGroundPosition,vGroundNormal;
       ${detailed()?groundDetailCode:''}
       vec3 groundWeights(){vec3 w=pow(abs(normalize(vGroundNormal)),vec3(4.0));return w/max(dot(w,vec3(1.0)),0.0001);}
@@ -54,12 +58,23 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
         vec3 w=groundWeights();
         return groundDetailSample(surface,vGroundPosition.zy/2.0)*w.x+groundDetailSample(surface,vGroundPosition.xz/2.0)*w.y+groundDetailSample(surface,vGroundPosition.xy/2.0)*w.z;
       }`:''}
+      ${cliffed()?`const vec2 groundCliffMetres=vec2(20.0020694733,20.0018005371);
+      vec4 groundCliffSample(sampler2D surface){
+        vec3 w=groundWeights();
+        return groundDetailSample(surface,vGroundPosition.zy/groundCliffMetres)*w.x+groundDetailSample(surface,vGroundPosition.xz/groundCliffMetres)*w.y+groundDetailSample(surface,vGroundPosition.xy/groundCliffMetres)*w.z;
+      }`:''}
       vec4 groundNormalTexel(sampler2D surface,vec2 uv,float metres){
         ${detailed()?'if(metres==2.0)return groundDetailSample(surface,uv);':''}
         return texture2D(surface,uv);
       }`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <normalmap_pars_fragment>',`#include <normalmap_pars_fragment>
       #if defined(USE_NORMALMAP_TANGENTSPACE) && !defined(USE_TANGENT)
+        ${cliffed()?`vec3 groundCliffNormal(vec3 baseNormal,vec3 eyePosition){
+          vec2 ux=vGroundPosition.zy/groundCliffMetres,uy=vGroundPosition.xz/groundCliffMetres,uz=vGroundPosition.xy/groundCliffMetres;
+          vec3 nx=groundDetailSample(groundCliffNormalMap,ux).xyz*2.0-1.0,ny=groundDetailSample(groundCliffNormalMap,uy).xyz*2.0-1.0,nz=groundDetailSample(groundCliffNormalMap,uz).xyz*2.0-1.0;
+          vec3 w=groundWeights();
+          return normalize(normalize(getTangentFrame(eyePosition,baseNormal,ux)*nx)*w.x+normalize(getTangentFrame(eyePosition,baseNormal,uy)*ny)*w.y+normalize(getTangentFrame(eyePosition,baseNormal,uz)*nz)*w.z);
+        }`:''}
         vec3 groundNormal(sampler2D surface,float metres,vec2 strength,vec3 baseNormal,vec3 eyePosition){
           vec2 ux=vGroundPosition.zy/metres,uy=vGroundPosition.xz/metres,uz=vGroundPosition.xy/metres;
           vec3 nx=groundNormalTexel(surface,ux,metres).xyz*2.0-1.0,ny=groundNormalTexel(surface,uy,metres).xyz*2.0-1.0,nz=groundNormalTexel(surface,uz,metres).xyz*2.0-1.0;
@@ -69,16 +84,25 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
         }
       #endif`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`vec3 groundBase=diffuseColor.rgb;
-      ${detailed()?`vec3 groundMacroMean=max(textureLod(map,vec2(0.5),16.0).rgb,vec3(0.04));
+      ${cliffed()?`vec3 groundFineMean=max(textureLod(groundDetailMap,vec2(0.5),16.0).rgb,vec3(0.02));
+      vec3 groundCliffMean=max(textureLod(groundCliffMap,vec2(0.5),16.0).rgb,vec3(0.02));
+      diffuseColor.rgb*=groundFineMean*groundCliffSample(groundCliffMap).rgb/groundCliffMean*mix(vec3(1.0),groundFineSample(groundDetailMap).rgb/groundFineMean,0.2);`:detailed()?`vec3 groundMacroMean=max(textureLod(map,vec2(0.5),16.0).rgb,vec3(0.04));
       float groundMacroStrength=0.35*smoothstep(0.45,0.75,abs(normalize(vGroundNormal).y));
       diffuseColor.rgb*=groundFineSample(groundDetailMap).rgb*mix(vec3(1.0),groundSample(map,90.0).rgb/groundMacroMean,groundMacroStrength);`:'diffuseColor*=groundSample(map,90.0);'}
       diffuseColor.rgb=mix(diffuseColor.rgb,groundBase*groundSample(coverMap,15.0).rgb,vGroundCover);`);
-    shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>',`float groundRockRoughness=groundSample(roughnessMap,90.0).g;
-      ${detailed()?'groundRockRoughness=mix(groundRockRoughness,groundFineSample(groundDetailRoughnessMap).g,0.65);':''}
+    shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>',`float groundRockRoughness=${cliffed()?'groundCliffSample(groundCliffRoughnessMap).g':'groundSample(roughnessMap,90.0).g'};
+      ${detailed()&&!cliffed()?'groundRockRoughness=mix(groundRockRoughness,groundFineSample(groundDetailRoughnessMap).g,0.65);':''}
+      ${cliffed()?'groundRockRoughness=mix(groundRockRoughness,groundFineSample(groundDetailRoughnessMap).g,0.2);':''}
       float roughnessFactor=roughness*mix(groundRockRoughness,groundSample(coverRoughnessMap,15.0).g,vGroundCover);`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <normal_fragment_maps>',`
       #if defined(USE_NORMALMAP_TANGENTSPACE) && !defined(USE_TANGENT)
         vec3 groundRockNormal=${detailed()?'groundNormal(groundDetailNormalMap,2.0,groundDetailNormalScale,nonPerturbedNormal,-vViewPosition)':'groundNormal(normalMap,90.0,normalScale,nonPerturbedNormal,-vViewPosition)'};
+        ${cliffed()?`vec3 groundN0=normalize(nonPerturbedNormal),groundNm=groundCliffNormal(groundN0,-vViewPosition);
+        // Both sampled normals share view space. Add their slopes relative to the same base.
+        float groundMacroCos=dot(groundNm,groundN0),groundFineCos=dot(groundRockNormal,groundN0);
+        vec3 groundMacroSlope=(groundNm-groundMacroCos*groundN0)/max(groundMacroCos,0.2);
+        vec3 groundFineSlope=(groundRockNormal-groundFineCos*groundN0)/max(groundFineCos,0.2);
+        groundRockNormal=normalize(groundN0+groundMacroSlope+groundFineSlope);`:''}
         normal=normalize(mix(groundRockNormal,groundNormal(coverNormalMap,15.0,normalScale,nonPerturbedNormal,-vViewPosition),vGroundCover));
       #else
         #include <normal_fragment_maps>

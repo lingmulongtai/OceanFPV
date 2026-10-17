@@ -2,6 +2,12 @@
  * Unshifted frequency indexing; inverse transforms include 1/N² normalization.
  * See docs/OCEAN_RESEARCH.md and OceanLab's MIT spectrum compute reference. */
 import {createWaveSpectrum} from './wave-spectrum';
+export function waveVectorLength(x:number,y:number) {
+  const squared=x*x+y*y;
+  // Wave derivatives fit normal squares; retain hypot at numeric extremes.
+  if((squared>=2.2250738585072014e-308&&squared<=Number.MAX_VALUE)||(x===0&&y===0))return Math.sqrt(squared);
+  return Math.hypot(x,y);
+}
 type FFTPlan={swaps:Uint32Array;stages:{length:number;real:Float64Array;imaginary:Float64Array}[]};
 const fftPlans=new Map<number,FFTPlan>();
 function fftPlan(size:number) {
@@ -108,7 +114,7 @@ export class WaveCascade {
       this.tangentX[i*4]=dxx;this.tangentX[i*4+1]=hx;this.tangentX[i*4+2]=dzx;
       this.tangentZ[i*4]=dxz;this.tangentZ[i*4+1]=hz;this.tangentZ[i*4+2]=dzz;
       const cross=(dxz+dzx)*0.5;
-      this.compressionBound=Math.max(this.compressionBound,(Math.hypot(dxx-dzz,2*cross)-dxx-dzz)*0.5);
+      this.compressionBound=Math.max(this.compressionBound,(waveVectorLength(dxx-dzz,2*cross)-dxx-dzz)*0.5);
     }
     this.slopeVariance=slopeEnergy/count;
     this.heightVariance=heightEnergy/count;
@@ -121,7 +127,7 @@ export class WaveCascade {
     for(let i=0;i<this.displacement.length;i+=4) {
       const xx=1+horizontalScale*this.tangentX[i],xz=horizontalScale*this.tangentZ[i],zx=horizontalScale*this.tangentX[i+2],zz=1+horizontalScale*this.tangentZ[i+2];
       const hx=heightScale*this.tangentX[i+1],hz=heightScale*this.tangentZ[i+1],jacobian=xx*zz-xz*zx;
-      const slope=Math.hypot(hz*zx-zz*hx,xz*hx-hz*xx)/Math.max(jacobian,0.2);
+      const slope=waveVectorLength(hz*zx-zz*hx,xz*hx-hz*xx)/Math.max(jacobian,0.2);
       const breaking=Math.max((0.55-jacobian)*3.6,(slope-0.6)*2.2);
       const injection=Math.max(0,Math.min(1,breaking));
       this.displacement[i+3]=Math.max(reset?0:this.displacement[i+3]*Math.exp(-dt*0.85),injection);

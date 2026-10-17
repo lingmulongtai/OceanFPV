@@ -105,12 +105,12 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#open-help')!.click());
   await expect(page.locator('#help-dialog')).toBeVisible();
   await verifyCabinVisibility(page);expect(atlasResponses).toEqual([200]);
-  const {loading,gpu,render,forest,rocks,cliff,detailPrograms,waterPrograms,unsupportedVisible,wakeDirections}=await page.evaluate(()=> {
+  const {loading,gpu,render,forest,rocks,cliff,detailPrograms,cliffPrograms,waterPrograms,unsupportedVisible,wakeDirections}=await page.evaluate(()=> {
     const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
     const rocks=app.world.rocks;
     const w=app.world;
     return {loading:{failures:w.surfaceFailures,note:document.querySelector('#start-note')!.textContent,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),bed:w.ocean.material.uniforms.hasSeabedMap.value&&w.ocean.material.uniforms.seabedMap.value===w.coastalRockDetail.map,tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)},
-      detailPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap')),waterPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('islandBathymetry')),unsupportedVisible:!!document.querySelector('#unsupported')!.getClientRects().length,
+      detailPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap')),cliffPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundCliffMap')),waterPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('islandBathymetry')),unsupportedVisible:!!document.querySelector('#unsupported')!.getClientRects().length,
       gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:w.forest?.sourceTriangles??0,cliff:w.cliff?.surface.geometry.index.count/3,
       wakeDirections:w.ocean.material.uniforms.vesselDirections.value.map((direction:any,i:number)=>({actual:direction.toArray(),heading:(i===0?w.cruise.root:w.yacht).rotation.y})),
       rocks:{triangles:rocks?.shape.geometry.index.count/3,placements:rocks?.placements.length,instances:rocks?.group.children.reduce((sum:number,mesh:any)=>sum+mesh.count,0),reef:rocks?.placements.filter((p:any)=>Math.hypot(p.matrix.elements[12]-app.world.lighthouseReef.x,p.matrix.elements[14]-app.world.lighthouseReef.z)<50).length,
@@ -128,6 +128,7 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(forest).toBeGreaterThan(1000000);
   expect(rocks.triangles).toBe(14844);expect(rocks.perIsland).toEqual([69,79,79]);expect(rocks.placements).toBe(236);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
   expect(detailPrograms.length).toBeGreaterThan(0);for(const program of detailPrograms){expect(program.samplers).toBeLessThanOrEqual(program.limit);expect(program.names).toContain('groundDetailNormalMap');expect(program.names).toContain('groundDetailRoughnessMap');}
+  expect(cliffPrograms.length).toBeGreaterThan(0);for(const program of cliffPrograms){expect(program.names).toContain('groundCliffNormalMap');expect(program.names).toContain('groundCliffRoughnessMap');expect(program.names).toContain('groundDetailMap');expect(program.samplers).toBeLessThanOrEqual(program.limit);}
   expect(waterPrograms.length).toBeGreaterThan(0);for(const program of waterPrograms){expect(program.samplers).toBe(16);expect(program.names).toContain('foamEnvironment');expect(program.names).toContain('localSlopeMoments');expect(program.samplers).toBeLessThanOrEqual(program.limit);}
   console.log(`Water production samplers: ${JSON.stringify(waterPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit,foamEnvironment:program.names.includes('foamEnvironment')})))}`);
   const recovered=loading.failures.filter((failure:any)=>failure.asset==='seaside_rock'&&failure.recovered);
@@ -314,6 +315,20 @@ test('one missing rock detail map retains coherent macro terrain and grass rende
   await page.screenshot({path:'test-results/oceanfpv-ground-detail-fallback.png'});expect(errors).toEqual([]);
 });
 
+test('one missing large cliff map keeps the complete fine rock and grass material',async({page})=> {
+  await recordGroundPrograms(page);const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(message.type()==='error'&&!(message.text()==='Failed to load resource: net::ERR_FAILED'&&message.location().url.endsWith('/marble_cliff_05_rough_4k.jpg')))errors.push(message.text());});
+  await page.route('**/marble_cliff_05_rough_4k.jpg',route=>route.abort());await ready(page);
+  await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#open-help')!.click());await expect(page.locator('#help-dialog')).toBeVisible();
+  const state=await page.evaluate(()=> {
+    const w=(window as any).__OCEANFPV__.world,large=w.surfaceGroups.find((group:any)=>group.asset==='marble_cliff_05').materials[0];
+    return {failures:w.surfaceFailures,large:[large.map,large.normalMap,large.roughnessMap].map(Boolean),fine:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),cover:[w.groundCover.map,w.groundCover.normalMap,w.groundCover.roughnessMap].map(Boolean),enabled:!document.querySelector<HTMLButtonElement>('#start')!.disabled,programs:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap'))};
+  });
+  expect(state.large).toEqual([false,false,false]);expect(state.fine).toEqual([true,true,true]);expect(state.cover).toEqual([true,true,true]);expect(state.enabled).toBe(true);expect(state.programs.length).toBeGreaterThan(0);
+  expect(state.failures.filter((failure:any)=>!failure.recovered)).toEqual([expect.objectContaining({asset:'marble_cliff_05',map:'rough',phase:'fetch',aborted:false,attempt:1})]);
+  for(const program of state.programs){expect(program.names).not.toContain('groundCliffMap');expect(program.names).toContain('groundDetailNormalMap');expect(program.names).toContain('groundDetailRoughnessMap');expect(program.samplers).toBeLessThanOrEqual(program.limit);}
+  await page.screenshot({path:'test-results/oceanfpv-large-cliff-fallback.png'});expect(errors).toEqual([]);
+});
+
 test('photographed cliff contacts, joined ground and shared water depth agree',async({page})=> {
   await ready(page);
   const result=await page.evaluate(()=>{
@@ -381,6 +396,23 @@ test('cruise hull surfaces have matching flight contacts and clear surrounding a
     return samples;
   });
   expect(samples).toHaveLength(32);for(const sample of samples){expect(sample.contact).toContain('船体');expect(sample.clear).toBeNull();if(sample.z>=80&&sample.z<=120)expect(sample.width).toBeGreaterThan(15);}
+});
+
+test('supported mooring fittings stop fast crossings on the moving cruise ship',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,V=a.flight.position.constructor,samples=[];
+    for(const time of [0,39,900]){
+      w.ocean.advance(time,'breeze');w.advanceVessels(time);
+      for(const x of [-5,5])for(const [y,z]of [[11.23,-113],[9.85,116]]){
+        const at=(dx:number,dy=0)=>w.cruise.root.localToWorld(new V(x+dx,y+dy,z)),from=at(-1),to=at(1);
+        samples.push({time,post:w.collision(at(0),time,'breeze'),air:w.collision(at(0,.8),time,'breeze'),from:w.collision(from,time,'breeze'),to:w.collision(to,time,'breeze'),forward:w.collision(to,time,'breeze',from),reverse:w.collision(from,time,'breeze',to)});
+      }
+    }
+    return samples;
+  });
+  expect(result).toHaveLength(12);
+  for(const sample of result){expect(sample.post).toContain('係船設備');expect(sample.air).toBeNull();expect(sample.from).toBeNull();expect(sample.to).toBeNull();expect(sample.forward).toContain('係船設備');expect(sample.reverse).toContain('係船設備');}
 });
 
 test('aft lounge windows reveal real room depth and retain closed flight contacts',async({page})=> {
@@ -602,62 +634,135 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   test.setTimeout(600000);
   // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
   await page.setViewportSize({width:320,height:240});
-  await ready(page);let safetyRecoveries=0;
+  await ready(page);let safetyRecoveries=0,forcedRecoveries=0;
+  // Compile the first FPV draw while normally paused, as in the radio/Xbox fixtures.
+  const {rendering,...warmup}=await page.evaluate(async(isolateRendering)=> {
+    const a=(window as any).__OCEANFPV__;
+    document.querySelector<HTMLButtonElement>('#start')!.click();document.querySelector<HTMLButtonElement>('#home')!.click();
+    for(let i=0;i<2;i++)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+    const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!;gl.finish();
+    const fullTriangles=a.getState().triangles,debug=gl.getExtension('WEBGL_debug_renderer_info'),renderer=debug?gl.getParameter(debug.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
+    // Software rasterization delayed a single protocol call by 91 s in CI.
+    // Keep real input/physics/RAF; image tests and native mode draw the full scene.
+    if(isolateRendering){a.world.scene.visible=false;a.invalidate();for(let i=0;i<2;i++)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));gl.finish();}
+    return {paused:a.getState().paused,time:a.getState().time,flightTime:a.getState().flightTime,cameraError:a.camera.position.distanceTo(a.flight.position),rendering:{isolated:isolateRendering,visible:a.world.scene.visible,fullTriangles,controlTriangles:a.getState().triangles,renderer,glError:gl.getError()}};
+  },process.env.OCEANFPV_NATIVE_GPU!=='1');
+  expect(rendering.fullTriangles).toBeGreaterThan(1e6);expect(rendering.visible).toBe(!rendering.isolated);
+  expect(rendering.glError).toBe(0);
+  if(rendering.isolated)expect(rendering.controlTriangles).toBeLessThan(100);else expect(rendering.controlTriangles).toBeGreaterThan(1e6);
+  console.log(`Keyboard control rendering: ${JSON.stringify(rendering)}`);
+  expect(warmup).toEqual({paused:true,time:0,flightTime:0,cameraError:0});console.log(`Keyboard first flight draw: ${JSON.stringify(warmup)}`);
   // Observe elapsed time and the supported launch pose in one browser task; slow
   // software-renderer protocol responses must not consume a separate poll budget.
   const waiting=await (async()=>{
     const deadline=Date.now()+60000;
     for(let attempt=0;Date.now()<deadline;attempt++) {
-      const observed=await page.evaluate(async({start,budget})=>{
-        const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
-        if(start)document.querySelector<HTMLButtonElement>('#start')!.click();
+      const observed=await page.evaluate(async({resume,deadline})=>{
+        const a=(window as any).__OCEANFPV__;
+        if(Date.now()>deadline)throw new Error('Departure entered after the 60 s phase deadline');
+        if(resume)document.querySelector<HTMLButtonElement>('#resume')!.click();
         while(a.getState().time<=9) {
           const state=a.getState();
-          if(a.flight.crashed||performance.now()>deadline)throw new Error(`Departure did not advance: ${JSON.stringify(state)}`);
+          if(a.flight.crashed||Date.now()>deadline)throw new Error(`Departure did not advance: ${JSON.stringify(state)}`);
           if(state.paused)break;
           await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
         }
         const launch=a.world.launchPose(a.getState().time);
-        return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused};
-      },{start:attempt===0,budget:Math.max(0,deadline-Date.now())});
+        return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused,observedAt:Date.now()};
+      },{resume:attempt===0,deadline});
+      expect(observed.observedAt,'departure observed within its original browser deadline').toBeLessThanOrEqual(deadline);
+      expect(Date.now(),'departure completed within the 60 s phase deadline').toBeLessThanOrEqual(deadline);
       if(!observed.paused)return observed;
-      await recoverRenderPause();
+      await recoverRenderPause(deadline);
     }
     throw new Error('Departure exceeded the 60 s phase deadline');
   })();
   expect(waiting.worldTime).toBeGreaterThan(9);expect(waiting.error).toBeLessThan(1e-6);expect(waiting.flightTime).toBeCloseTo(waiting.worldTime,6);expect(waiting.crashed).toBe(false);expect(waiting.armed).toBe(true);expect(waiting.paused).toBe(false);
-  async function recoverRenderPause() {
+  async function recoverRenderPause(deadline:number,forced=false) {
     const state=await page.evaluate(()=>{const a=(window as any).__OCEANFPV__;return {...a.getState(),crashed:a.flight.crashed,title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};});
-    expect(state.crashed).toBe(false);if(!state.paused)return;
+    expect(Date.now(),'resume within the current 60 s phase deadline').toBeLessThanOrEqual(deadline);
+    expect(state.crashed).toBe(false);if(!state.paused){expect(forced,'injected stall must pause').toBe(false);return;}
     expect(state.open).toBe(true);expect(state.title).toBe('描画が長時間止まりました');expect(state.copy).toContain('処理の遅れが10秒を超えました');
-    expect(++safetyRecoveries,'bounded software-renderer safety-pause recovery').toBeLessThanOrEqual(2);
-    console.log(`Keyboard safety-pause recovery ${safetyRecoveries}: ${JSON.stringify(state)}`);
+    expect(state.flightTime).toBeCloseTo(state.time,6);
+    if(forced)expect(++forcedRecoveries,'recover the deliberate stall once').toBe(1);
+    else safetyRecoveries++;
+    console.log(`Keyboard ${forced?'forced-stall':'safety-pause'} recovery ${forced?forcedRecoveries:safetyRecoveries}: ${JSON.stringify(state)}`);
     const paused=await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#resume')!.click();if(document.activeElement instanceof HTMLElement)document.activeElement.blur();return (window as any).__OCEANFPV__.getState().paused;});
+    expect(Date.now(),'resumed within the current 60 s phase deadline').toBeLessThanOrEqual(deadline);
     expect(paused).toBe(false);
   }
   async function holdUntil(key:string,kind:'altitude'|'speed',threshold:number,forward:number[]=[0,0,-1]) {
     const deadline=Date.now()+60000;
     while(Date.now()<deadline){
-      await recoverRenderPause();await page.keyboard.down(key);
-      let result;
+      await recoverRenderPause(deadline);await page.keyboard.down(key);
+      let result,pauseDeadline:number|undefined;
       try {
-        result=await page.evaluate(async({kind,threshold,forward,budget})=>{
-          const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
+        result=await page.evaluate(async({kind,threshold,forward,deadline})=>{
+          const a=(window as any).__OCEANFPV__;
           for(;;){
             const state=a.getState(),flight=a.flight,value=kind==='altitude'?flight.position.y:flight.velocity.x*forward[0]+flight.velocity.z*forward[2];
-            if(flight.crashed||state.paused||value>threshold)return {value,paused:state.paused,crashed:flight.crashed};
-            if(performance.now()>deadline)throw new Error(`Keyboard ${kind} did not advance: ${JSON.stringify({...state,value,threshold})}`);
+            if(Date.now()>deadline)throw new Error(`Keyboard ${kind} did not advance: ${JSON.stringify({...state,value,threshold,observedAt:Date.now(),deadline})}`);
+            if(flight.crashed||state.paused||value>threshold) {
+              // Space-up must not activate a Resume button focused by the safety dialog.
+              if(state.paused&&document.activeElement instanceof HTMLElement)document.activeElement.blur();
+              return {value,paused:state.paused,crashed:flight.crashed,observedAt:Date.now()};
+            }
             await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
           }
-        },{kind,threshold,forward,budget:Math.max(0,deadline-Date.now())});
-        // Keep real pitch input held until Escape reaches the browser; slow
-        // protocol replies must not insert a long neutral/coasting phase.
-        if(kind==='speed'&&!result.paused&&!result.crashed)await page.keyboard.press('Escape');
+        },{kind,threshold,forward,deadline});
+        console.log(`Keyboard ${kind} observation: ${JSON.stringify({...result,threshold,deadline,receivedAt:Date.now()})}`);
+        expect(result.observedAt,`Keyboard ${kind} observed within its original browser deadline`).toBeLessThanOrEqual(deadline);
+        // Accept progress within its original budget, before slow key cleanup.
+        expect(Date.now(),`Keyboard ${kind} completed within the 60 s phase deadline`).toBeLessThanOrEqual(deadline);
+        expect(result.crashed).toBe(false);
+        if(!result.paused) {
+          expect(result.value).toBeGreaterThan(threshold);
+          if(kind==='speed'){pauseDeadline=Date.now()+60000;await pauseWithEscape(pauseDeadline);}
+        }
       }finally {await page.keyboard.up(key);}
-      expect(result.crashed).toBe(false);if(result.paused)continue;
-      expect(result.value).toBeGreaterThan(threshold);return;
+      if(kind==='altitude')expect(Date.now(),'Keyboard altitude completed within the 60 s phase deadline').toBeLessThanOrEqual(deadline);
+      if(pauseDeadline!==undefined)expect(Date.now(),'Escape and key release completed within the 60 s pause deadline').toBeLessThanOrEqual(pauseDeadline);
+      if(!result.paused)return;
     }
     throw new Error(`Keyboard ${kind} exceeded the 60 s phase deadline`);
+  }
+  async function pauseWithEscape(deadline:number) {
+    await page.evaluate(()=> {
+      const a=(window as any).__OCEANFPV__,witness={trusted:false,recovered:false,error:'',after:null as unknown};
+      (window as any).__KEYBOARD_ESCAPE_WITNESS__=witness;
+      // A safety pause can open while the native key travels to the browser.
+      // Recover it in capture, then let the real Escape handler pause normally.
+      const onEscape=(event:KeyboardEvent)=> {
+        if(event.code!=='Escape')return;
+        window.removeEventListener('keydown',onEscape,true);witness.trusted=event.isTrusted;
+        const state=a.getState(),title=document.querySelector('#pause-title')!.textContent,copy=document.querySelector('#pause-copy')!.textContent,open=document.querySelector<HTMLDialogElement>('#pause-dialog')!.open;
+        if(a.flight.crashed)witness.error='Flight crashed before Escape';
+        else if(state.paused) {
+          if(!open||title!=='描画が長時間止まりました'||!copy!.includes('処理の遅れが10秒を超えました')||Math.abs(state.time-state.flightTime)>1e-6)witness.error=`Unexpected pause before Escape: ${JSON.stringify({...state,title,copy,open})}`;
+          else {
+            document.querySelector<HTMLButtonElement>('#resume')!.click();
+            if(document.activeElement instanceof HTMLElement)document.activeElement.blur();
+            witness.recovered=true;if(a.getState().paused)witness.error='Safety resume before Escape was rejected';
+            console.log(`Keyboard Escape safety-pause recovery: ${JSON.stringify(state)}`);
+          }
+        }
+      };
+      const afterEscape=(event:KeyboardEvent)=> {
+        if(event.code!=='Escape')return;
+        window.removeEventListener('keydown',afterEscape);
+        witness.after={paused:a.getState().paused,title:document.querySelector('#pause-title')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open,crashed:a.flight.crashed};
+      };
+      window.addEventListener('keydown',onEscape,true);
+      window.addEventListener('keydown',afterEscape);
+    });
+    // Keep real pitch held until the native Escape pauses; no neutral coast.
+    await page.keyboard.press('Escape');
+    const witness=await page.evaluate(()=>{const witness=(window as any).__KEYBOARD_ESCAPE_WITNESS__;delete (window as any).__KEYBOARD_ESCAPE_WITNESS__;return witness as {trusted:boolean;recovered:boolean;error:string;after:unknown};});
+    expect(Date.now(),'Escape completed within the 60 s pause deadline').toBeLessThanOrEqual(deadline);
+    expect(witness.error).toBe('');expect(witness.trusted).toBe(true);
+    expect(witness.after).toEqual({paused:true,title:'フライトを一時停止',open:true,crashed:false});
+    if(witness.recovered)safetyRecoveries++;
+    console.log(`Keyboard native Escape pause: ${JSON.stringify(witness)}`);
   }
   const launchAltitude=waiting.altitude;
   await holdUntil('Space','altitude',launchAltitude+3);
@@ -666,11 +771,25 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
     return {altitude:flight.position.y,forward:forward.toArray(),speed:flight.velocity.dot(forward)};
   });
   expect(beforePitch.altitude).toBeGreaterThan(launchAltitude+2);
-  // Reproduce the observed 11.3 s CI key-up stall and exercise normal recovery.
-  await page.evaluate(async()=>{const start=performance.now();while(performance.now()-start<10100){/* Actual main-thread stall. */}await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));});
+  // A slow key-up may already have paused flight. Recover it as incidental first;
+  // the deliberate witness must begin in active flight in the same browser task.
+  let injected=false;const stallDeadline=Date.now()+60000;
+  while(!injected&&Date.now()<stallDeadline) {
+    injected=await page.evaluate(async()=> {
+      const a=(window as any).__OCEANFPV__;if(a.getState().paused)return false;
+      if(a.flight.crashed)throw new Error('Controlled keyboard stall began after a crash');
+      const start=performance.now();while(performance.now()-start<10100){/* Actual main-thread stall. */}
+      await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));return true;
+    });
+    expect(Date.now(),'controlled stall completed within the 60 s phase deadline').toBeLessThanOrEqual(stallDeadline);
+    if(!injected)await recoverRenderPause(stallDeadline);
+  }
+  expect(injected,'controlled keyboard stall began in active flight').toBe(true);
   await expect(page.locator('#pause-title')).toHaveText('描画が長時間止まりました');
+  // This required witness is separate from incidental software-renderer stalls.
+  await recoverRenderPause(stallDeadline,true);
   await holdUntil('KeyW','speed',Math.max(0.8,beforePitch.speed+0.8),beforePitch.forward);
-  expect(safetyRecoveries).toBeGreaterThanOrEqual(1);
+  expect(forcedRecoveries).toBe(1);
   await expect(page.locator('#pause-dialog')).toBeVisible();await expect(page.locator('#pause-title')).toHaveText('フライトを一時停止');
   const paused=await page.evaluate((forward:number[])=>{const flight=(window as any).__OCEANFPV__.flight;return {position:flight.position.toArray(),speed:flight.velocity.x*forward[0]+flight.velocity.z*forward[2]};},beforePitch.forward);
   expect(paused.speed).toBeGreaterThan(.5);
@@ -751,7 +870,23 @@ test('fixed dialog views stop GPU draws and redraw changed settings',async({page
   }
   await page.locator('[data-close="settings-dialog"]').last().click();
   const resumed=await snapshot();expect(resumed.time).toBeGreaterThan(stopped.time);expect(resumed.draws).toBeGreaterThan(changed.draws);
-  await page.keyboard.press('Escape');const paused=await snapshot();expect(await snapshot()).toEqual(paused);
+  // Use an explicit pause request; a delayed Escape can resume a safety pause
+  // that opens between the active snapshot and the key's browser dispatch.
+  const stoppedByButton=await page.evaluate(()=> {
+    const app=(window as any).__OCEANFPV__,state=app.getState();
+    if(app.flight.crashed)throw new Error('Fixed-view flight crashed');
+    if(state.paused) {
+      const reason={title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};
+      if(!reason.open||reason.title!=='描画が長時間止まりました'||!reason.copy!.includes('処理の遅れが10秒を超えました'))throw new Error(`Unexpected fixed-view pause: ${JSON.stringify(reason)}`);
+      console.log(`Fixed-view safety-pause recovery: ${JSON.stringify(state)}`);
+      document.querySelector<HTMLButtonElement>('#resume')!.click();
+      if(app.getState().paused)throw new Error('Fixed-view render-pause resume was rejected');
+    }
+    document.querySelector<HTMLButtonElement>('#home')!.click();
+    return {paused:app.getState().paused,title:document.querySelector('#pause-title')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};
+  });
+  expect(stoppedByButton).toEqual({paused:true,title:'フライトを一時停止',open:true});
+  const paused=await snapshot();expect(await snapshot()).toEqual(paused);
 });
 
 test('lost WebGL context closes modal layers and leaves recovery reachable',async({page})=> {
@@ -842,7 +977,8 @@ test('race registers actual ordered gate crossing and saves a completed run', as
   await expect(page.locator('#results')).toContainText('TOTAL');
   expect(await page.evaluate(()=>Number(localStorage.getItem('oceanfpv:best')))).toBeGreaterThan(0);
 });
-test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', async ({page})=> {
+test('Xbox mapping, armed flight and disconnect pause work through Gamepad API', async ({page})=> {
+  await page.setViewportSize({width:320,height:240});
   await page.addInitScript(()=> {
     (window as any).__pad={id:'Xbox test controller',index:0,connected:true,mapping:'standard',axes:[0,0,0,0],buttons:Array.from({length:17},()=>({pressed:false,value:0,touched:false})),timestamp:0};
     Object.defineProperty(navigator,'getGamepads',{value:()=>[(window as any).__pad]});
@@ -864,11 +1000,32 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
   const climbed=await page.evaluate(async()=> {
     const app=(window as any).__OCEANFPV__;
     document.querySelector<HTMLButtonElement>('#start')!.click();
-    const initial=app.flight.position.y,start=performance.now();
+    // As in the radio fixture, compile the first FPV draw while normally paused.
+    document.querySelector<HTMLButtonElement>('#home')!.click();
+    for(let i=0;i<2;i++)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+    document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!.finish();
+    const warmup={paused:app.getState().paused,time:app.getState().time,flightTime:app.getState().flightTime,cameraError:app.camera.position.distanceTo(app.flight.position)};
+    if(!warmup.paused||warmup.time!==0||warmup.flightTime!==0||warmup.cameraError>1e-6)throw new Error(`Xbox first draw drifted: ${JSON.stringify(warmup)}`);
+    console.log(`Xbox first flight draw: ${JSON.stringify(warmup)}`);
+    document.querySelector<HTMLButtonElement>('#resume')!.click();
+    if(app.getState().paused)throw new Error('Xbox neutral-stick resume was rejected');
+    const initial=app.flight.position.y,start=performance.now();let safetyRecoveries=0;
     (window as any).__pad.axes=[0,-1,0,-0.5];
-    do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+    do {
+      await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+      const state=app.getState();if(app.flight.crashed)throw new Error('Xbox takeoff crashed');
+      if(state.paused) {
+        const reason={title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};
+        if(!reason.open||reason.title!=='描画が長時間止まりました'||!reason.copy!.includes('処理の遅れが10秒を超えました')||++safetyRecoveries>2)throw new Error(`Unexpected Xbox pause: ${JSON.stringify({...state,...reason,safetyRecoveries})}`);
+        console.log(`Xbox safety-pause recovery ${safetyRecoveries}: ${JSON.stringify(state)}`);
+        document.querySelector<HTMLButtonElement>('#resume')!.click();
+        if(document.activeElement instanceof HTMLElement)document.activeElement.blur();
+        if(app.getState().paused)throw new Error('Xbox render-pause resume was rejected');
+      }
+    }
     while((app.flight.position.y<=7||app.flight.position.y<=initial+1)&&performance.now()-start<20000);
-    const climbed={initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks(),seaScale:app.world.ocean.material.uniforms.seaScale.value};
+    const climbed={initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks(),seaScale:app.world.ocean.material.uniforms.seaScale.value,warmup,paused:app.getState().paused,crashed:app.flight.crashed,waited:performance.now()-start,safetyRecoveries};
+    if(climbed.paused||climbed.crashed)throw new Error(`Xbox flight was not active before disconnect: ${JSON.stringify(climbed)}`);
     // Disconnect before another protocol round trip can queue a slow sea draw
     // and make the independent render-stall safeguard win this input test.
     (window as any).__pad=null;const disconnectedAt=performance.now();
@@ -877,6 +1034,7 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
     return {...climbed,disconnect:{title:document.querySelector('#pause-title')!.textContent,waited:performance.now()-disconnectedAt}};
   });
   expect(climbed.altitude).toBeGreaterThan(7);expect(climbed.altitude-climbed.initial).toBeGreaterThan(1);
+  expect(climbed.warmup).toEqual({paused:true,time:0,flightTime:0,cameraError:0});expect(climbed.paused).toBe(false);expect(climbed.crashed).toBe(false);expect(climbed.waited).toBeLessThanOrEqual(20000);expect(climbed.safetyRecoveries).toBeLessThanOrEqual(2);
   expect(climbed.armed).toBe(true);expect(climbed.source).toBe('xbox');
   expect(climbed.seaScale).toBe(2.15);
   expect(climbed.sticks.throttle).toBe(1);expect(climbed.sticks.pitch).toBeLessThan(0);expect(climbed.sticks.absoluteThrottle).toBe(false);
@@ -1050,9 +1208,10 @@ test('terrain projections retain metre scale and coherent detail maps on the GPU
   await page.goto('/tests/browser/fixtures/ground-probe.html');
   await page.waitForFunction(()=>!!((window as any).__GROUND_PROBE__||(window as any).__GROUND_PROBE_ERROR__),{},{timeout:60000});
   expect(await page.evaluate(()=>(window as any).__GROUND_PROBE_ERROR__)).toBeUndefined();
-  const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum,detailCount:p.detailSamples.length,detailMaximum:p.detailMaximum,stochasticCount:p.stochasticSamples.length,stochasticMaximum:p.stochasticMaximum,continuityMaximum:p.continuityMaximum,loadingFailures:p.loadingFailures};});
+  const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum,detailCount:p.detailSamples.length,detailMaximum:p.detailMaximum,cliffCount:p.cliffSamples.length,cliffMaximum:p.cliffMaximum,stochasticCount:p.stochasticSamples.length,stochasticMaximum:p.stochasticMaximum,continuityMaximum:p.continuityMaximum,loadingFailures:p.loadingFailures};});
   console.log(`Ground material probe: ${JSON.stringify(probe)}`);
   expect(probe.count).toBe(96);expect(probe.maximum).toBeLessThan(0.002);expect(probe.detailCount).toBe(2592);expect(probe.detailMaximum).toBeLessThan(0.002);expect(errors).toEqual([]);
+  expect(probe.cliffCount).toBe(408);expect(probe.cliffMaximum).toBeLessThan(.002);
   expect(probe.stochasticCount).toBe(20);expect(probe.stochasticMaximum).toBeLessThan(.002);expect(probe.continuityMaximum).toBeLessThan(.002);
   expect(probe.loadingFailures.map((failure:any)=>failure.phase)).toEqual(['fetch','fetch','fetch','body','body','body','decode','decode','decode',...Array(6).fill('body')]);
   for(const failure of probe.loadingFailures.slice(-6))expect(failure).toMatchObject({name:'TimeoutError',aborted:true,abortReason:'TimeoutError',recovered:false});
