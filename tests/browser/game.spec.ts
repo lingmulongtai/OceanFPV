@@ -79,7 +79,6 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(detailRequests.length).toBe(3+recovered.length);expect(new Set(detailRequests).size).toBe(3);
   for(const url of new Set(detailRequests)){const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(url)![1];expect(detailRequests.filter(request=>request===url).length).toBe(1+recovered.filter((failure:any)=>failure.map===map).length);}
   console.log(`Ground production samplers: ${JSON.stringify(detailPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit})))}`);
-  await page.screenshot({path:'test-results/oceanfpv-menu.png'});
   expect(errors).toEqual([]);
 });
 
