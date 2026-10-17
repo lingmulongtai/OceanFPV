@@ -78,7 +78,7 @@ export function terrainCover(x:number,z:number,size:number,height:number,profile
 }
 export function coastalTreeSites(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
   const sites:{x:number;z:number;y:number;scale:number;yaw:number}[]=[];
-  const candidates=profile==='headland'?2040:1020;
+  const candidates=profile==='headland'||profile==='trenyken'?2040:1020;
   for(let i=0;i<candidates&&sites.length<170;i++) {
     const angle=i*2.399963,r=Math.sqrt((i+0.5)/candidates)*size*0.91,tx=Math.cos(angle)*r,tz=Math.sin(angle)*r;
     const cover=terrainCover(tx,tz,size,height,profile),density=0.35+0.65*noise((x+tx)*0.018+7,(z+tz)*0.018-3);

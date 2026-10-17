@@ -17,14 +17,16 @@ uniform sampler2D islandBathymetry;
 uniform vec4 islandBounds;
 uniform float islandDepthSize;
 uniform int islandDepthChannel;
-vec3 detailedIslandBottom(vec2 uv) {
-  float last=islandDepthSize-1.0;
-  vec2 pixel=uv*last,base=min(floor(pixel),vec2(last-1.0)),f=pixel-base,a=(base+0.5)/islandDepthSize;
-  float h=texture2D(islandBathymetry,a).r,b=texture2D(islandBathymetry,a+vec2(0,1.0/islandDepthSize)).r,d=texture2D(islandBathymetry,a+vec2(1.0/islandDepthSize,0)).r;
+uniform vec4 headlandBounds;
+uniform float headlandDepthSize;
+vec3 detailedIslandBottom(vec2 uv,vec4 bounds,float size,int component) {
+  float last=size-1.0;
+  vec2 pixel=uv*last,base=min(floor(pixel),vec2(last-1.0)),f=pixel-base,a=(base+0.5)/size;
+  float h=texture2D(islandBathymetry,a)[component],b=texture2D(islandBathymetry,a+vec2(0,1.0/size))[component],d=texture2D(islandBathymetry,a+vec2(1.0/size,0))[component];
   float height;vec2 gradient;
   if(f.x+f.y<=1.0){height=h+(b-h)*f.y+(d-h)*f.x;gradient=vec2(d-h,b-h);}
-  else {float c=texture2D(islandBathymetry,a+vec2(1.0/islandDepthSize)).r;height=c+(b-c)*(1.0-f.x)+(d-c)*(1.0-f.y);gradient=vec2(c-b,c-d);}
-  return vec3(height,gradient*last/islandBounds.zw);
+  else {float c=texture2D(islandBathymetry,a+vec2(1.0/size))[component];height=c+(b-c)*(1.0-f.x)+(d-c)*(1.0-f.y);gradient=vec2(c-b,c-d);}
+  return vec3(height,gradient*last/bounds.zw);
 }
 vec4 bottomAt(vec2 uv) {
   vec2 pixel=uv*${BATHY_SIZE-1}.0,base=min(floor(pixel),vec2(${BATHY_SIZE-2}.0)),f=pixel-base,a=(base+0.5)/${BATHY_SIZE}.0;
@@ -38,7 +40,13 @@ vec3 coastalBottom(vec2 p) {
     if(i==islandDepthChannel&&islandDepthSize>1.0) {
       vec2 uv=(p-islandBounds.xy)/islandBounds.zw;
       if(all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1)))) {
-        vec3 detail=detailedIslandBottom(uv);if(detail.x>result.x)result=detail;continue;
+        vec3 detail=detailedIslandBottom(uv,islandBounds,islandDepthSize,0);if(detail.x>result.x)result=detail;continue;
+      }
+    }
+    if(i==0&&headlandDepthSize>1.0) {
+      vec2 uv=(p-headlandBounds.xy)/headlandBounds.zw;
+      if(all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1)))) {
+        vec3 detail=detailedIslandBottom(uv,headlandBounds,headlandDepthSize,1);if(detail.x>result.x)result=detail;continue;
       }
     }
     vec2 uv=(p-islands[i].xy)/(islands[i].zw*2.4)+0.5;

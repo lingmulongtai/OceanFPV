@@ -2,10 +2,11 @@ import { terrainHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain'
 import {LighthouseReef,LIGHTHOUSE_COAST} from './lighthouse-reef';
 import {MEASURED_ISLET_SIZE,MEASURED_ISLET_HEIGHT} from './measured-islet';
 import {HORNOYA_SIZE,HORNOYA_HEIGHT} from './hornoya';
+import {TRENYKEN_SIZE,TRENYKEN_HEIGHT} from './trenyken';
 import {type IslandDepth} from './island-depth';
 
 export type Coast={x:number;z:number;size:number;sizeZ?:number;height:number;profile?:TerrainProfile};
-export const COASTS=[{x:-580,z:-420,size:260,height:130,profile:'headland'},{x:800,z:-900,size:HORNOYA_SIZE,height:HORNOYA_HEIGHT,profile:'hornoya'},{x:-850,z:420,size:MEASURED_ISLET_SIZE,height:MEASURED_ISLET_HEIGHT,profile:'measured-islet'}] as const;
+export const COASTS=[{x:-730,z:-490,size:TRENYKEN_SIZE,height:TRENYKEN_HEIGHT,profile:'trenyken'},{x:800,z:-900,size:HORNOYA_SIZE,height:HORNOYA_HEIGHT,profile:'hornoya'},{x:-850,z:420,size:MEASURED_ISLET_SIZE,height:MEASURED_ISLET_HEIGHT,profile:'measured-islet'}] as const;
 export const BATHY_COASTS:readonly Coast[]=[...COASTS,LIGHTHOUSE_COAST];
 export const BATHY_SIZE=TERRAIN_SEGMENTS+1;
 /** RGB holds exact island vertices; alpha resamples reef top faces and a submerged skirt. */
@@ -27,10 +28,10 @@ export function sampleBathymetry(data:Float32Array,x:number,z:number) {
 }
 
 /** Detailed islands replace their coarse channel; the other islands still compete by height. */
-export function sampleCoastalDepth(data:Float32Array,x:number,z:number,detail:IslandDepth|null) {
+export function sampleCoastalDepth(data:Float32Array,x:number,z:number,detail:IslandDepth|null,headland:IslandDepth|null=null) {
   let height=-60,dx=0,dz=0;
   for(const [channel,coast]of BATHY_COASTS.entries()) {
-    const replacement=detail?.channel===channel?detail.sample(x,z):null;
+    const replacement=detail?.channel===channel?detail.sample(x,z):headland?.channel===channel?headland.sample(x,z):null;
     if(replacement){if(replacement.height>height){height=replacement.height;dx=replacement.dx;dz=replacement.dz;}continue;}
     const u=(x-coast.x)/(coast.size*2.4)+0.5,v=(z-coast.z)/((coast.sizeZ??coast.size)*2.4)+0.5;
     if(u<0||u>1||v<0||v>1)continue;

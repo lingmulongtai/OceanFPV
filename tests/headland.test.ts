@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {COASTS} from '../src/bathymetry';
-import {terrainHeight,terrainSurfaceHeight,TERRAIN_SEGMENTS} from '../src/terrain';
-import {bathymetryData,sampleBathymetry} from '../src/bathymetry';
+import {terrainHeight,terrainSurfaceHeight,terrainSegments} from '../src/terrain';
+import {IslandDepth} from '../src/island-depth';
 import * as T from 'three';
 import {coastalRockSites} from '../src/rocks';
 import {vesselPose} from '../src/navigation';
 
-test('headland has two high ridges, a low cape and a bay connected to open sea',()=> {
-  const coast=COASTS[0],height=(u:number,v:number)=>terrainSurfaceHeight(u*coast.size,v*coast.size,coast.size,coast.height,coast.profile);
+test('legacy procedural headland keeps its two ridges and open bay',()=> {
+  const coast={size:260,height:130,profile:'headland' as const},height=(u:number,v:number)=>terrainSurfaceHeight(u*coast.size,v*coast.size,coast.size,coast.height,coast.profile);
   assert.equal(coast.profile,'headland');
   assert.ok(height(-0.28,-0.18)>90);assert.ok(height(-0.3,0.39)>65);
   assert.ok(height(-0.5,-0.45)>70&&height(-0.12,-0.09)>70);
@@ -34,14 +34,16 @@ test('upland drainage preserves low cape, saddle, southern ridge and radial heig
   assert.ok(terrainHeight(-35.75,-113.75,260,130,'headland')<57.6718191530116-4,'the channel must extend across neighbouring grid cells');
 });
 
-test('northern drainage meshes, contact samples and uploaded depths agree inside carved slopes',()=> {
-  const coast=COASTS[0],geometry=new T.PlaneGeometry(coast.size*2.4,coast.size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS).rotateX(-Math.PI/2),p=geometry.attributes.position;
+test('northwestern measured meshes, flight contacts and detailed depth retain identical triangles',()=> {
+  const coast=COASTS[0],segments=terrainSegments(coast.profile),geometry=new T.PlaneGeometry(coast.size*2.4,coast.size*2.4,segments,segments).rotateX(-Math.PI/2),p=geometry.attributes.position;
   for(let i=0;i<p.count;i++)p.setY(i,terrainHeight(p.getX(i),p.getZ(i),coast.size,coast.height,coast.profile));
-  const mesh=new T.Mesh(geometry,new T.MeshBasicMaterial()),data=bathymetryData(),step=coast.size*2.4/TERRAIN_SEGMENTS;
-  for(let z=42;z<83;z+=7)for(let x=46;x<91;x+=7) {
+  const mesh=new T.Mesh(geometry,new T.MeshBasicMaterial()),data=Float32Array.from({length:p.count},(_,i)=>p.getY(i)),step=coast.size*2.4/segments;
+  const detail=new IslandDepth(0,data,segments+1,new T.Vector4(coast.x-coast.size*1.2,coast.z-coast.size*1.2,coast.size*2.4,coast.size*2.4));
+  assert.equal(coast.profile,'trenyken');assert.equal(segments,768);
+  for(let z=350;z<490;z+=39)for(let x=260;x<590;x+=107) {
     const px=-coast.size*1.2+(x+0.23)*step,pz=-coast.size*1.2+(z+0.31)*step;
     const ray=new T.Raycaster(new T.Vector3(px,250,pz),new T.Vector3(0,-1,0)),hit=ray.intersectObject(mesh)[0];assert.ok(hit);
-    const contact=terrainSurfaceHeight(px,pz,coast.size,coast.height,coast.profile),depth=sampleBathymetry(data,coast.x+px,coast.z+pz).height;
+    const contact=terrainSurfaceHeight(px,pz,coast.size,coast.height,coast.profile),depth=detail.sample(coast.x+px,coast.z+pz)!.height;
     assert.ok(Math.abs(hit.point.y-contact)<0.00002);assert.ok(Math.abs(depth-contact)<0.00002);
   }
   geometry.dispose();mesh.material.dispose();
