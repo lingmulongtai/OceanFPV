@@ -602,7 +602,7 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   test.setTimeout(600000);
   // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
   await page.setViewportSize({width:320,height:240});
-  await ready(page);let safetyRecoveries=0;
+  await ready(page);let safetyRecoveries=0,forcedRecoveries=0;
   // Observe elapsed time and the supported launch pose in one browser task; slow
   // software-renderer protocol responses must not consume a separate poll budget.
   const waiting=await (async()=>{
@@ -626,12 +626,13 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
     throw new Error('Departure exceeded the 60 s phase deadline');
   })();
   expect(waiting.worldTime).toBeGreaterThan(9);expect(waiting.error).toBeLessThan(1e-6);expect(waiting.flightTime).toBeCloseTo(waiting.worldTime,6);expect(waiting.crashed).toBe(false);expect(waiting.armed).toBe(true);expect(waiting.paused).toBe(false);
-  async function recoverRenderPause() {
+  async function recoverRenderPause(forced=false) {
     const state=await page.evaluate(()=>{const a=(window as any).__OCEANFPV__;return {...a.getState(),crashed:a.flight.crashed,title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};});
-    expect(state.crashed).toBe(false);if(!state.paused)return;
+    expect(state.crashed).toBe(false);if(!state.paused){expect(forced,'injected stall must pause').toBe(false);return;}
     expect(state.open).toBe(true);expect(state.title).toBe('描画が長時間止まりました');expect(state.copy).toContain('処理の遅れが10秒を超えました');
-    expect(++safetyRecoveries,'bounded software-renderer safety-pause recovery').toBeLessThanOrEqual(2);
-    console.log(`Keyboard safety-pause recovery ${safetyRecoveries}: ${JSON.stringify(state)}`);
+    if(forced)expect(++forcedRecoveries,'recover the deliberate stall once').toBe(1);
+    else expect(++safetyRecoveries,'bounded software-renderer safety-pause recovery').toBeLessThanOrEqual(2);
+    console.log(`Keyboard ${forced?'forced-stall':'safety-pause'} recovery ${forced?forcedRecoveries:safetyRecoveries}: ${JSON.stringify(state)}`);
     const paused=await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#resume')!.click();if(document.activeElement instanceof HTMLElement)document.activeElement.blur();return (window as any).__OCEANFPV__.getState().paused;});
     expect(paused).toBe(false);
   }
@@ -669,8 +670,10 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   // Reproduce the observed 11.3 s CI key-up stall and exercise normal recovery.
   await page.evaluate(async()=>{const start=performance.now();while(performance.now()-start<10100){/* Actual main-thread stall. */}await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));});
   await expect(page.locator('#pause-title')).toHaveText('描画が長時間止まりました');
+  // This required witness is separate from incidental software-renderer stalls.
+  await recoverRenderPause(true);
   await holdUntil('KeyW','speed',Math.max(0.8,beforePitch.speed+0.8),beforePitch.forward);
-  expect(safetyRecoveries).toBeGreaterThanOrEqual(1);
+  expect(forcedRecoveries).toBe(1);
   await expect(page.locator('#pause-dialog')).toBeVisible();await expect(page.locator('#pause-title')).toHaveText('フライトを一時停止');
   const paused=await page.evaluate((forward:number[])=>{const flight=(window as any).__OCEANFPV__.flight;return {position:flight.position.toArray(),speed:flight.velocity.x*forward[0]+flight.velocity.z*forward[2]};},beforePitch.forward);
   expect(paused.speed).toBeGreaterThan(.5);
