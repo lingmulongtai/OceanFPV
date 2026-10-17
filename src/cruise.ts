@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { foredeckGeometry, hullDeckHeight, hullHalfWidth, hullNameGeometry } from './hull';
 import { metricPaintGeometry } from './paint';
-import { bakeCabinOcclusion,roomOcclusionUV,type RoomSurface } from './occlusion';
+import { bakeCabinOcclusion,cabinOcclusionTexture,roomOcclusionUV,type RoomSurface } from './occlusion';
 import {buildTenderModel,TENDER_MOUNTS} from './tender';
 import {buildSternTerraces} from './stern-terraces';
 import {cruiseHullGeometry,cruiseHullSidePose} from './cruise-hull';
@@ -246,8 +246,8 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
   return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,terraceContains:sternTerraces.contains,hoistSegments:hoists};
 }
 
-export function buildCruiseShip() {
-  const ship=buildCruiseGeometry();
+export function buildCruiseShip(pixels?:Uint8Array|null) {
+  const ship=buildCruiseGeometry(pixels?()=>cabinOcclusionTexture(pixels):undefined);
   const labelCanvas=document.createElement('canvas');labelCanvas.width=1024;labelCanvas.height=128;const ctx=labelCanvas.getContext('2d')!;ctx.fillStyle='#d8dfe0';ctx.font='600 68px Arial';ctx.textAlign='center';ctx.fillText('OCEAN  MERIDIAN',512,87);
   const label=new T.CanvasTexture(labelCanvas);label.colorSpace=T.SRGBColorSpace;
   for(const side of [-1,1])ship.root.add(new T.Mesh(hullNameGeometry(side,cruiseHullSidePose),new T.MeshStandardMaterial({map:label,transparent:true,depthWrite:false,roughness:0.5})));

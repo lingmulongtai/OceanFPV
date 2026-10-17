@@ -1,4 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
+import {CRUISE_OCCLUSION} from '../../src/generated/cruise-occlusion';
+
+async function verifyCabinVisibility(page:Page) {
+  const actual=await page.evaluate(async()=>{
+    const texture=(window as any).__OCEANFPV__.world.cruise.paint[0].aoMap,pixels=texture.image.data;
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',pixels)),byte=>byte.toString(16).padStart(2,'0')).join('');
+    return {bytes:pixels.byteLength,width:texture.image.width,height:texture.image.height,channel:texture.channel,digest};
+  });
+  expect(actual).toEqual({bytes:CRUISE_OCCLUSION.byteLength,width:CRUISE_OCCLUSION.width,height:CRUISE_OCCLUSION.height,channel:1,digest:CRUISE_OCCLUSION.sha256});
+}
 
 async function ready(page: Page) {
   await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
@@ -23,11 +33,13 @@ async function recordGroundPrograms(page:Page) {
 }
 
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
+  const atlasResponses:number[]=[];page.on('response',response=>{if(response.url().endsWith('.rgba'))atlasResponses.push(response.status());});
   await recordGroundPrograms(page);const detailRequests:string[]=[];page.on('request',request=>{if(/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.test(request.url()))detailRequests.push(request.url());});
   const networkFailures:{url:string;error:string|undefined}[]=[];page.on('requestfailed',request=>networkFailures.push({url:request.url(),error:request.failure()?.errorText}));
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
+  await verifyCabinVisibility(page);expect(atlasResponses).toEqual([200]);
   const {loading,gpu,render,forest,rocks,cliff,detailPrograms,waterPrograms,unsupportedVisible,wakeDirections}=await page.evaluate(()=> {
     const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
     const rocks=app.world.rocks;
@@ -238,7 +250,9 @@ test('stern terrace walking surfaces and supports have matching flight contacts'
   for(const y of result.foundations){expect(y).not.toBeNull();expect(y).toBeGreaterThan(9.1);expect(y).toBeLessThan(9.28);}
 });
 test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
+  await page.route('**/*.rgba',route=>route.fulfill({status:404,body:''}));
   await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);
+  await verifyCabinVisibility(page);
   await expect(page.locator('#start-note')).toContainText('標準素材');
   expect(await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {detailed:!!w.rocks,contacts:w.fallbackRockObstacles.length,visible:w.rockPatches.filter((patch:any)=>patch.fallback).every((patch:any)=>patch.fallback.parent===w.scene),meshPatches:w.rockPatches.filter((patch:any)=>!patch.fallback).length,tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)};})).toEqual({detailed:false,contacts:270,visible:true,meshPatches:1,tints:[true,true,true]});
   const first=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());

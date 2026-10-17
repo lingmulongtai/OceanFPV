@@ -39,7 +39,7 @@ export class World {
   sunlight = new T.DirectionalLight(0xffe3bf, 3.3);
   hemisphere = new T.HemisphereLight(0xbdddea, 0x243b41, 1.75);
   ocean: Ocean;
-  cruise=buildCruiseShip();
+  cruise:ReturnType<typeof buildCruiseShip>;
   yacht=new T.Group();
   private yachtContact:((p:T.Vector3)=>boolean)=()=>false;
   gateMeshes: T.Group[] = [];
@@ -70,7 +70,8 @@ export class World {
   private headlandMesh:T.Mesh<T.BufferGeometry,T.MeshStandardMaterial>|null=null;
   quality='high';
 
-  constructor() {
+  constructor(cabinVisibility?:Uint8Array|null) {
+    this.cruise=buildCruiseShip(cabinVisibility);
     wetCoastalSurface(this.rockMaterial,this.shorelineWash);
     this.scene.add(this.cruise.root,this.yacht,this.drone,this.sky,this.sunlight,this.sunlight.target,this.hemisphere);
     this.sky.scale.setScalar(10000);
