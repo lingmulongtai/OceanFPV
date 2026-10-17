@@ -898,11 +898,17 @@ for(const light of ['blue','golden'])test(`${light} lighting and sea settings pe
   },light);
   expect(chosen).toEqual({open:true,light,sea:'calm'});
   // Reload from the fixed dialog view, avoiding unrelated resumed sea draws.
-  const hdrRequests:string[]=[];page.on('request',request=>{if(request.url().endsWith('.hdr'))hdrRequests.push(request.url());});
+  // Count application fetches; browser cache Range retries are not duplicate
+  // preset loads. Install in the new document so the first visit is excluded.
+  await page.addInitScript(()=> {
+    const fetch=window.fetch.bind(window),requests:string[]=[];(window as any).__PERSISTED_HDR_FETCHES__=requests;
+    window.fetch=(resource,options)=>{const url=resource instanceof Request?resource.url:String(resource);if(url.endsWith('.hdr'))requests.push(url);return fetch(resource,options);};
+  });
   await loadScene(page,()=>page.reload({timeout:SCENE_LOAD_TIMEOUT}));
   const persisted=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value,photo:!!w.scene.background.isDataTexture,forestEnvironment:w.forest.bakeScene.environment===w.scene.environment};});
   expect(persisted).toEqual({light,sea:'calm',photo:light==='golden',forestEnvironment:true});
-  expect(hdrRequests.map(url=>url.split('/').at(-1))).toEqual(light==='golden'?['kloppenheim_06_puresky_4k.hdr']:[]);
+  const hdrFetches=await page.evaluate(()=>(window as any).__PERSISTED_HDR_FETCHES__ as string[]);
+  expect(hdrFetches.map(url=>url.split('/').at(-1))).toEqual(light==='golden'?['kloppenheim_06_puresky_4k.hdr']:[]);
 });
 
 test('wake reflections follow the surface gradient on both sides and rotated headings',async({page})=> {
