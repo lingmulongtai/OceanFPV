@@ -298,6 +298,22 @@ test('pool cabanas have supported real surfaces, clear ocean openings and swept 
   expect(result).toHaveLength(6);
   for(const sample of result){expect(sample.roofError).toBeLessThan(.00001);expect(sample.roof).toBe('客船のプール甲板の設備に接触しました');expect(sample.seat).toBe('客船のプール甲板の設備に接触しました');expect(sample.column).toBe('客船のプール甲板の設備に接触しました');expect(sample.opening).toBeNull();expect(sample.aisle).toBeNull();}
 });
+test('raised pools retain real depth, physical water and matching contacts without blocking the air above',async({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});await ready(page);
+  const result=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,root=w.cruise.root,T=await import('/node_modules/three/build/three.module.js' as string),floor=10.6+7*2.85+1.58+.18,samples=[];
+    const world=(p:number[])=>root.localToWorld(new T.Vector3(...p)),direction=new T.Vector3(0,-1,0).transformDirection(root.matrixWorld),water=root.children.find((mesh:any)=>mesh.material?.name==='Cruise pool water'),tiles=root.children.filter((mesh:any)=>mesh.material?.name==='Cruise pool tiles');
+    for(const z of [7,37]){
+      const surface=new T.Raycaster(world([0,floor+2,z]),direction).intersectObject(water)[0],bottom=new T.Raycaster(world([0,floor+1,z]),direction).intersectObjects(tiles)[0];if(!surface||!bottom)throw new Error('Missing water or real tiled bottom');
+      samples.push({depth:root.worldToLocal(surface.point.clone()).y-root.worldToLocal(bottom.point.clone()).y,surface:w.collision(surface.point,a.getState().time,'breeze'),bottom:w.collision(bottom.point,a.getState().time,'breeze'),air:w.collision(world([5,floor+1.65,z]),a.getState().time,'breeze',world([-5,floor+1.65,z])),aisle:w.collision(world([5.2,floor+1,z]),a.getState().time,'breeze'),stair:w.collision(world([2,floor+.4,z+9.55]),a.getState().time,'breeze',world([-2,floor+.4,z+9.55]))});
+    }
+    const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
+    return {samples,gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',material:{ior:water.material.ior,transmission:water.material.transmission,thickness:water.material.thickness,castShadow:water.castShadow,normal:!!water.material.normalMap}};
+  });
+  console.log(`Pool renderer: ${result.gpu}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(result.gpu).toContain('Direct3D11');
+  expect(result.material).toEqual({ior:1.333,transmission:.96,thickness:1.1,castShadow:false,normal:true});expect(result.samples).toHaveLength(2);
+  for(const sample of result.samples){expect(sample.depth).toBeCloseTo(1.1,4);expect(sample.surface).toBe('プールの水面に接触しました');expect(sample.bottom).toContain('客船');expect(sample.air).toBeNull();expect(sample.aisle).toBeNull();expect(sample.stair).toBe('客船のプールに接触しました');}expect(errors).toEqual([]);
+});
 test('vessels really travel, launch follows the moving deck and unavailable surfaces recover',async({page})=> {
   await page.route('**/*.rgba',route=>route.fulfill({status:404,body:''}));
   await page.route('**/textures/*.jpg',route=>route.abort());await ready(page);
