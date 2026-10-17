@@ -54,7 +54,8 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
     if(m===white||m===teak){const projected=metricPaintGeometry(g,m===teak?1.8:2.5);g.dispose();g=projected;}
     if(m===white||m===teak)roomOcclusionUV(g,aoFloor,aoCabin,aoSide,surface,aoEnd);
     if(capture&&m!==glass&&m!==cabinGlass&&m!==balconyGlass)blockers.push(g.clone());
-    if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(g.index?g.toNonIndexed():g);
+    const buffered=g.index?g.toNonIndexed():g;
+    if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(buffered);return buffered;
   };
   const box=(s:number[],p:number[],m=white,solid=false,round=0,surface?:RoomSurface)=> {
     add(round?new RoundedBoxGeometry(s[0],s[1],s[2],2,round):new T.BoxGeometry(s[0],s[1],s[2]),p,m,new T.Euler(),new T.Vector3(1,1,1),surface);
@@ -184,7 +185,8 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
   box([34.2,0.42,12],[0,33.82,-70],white);
   for(const side of [-1,1]) {box([0.08,1.6,8],[side*15.58,32.6,-70],glass);box([2.8,0.2,10],[side*16.2,31,-70],white);}
   // Teak promenade, bow foredeck, stern terraces and pool deck.
-  add(foredeckGeometry(),[0,0,0],teak);
+  const foredeck=add(foredeckGeometry(),[0,0,0],teak),foredeckUV=foredeck.getAttribute('uv');
+  for(let i=0;i<foredeckUV.count;i++)foredeckUV.setXY(i,foredeckUV.getY(i),-foredeckUV.getX(i));
   for(const side of [-1,1])for(let station=2;station<=15;station++) {
     const u=station/128,z=(u-0.5)*260,x=side*(hullHalfWidth(u,34)-0.3),y=hullDeckHeight(u,260,9);
     if(station%2===0||station===15)rod([x,y,z],[x,y+1.05,z],0.035);
