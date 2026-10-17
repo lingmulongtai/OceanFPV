@@ -79,6 +79,10 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
+  // Keep this static scene audit from queuing an animated software-GPU frame
+  // between every assertion and the lazy Three.js imports used for tree bounds.
+  await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#open-help')!.click());
+  await expect(page.locator('#help-dialog')).toBeVisible();
   await verifyCabinVisibility(page);expect(atlasResponses).toEqual([200]);
   const {loading,gpu,render,forest,rocks,cliff,detailPrograms,waterPrograms,unsupportedVisible,wakeDirections}=await page.evaluate(()=> {
     const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
@@ -110,6 +114,7 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   for(const url of new Set(detailRequests)){const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(url)![1];expect(detailRequests.filter(request=>request===url).length).toBe(1+recovered.filter((failure:any)=>failure.map===map).length);}
   console.log(`Ground production samplers: ${JSON.stringify(detailPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit})))}`);
   await verifyTreeBounds(page);
+  const closed=await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#help-dialog [data-close="help-dialog"]')!.click();return !document.querySelector<HTMLDialogElement>('#help-dialog')!.open;});expect(closed).toBe(true);
   expect(errors).toEqual([]);
 });
 
