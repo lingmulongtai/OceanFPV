@@ -254,7 +254,18 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
     if(low){const coarse=mergeGeometries(low);if(!coarse)throw new Error('Furniture geometry merge failed');low.forEach(g=>g.dispose());furnitureLods.push({mesh,fine:geo,coarse});}
   }
   const setQuality=(quality:string)=>furnitureLods.forEach(({mesh,fine,coarse})=>{mesh.geometry=quality==='balanced'?coarse:fine;});
-  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,terraceContains:sternTerraces.contains,guardContacts:sundeckGuards.contacts,cabanaContacts:cabanas.contains,poolContact:pools.contact,advancePoolWater:poolWater.advance,hoistSegments:hoists};
+  const waterSurface=root.children.find(object=>object instanceof T.Mesh&&object.material===poolWater.material) as T.Mesh;
+  const waterHeight=waterSurface.geometry.attributes.position.getY(0),poolViewStates:boolean[]=[],poolEye=new T.Vector3();
+  const beginPoolView=(camera:T.Camera)=>{
+    poolViewStates.push(waterSurface.visible);
+    // FrontSide water cannot contribute from below its actual vessel-local plane.
+    waterSurface.visible=poolViewStates[0];
+    if(waterSurface.visible&&(camera as T.PerspectiveCamera).isPerspectiveCamera&&poolWater.material.side===T.FrontSide){
+      waterSurface.worldToLocal(camera.getWorldPosition(poolEye));waterSurface.visible=poolEye.y>=waterHeight-.0001;
+    }
+  };
+  const endPoolView=()=>{const previous=poolViewStates.pop();if(previous!==undefined)waterSurface.visible=previous;};
+  return {root,boxes,paint:[white,hullMat],teak,glazing:cabinGlass,occlusionBakeMs,setQuality,tenderContains,terraceContains:sternTerraces.contains,guardContacts:sundeckGuards.contacts,cabanaContacts:cabanas.contains,poolContact:pools.contact,advancePoolWater:poolWater.advance,beginPoolView,endPoolView,hoistSegments:hoists};
 }
 
 export function buildCruiseShip(pixels?:Uint8Array|null) {
