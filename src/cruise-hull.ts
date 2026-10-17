@@ -9,7 +9,20 @@ export function cruiseHullHalfWidth(u:number,beam=34) {
   return beam*.5*(1-.035*T.MathUtils.smoothstep(u,.5,.94)-.245*(1-Math.sqrt(Math.max(0,1-corner*corner))));
 }
 
-export function cruiseHullGeometry(){return closedHullGeometry(260,34,9,7,true,cruiseHullHalfWidth);}
+/** Rake the submerged stem continuously into the forebody; keep the deck rim fixed. */
+export function cruiseHullGeometry(){
+  const geometry=closedHullGeometry(260,34,9,7,true,cruiseHullHalfWidth),p=geometry.attributes.position;
+  for(let station=0;station<=128;station++)for(let row=2;row<6;row++){
+    const rake=1-T.MathUtils.smoothstep(station/128,0,.18),chine=row===2||row===5,i=station*6+row;
+    p.setXYZ(i,p.getX(i)*(1-rake*(chine?.15:.10)),p.getY(i),p.getZ(i)+rake*(chine?4:6));
+  }
+  const center=new T.Vector3();for(let row=0;row<6;row++)center.add(new T.Vector3().fromBufferAttribute(p,row).multiplyScalar(1/6));
+  p.setXYZ(129*6,center.x,center.y,center.z);
+  // Each raked band is planar; a shared centre fan would dimple the stem.
+  const indices=[...geometry.index!.array],body=128*36;
+  geometry.setIndex([...indices.slice(0,body),0,1,5,5,1,2,5,2,4,4,2,3,...indices.slice(body+18)]);
+  geometry.computeVertexNormals();return geometry;
+}
 export function cruiseHullSidePose(y:number,z:number,side:number){
   const surface=cruiseHullSurface(y,z,side);if(!surface)throw new RangeError(`No cruise hull surface at ${y}, ${z}`);
   return {point:new T.Vector3(side*surface.width,y,z),normal:surface.normal};
@@ -30,6 +43,7 @@ export function cruiseHullSurface(y:number,z:number,side:number) {
   if(y>cruiseHullSection(z).top)return null;
   const lower=y<Math.fround(-3.36),row=side<0?(lower?4:5):(lower?2:1),next=(row+1)%6,base=Math.min(127,Math.floor((z+130)/2.03125));
   const a=new T.Vector3(),b=new T.Vector3(),c=new T.Vector3();
+  // A maximum 6 m rake spans at most three preceding 2.03125 m intervals.
   for(let station=base;station>=base-3;station--) {
     if(station<0||station>127)continue;
     const a0=station*6+row,b0=(station+1)*6+row,c0=station*6+next,d0=(station+1)*6+next;
@@ -68,7 +82,8 @@ float cruiseHullDeck(float u) {
 vec3 cruiseHullVertex(float station,float row) {
   float u=station/128.0;bool top=row<1.5,chine=row==2.0||row==5.0;
   float side=row==0.0||row>=4.0?-1.0:1.0;
-  return vec3(side*cruiseHullShape(u)*17.0*(top?1.0:chine?0.94:0.48),top?cruiseHullDeck(u):chine?-3.36:-7.0,(u-0.5)*260.0);
+  float rake=1.0-smoothstep(0.0,0.18,u);
+  return vec3(side*cruiseHullShape(u)*17.0*(top?1.0:chine?0.94:0.48)*(top?1.0:1.0-rake*(chine?0.15:0.10)),top?cruiseHullDeck(u):chine?-3.36:-7.0,(u-0.5)*260.0+(top?0.0:rake*(chine?4.0:6.0)));
 }
 float cruiseTriangleWidth(vec3 p,vec3 a,vec3 b,vec3 c) {
   vec2 ab=b.yz-a.yz,ac=c.yz-a.yz,d=p.yz-a.yz;

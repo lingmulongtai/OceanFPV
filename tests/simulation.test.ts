@@ -49,12 +49,12 @@ test('hull paint charts cover both sides and end caps without changing triangles
     const normal=b.clone().sub(a).cross(c.clone().sub(a));
     const area=Math.abs((uv.getX(i+1)-uv.getX(i))*(uv.getY(i+2)-uv.getY(i))-(uv.getX(i+2)-uv.getX(i))*(uv.getY(i+1)-uv.getY(i)));
     if(normal.lengthSq()>1e-12)assert.ok(area>1e-10);
-    if(a.z===b.z&&b.z===c.z&&Math.abs(a.z)===130)capFaces++;
+    if(normal.x===0&&Math.abs(normal.z)>Math.abs(normal.y))capFaces++;
     if(Math.abs(a.z)<5&&Math.abs(normal.x)>Math.abs(normal.y)&&Math.abs(normal.x)>Math.abs(normal.z))for(let j=i;j<i+3;j++) {
       assert.ok(Math.abs(uv.getX(j)*2.5-p.getZ(j))<0.00002);assert.ok(Math.abs(uv.getY(j)*2.5-p.getY(j))<0.00002);
     }
   }
-  assert.equal(capFaces,12);[source,original,mapped].forEach(g=>g.dispose());
+  assert.equal(capFaces,10);[source,original,mapped].forEach(g=>g.dispose());
 });
 
 test('painted roof charts retain geometry and a 2.5 metre photographed period',()=> {

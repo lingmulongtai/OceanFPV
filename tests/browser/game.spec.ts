@@ -146,23 +146,23 @@ test('production hull water masks agree on the GPU for cruise and yacht',async({
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/hull-mask-probe.html');
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__HULL_MASK_PROBE__);},{timeout:60000}).toBe(true);
-  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(8672);expect(result.cruiseCount).toBe(8104);expect(result.poseCount).toBe(5);
+  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(8872);expect(result.cruiseCount).toBe(8304);expect(result.poseCount).toBe(5);
   // Retain the tighter untransformed aft bound; 15 km matrix translations use floats.
   // SwiftShader's existing sin/pow bow profile differs by up to 1.36 mm.
   expect(result.widthError).toBeLessThan(.002);expect(result.aftWidthError).toBeLessThan(.0005);expect(result.posedWidthError).toBeLessThan(.002);expect(result.maskErrors).toBe(0);expect(errors).toEqual([]);
 });
 
-test('cruise aft hull surfaces have matching flight contacts and clear surrounding air',async({page})=> {
+test('cruise hull surfaces have matching flight contacts and clear surrounding air',async({page})=> {
   await ready(page);
   const samples=await page.evaluate(async()=>{
     const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),hull=w.cruise.root.children.find((mesh:any)=>mesh.material===w.cruise.paint[1]),samples=[];
-    for(const side of [-1,1])for(const z of [80,100,110,120,125,129])for(const y of [4.2,7.6]) {
-      const origin=w.cruise.root.localToWorld(new T.Vector3(side*30,y,z)),direction=new T.Vector3(-side,0,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(hull)[0];if(!hit)throw new Error('Missing aft hull');
+    for(const side of [-1,1])for(const z of [-123.5,-110,80,100,110,120,125,129])for(const y of [4.2,7.6]) {
+      const origin=w.cruise.root.localToWorld(new T.Vector3(side*30,y,z)),direction=new T.Vector3(-side,0,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(hull)[0];if(!hit)throw new Error('Missing cruise hull');
       const outward=hit.face!.normal.clone().transformDirection(hull.matrixWorld),outside=hit.point.clone().addScaledVector(outward,.3);samples.push({z,y,width:Math.abs(w.cruise.root.worldToLocal(hit.point.clone()).x),contact:w.collision(hit.point,a.getState().time,'breeze'),clear:w.collision(outside,a.getState().time,'breeze')});
     }
     return samples;
   });
-  expect(samples).toHaveLength(24);for(const sample of samples){expect(sample.contact).toContain('船体');expect(sample.clear).toBeNull();if(sample.z<=120)expect(sample.width).toBeGreaterThan(15);}
+  expect(samples).toHaveLength(32);for(const sample of samples){expect(sample.contact).toContain('船体');expect(sample.clear).toBeNull();if(sample.z>=80&&sample.z<=120)expect(sample.width).toBeGreaterThan(15);}
 });
 
 test('aft lounge windows reveal real room depth and retain closed flight contacts',async({page})=> {

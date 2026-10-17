@@ -31,20 +31,27 @@ function sample(vessel,u,x,expected,mask,pose,y) {
 // The reference comes from independent rays against the actual Float32 mesh,
 // including each triangle's diagonal; it does not repeat the shader's formula.
 const hull=new T.Mesh(cruiseHullGeometry(),new T.MeshBasicMaterial({side:T.DoubleSide}));hull.updateMatrixWorld(true);
+const bowCases=[{u:.001,height:10.5},{u:(-123.79585342+130)/260,height:-4.45199993}];
+for(const height of [-6.5,-3.36,0,10.5]){
+ const front=new T.Raycaster(new T.Vector3(0,height,-150),new T.Vector3(0,0,1)).intersectObject(hull)[0];if(!front)throw new Error('Missing rendered stem');
+ for(const offset of [-.01,.01])bowCases.push({u:(front.point.z+offset+130)/260,height});
+}
 const poses=[[0,0,0,0,0],[80,.8,220,.4,.03],[-35,-.7,-15000,-.4,-.035],[0,1.1,-15000,0,.04],[0,-.9,220,0,-.04]];
+function probeCruise(matrix,pose,u,height,side){
+ const localZ=(u-.5)*260,hit=new T.Raycaster(new T.Vector3(side*30,height,localZ),new T.Vector3(-side,0,0)).intersectObject(hull)[0],expected=hit?Math.abs(hit.point.x):-1;
+ for(const offset of [-.005,.005]){
+  const localX=side*(Math.max(expected,0)*.98+offset),local=new T.Vector3(localX,height,localZ);uniforms.probeWorld.value.copy(local).applyMatrix4(matrix);
+  sample(0,u,localX,expected,expected>=0&&Math.abs(localX)<expected*.98,pose,height);cruiseCount++;
+ }
+}
 uniforms.probeVessel.value=0;
 for(const [pose,values]of poses.entries()) {
  const [x,y,z,yaw,pitch]=values,matrix=new T.Matrix4().compose(new T.Vector3(x,y,z),new T.Quaternion().setFromEuler(new T.Euler(pitch,yaw,0,'YXZ')),new T.Vector3(1,1,1));
  uniforms.cruiseInverse.value.copy(matrix).invert();
  uniforms.vessels.value[0].set(x,y,z,260);
  const us=pose?[.001,.01,.12,.5,.78,.9,.94,.98,.999]:positions,ys=pose?[-6.5,-3.3601,0,2,7.5]:[-7.01,-7,-6.5,-4.7,-3.3601,-3.36,-3.3599,-2,0,2,7.5,9.3,12];
- for(const u of us)for(const height of ys)for(const side of [-1,1]) {
-  const localZ=(u-.5)*260,hit=new T.Raycaster(new T.Vector3(side*30,height,localZ),new T.Vector3(-side,0,0)).intersectObject(hull)[0],expected=hit?Math.abs(hit.point.x):-1;
-  for(const offset of [-.005,.005]) {
-   const localX=side*(Math.max(expected,0)*.98+offset),local=new T.Vector3(localX,height,localZ);uniforms.probeWorld.value.copy(local).applyMatrix4(matrix);
-   sample(0,u,localX,expected,expected>=0&&Math.abs(localX)<expected*.98,pose,height);cruiseCount++;
-  }
- }
+ for(const u of us)for(const height of ys)for(const side of [-1,1])probeCruise(matrix,pose,u,height,side);
+ for(const {u,height}of bowCases)for(const side of [-1,1])probeCruise(matrix,pose,u,height,side);
 }
 for(const value of positions){
  const vessel=1,width=3.3,u=Math.fround(value),active=u>0&&u<1,expected=active?legacy(u,width,true):0;
