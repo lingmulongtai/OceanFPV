@@ -18,7 +18,7 @@ After:
 
 ![Water cutout following the actual hull section](images/cruise-waterline-after.png)
 
-The triangular hull shadow bands visible in this pair are addressed independently in [PR #51](https://github.com/lingmulongtai/OceanFPV/pull/51). This branch does not include that change. The bow silhouette and broader ship realism still need further work.
+These images predate integration of the independent [hull shadow repair](HULL_SHADOW.md), which removes their triangular bands. The combined follow-up includes both repairs. The bow silhouette and broader ship realism still need further work.
 
 ## Verification
 

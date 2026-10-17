@@ -70,7 +70,7 @@ export function buildCruiseShip() {
     if(m===white||m===teak)roomOcclusionUV(projected);if(capture)blockers.push(projected.clone());
     if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(projected);
   };
-  const hullMat=white.clone();hullMat.side=T.DoubleSide;
+  const hullMat=white.clone();hullMat.side=T.DoubleSide;hullMat.shadowSide=T.BackSide;
   hullMat.onBeforeCompile=shader=> {
     shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 shipPosition;').replace('#include <begin_vertex>','#include <begin_vertex>\nshipPosition=position;');
     shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 shipPosition;').replace('#include <color_fragment>','#include <color_fragment>\nfloat stripe=1.0-smoothstep(2.9,3.15,abs(shipPosition.y-3.6));\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.022,0.054,0.091),stripe*0.95);\ndiffuseColor.rgb*=mix(0.28,1.0,smoothstep(-0.8,0.15,shipPosition.y));');
