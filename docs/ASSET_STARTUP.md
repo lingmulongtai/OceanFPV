@@ -76,3 +76,35 @@ material coherence and full-detail assertions remain unchanged. This test-only
 addition retains `index-C28xksFz.js`, SHA-256
 `136abcdf47048b76d934f27883c59c111f40c8bdefe2ffe7c21d1fe7985e538a`.
 The intermittent CI failure still requires a process trace from that environment.
+
+## Initial GPU completion before material requests
+
+Main `a88719f`, run `39030140052`, supplies a failed CI process trace without
+reported data loss. Its single-image retry received full HTTP 200 headers and
+2,097,152 body bytes within 220 ms. Ordinary 640 × 480 canvas compositing then
+blocked the renderer in `GLES2::ReadPixels` for 15,315.508 ms while the GPU flushed
+commands. The response continuation could not resume during that interval.
+
+A separate socket read later waited 11,824 ms without incoming bytes. The
+NetworkService was not occupied by a comparably long task. The complete
+6,185,893-byte response arrived at about 27,187 ms, after the unchanged
+25,000 ms application deadline. The trace proves an overlapping GPU stall, but
+does not identify the server/TCP cause of the later socket wait or establish a
+single cause for the failure.
+
+Startup now inserts a WebGL2 fence after initial settings have finished their
+procedural sky and PMREM work, immediately before material, HDR and model
+requests begin. It flushes once and checks completion with zero-timeout
+`clientWaitSync`, yielding between checks rather than blocking JavaScript.
+This follows the [WebGL2 synchronization contract](https://registry.khronos.org/webgl/specs/latest/2.0/#CLIENT_WAIT_SYNC).
+Context loss stops startup through its existing recovery UI; allocation or wait
+failure rejects boot. Every allocated fence is deleted.
+
+`oceanfpv:initial-gpu-start` and `oceanfpv:initial-gpu-ready` performance marks
+locate this boundary in later traces. The production startup browser case
+observes the real, unmodified sync return values and verifies that every
+photographic texture, HDR and model fetch follows the ready mark. Unit cases
+cover pending work, both completion statuses, zero-timeout polling, context-loss
+races and failed waits/allocations. This removes pre-existing queued GPU work
+from texture deadlines; it does not guarantee that later compositing or slow
+network delivery cannot stall.

@@ -14,6 +14,7 @@ import { readStored, writeStored } from './storage';
 import { loadPhotographicSky } from './sky';
 import { SimulationClock } from './clock';
 import {loadCruiseOcclusion} from './cruise-occlusion';
+import {waitForGpu} from './gpu-ready';
 
 const $ = <E extends HTMLElement = HTMLElement>(id:string) => document.getElementById(id) as E;
 const value = (id:string) => $<HTMLInputElement>(id).value;
@@ -395,6 +396,9 @@ async function boot() {
     if(now-fpsTime>1000) {$('fps').textContent=frozen?'PAUSED':`${Math.round(frameCount*1000/(now-fpsTime))} FPS`;frameCount=0;fpsTime=now;}
   }
   world.updateGates(false,0);
+  performance.mark('oceanfpv:initial-gpu-start');
+  if(!await waitForGpu(renderer.getContext() as WebGL2RenderingContext)||!supported)return;
+  performance.mark('oceanfpv:initial-gpu-ready');
   const missingSurfaces=await world.loadSurfaceTextures(renderer,texturesReady=>loadPhotographicSky(texturesReady).then(loadedSky=> {
     if(!supported)return;
     photoSky=loadedSky;
