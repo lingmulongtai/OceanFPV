@@ -117,6 +117,7 @@ export class Ocean {
     Object.assign(this.material.uniforms,{
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
       dusk:{value:0.4},foamEnabled:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:2},()=>new T.Vector4())},headings:{value:[0,0]},vesselWidths:{value:[17,4.5]},vesselSpeeds:{value:[0,0]},
+      cruiseInverse:{value:new T.Matrix4()},
       chopScale:{value:this.simulation.horizontalScale},
       slopeVariance:{value:new T.Vector3()},
       heightVariance:{value:new T.Vector3()},
@@ -154,6 +155,7 @@ export class Ocean {
       uniform sampler2D mirrorSampler;
       uniform vec3 eye,sunDirection,sunColor;uniform float time,dusk,reflectionSize;uniform bool foamEnabled;
       uniform vec4 vessels[2];uniform float headings[2],vesselWidths[2],vesselSpeeds[2];
+      uniform mat4 cruiseInverse;
       uniform vec4 wakePoints[${2*WAKE_SAMPLES}],wakeBounds[2];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
       float hash(vec2 p) {
@@ -198,16 +200,18 @@ export class Ocean {
         float grainEdge=max(0.02,0.5*fwidth(foamGrain));
         float shoreDetail=mix(0.5,smoothstep(0.5-grainEdge,0.5+grainEdge,filteredGrain),grainResolved.x);
         vec2 mirrorUV=mirrorCoord.xy/max(mirrorCoord.w,0.001);
-        bool hullCutout=false;
+        // Subtract the origin before rotating to preserve long-route precision.
+        vec3 cruiseLocal=mat3(cruiseInverse)*(worldPosition-vessels[0].xyz);
+        float cruiseWidth=cruiseHullWidthAt(cruiseLocal);
+        bool hullCutout=cruiseWidth>=0.0&&abs(cruiseLocal.x)<cruiseWidth*0.98;
         float wakeFoam=0.0,wakeWave=0.0,n=foamNoise(p*0.53+vec2(time*0.12,-time*0.09));
         for(int i=0;i<2;i++) {
           vec2 rel=p-vessels[i].xz;float c=cos(headings[i]),s=sin(headings[i]);vec2 local=vec2(c*rel.x-s*rel.y,s*rel.x+c*rel.y);
           float length=vessels[i].w,width=vesselWidths[i],speed=vesselSpeeds[i],aft=local.y-length*0.5,bow=local.y+length*0.5;
           float u=(local.y+length*0.5)/length;
-          if(u>0.0&&u<1.0) {
+          if(i==1&&u>0.0&&u<1.0) {
             float shape=pow(max(sin(u*3.14159),0.001),0.42);
-            if(i==0)shape=cruiseHullWidth(u,width)/width;
-            else if(i>0&&u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
+            if(u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
             if(abs(local.x)<width*shape*0.98)hullCutout=true;
           }
           float safeAft=max(aft,0.0);

@@ -146,9 +146,10 @@ test('production hull water masks agree on the GPU for cruise and yacht',async({
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/hull-mask-probe.html');
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__HULL_MASK_PROBE__);},{timeout:60000}).toBe(true);
-  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(1136);
-  // SwiftShader's existing sin/pow bow profile differs by up to 1.36 mm; the new aft profile stays tighter.
-  expect(result.widthError).toBeLessThan(.002);expect(result.aftWidthError).toBeLessThan(.0005);expect(result.maskErrors).toBe(0);expect(errors).toEqual([]);
+  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(8672);expect(result.cruiseCount).toBe(8104);expect(result.poseCount).toBe(5);
+  // Retain the tighter untransformed aft bound; 15 km matrix translations use floats.
+  // SwiftShader's existing sin/pow bow profile differs by up to 1.36 mm.
+  expect(result.widthError).toBeLessThan(.002);expect(result.aftWidthError).toBeLessThan(.0005);expect(result.posedWidthError).toBeLessThan(.002);expect(result.maskErrors).toBe(0);expect(errors).toEqual([]);
 });
 
 test('cruise aft hull surfaces have matching flight contacts and clear surrounding air',async({page})=> {
@@ -294,12 +295,14 @@ test('cruise departure and lighting remain valid far along the straight route',a
       for(const light of ['golden','blue','day']) {
         const select=document.querySelector<HTMLSelectElement>('#light')!;select.value=light;select.dispatchEvent(new Event('input',{bubbles:true}));
         const atlasLight=w.forest.bakeScene.children.find((child:any)=>child.isDirectionalLight),atlasDirection=atlasLight.position.clone().sub(atlasLight.target.getWorldPosition(camera.clone())).normalize();
-        samples.push({time,preset:light,position:camera.toArray(),clear:w.collision(camera,time,'breeze'),deck:w.collision(below,time,'breeze'),sky:w.sky.position.length(),target:Math.hypot(w.sunlight.target.position.x-camera.x,w.sunlight.target.position.z-camera.z),light:w.sunlight.position.clone().sub(w.sunlight.target.position).distanceTo(w.sun.clone().multiplyScalar(280)),atlas:atlasDirection.distanceTo(w.sun)});
+        const maskTransform=Math.max(...w.ocean.material.uniforms.cruiseInverse.value.clone().multiply(w.cruise.root.matrixWorld).elements.map((n:number,i:number)=>Math.abs(n-(i%5===0?1:0))));
+        const origin=w.ocean.material.uniforms.vessels.value[0],maskOrigin=camera.clone().set(origin.x,origin.y,origin.z).distanceTo(w.cruise.root.position);
+        samples.push({time,preset:light,position:camera.toArray(),clear:w.collision(camera,time,'breeze'),deck:w.collision(below,time,'breeze'),sky:w.sky.position.length(),target:Math.hypot(w.sunlight.target.position.x-camera.x,w.sunlight.target.position.z-camera.z),light:w.sunlight.position.clone().sub(w.sunlight.target.position).distanceTo(w.sun.clone().multiplyScalar(280)),atlas:atlasDirection.distanceTo(w.sun),maskTransform,maskOrigin});
       }
     }
     return samples;
   });
-  for(const sample of result){expect(sample.clear).toBeNull();expect(sample.deck).toContain('客船');expect(sample.sky).toBeLessThan(1e-6);expect(sample.target).toBeLessThan(1e-6);expect(sample.light).toBeLessThan(1e-6);expect(sample.atlas).toBeLessThan(1e-6);}
+  for(const sample of result){expect(sample.clear).toBeNull();expect(sample.deck).toContain('客船');expect(sample.sky).toBeLessThan(1e-6);expect(sample.target).toBeLessThan(1e-6);expect(sample.light).toBeLessThan(1e-6);expect(sample.atlas).toBeLessThan(1e-6);expect(sample.maskTransform).toBeLessThan(1e-8);expect(sample.maskOrigin).toBeLessThan(1e-8);}
   expect(result.at(-1)!.position[2]).toBeLessThan(-14000);
 });
 

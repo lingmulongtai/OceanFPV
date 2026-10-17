@@ -34,14 +34,28 @@ export function cruiseHullContains(p:T.Vector3,padding=.2) {
   return Math.abs(p.x)<=width+padding;
 }
 
-// The waterline mask retains its existing 0.98 inset; interpolate hull stations.
+// Evaluate the same side-triangle bands at the displaced fragment's local height.
 export const cruiseHullCode=`
 float cruiseHullShape(float u) {
   if(u<=0.5)return pow(max(sin(u*3.141592653589793),0.001),0.42);
   float corner=clamp((u-0.94)/0.06,0.0,1.0);
   return 1.0-0.035*smoothstep(0.5,0.94,u)-0.245*(1.0-sqrt(max(0.0,1.0-corner*corner)));
 }
-float cruiseHullWidth(float u,float halfBeam) {
-  float station=min(127.0,floor(clamp(u,0.0,1.0)*128.0)),f=clamp(u,0.0,1.0)*128.0-station;
-  return mix(cruiseHullShape(station/128.0)*halfBeam,cruiseHullShape((station+1.0)/128.0)*halfBeam,f);
+float cruiseHullDeck(float u) {
+  float bow=1.0-u;return 9.0+260.0/92.0*0.75*bow*bow*bow*bow;
+}
+float cruiseHullWidthAt(vec3 p) {
+  if(p.z < -130.0||p.z > 130.0||p.y < -7.0)return -1.0;
+  float u=clamp(p.z/260.0+0.5,0.0,1.0),station=min(127.0,floor(u*128.0)),f=u*128.0-station;
+  float top0=cruiseHullDeck(station/128.0),top1=cruiseHullDeck((station+1.0)/128.0);
+  if(p.y>mix(top0,top1,f))return -1.0;
+  bool lower=p.y < -3.36;
+  float low=lower?-7.0:-3.36,upperScale=lower?0.94:1.0,lowerScale=lower?0.48:0.94;
+  if(lower){top0=-3.36;top1=-3.36;}
+  float w0=cruiseHullShape(station/128.0)*17.0,w1=cruiseHullShape((station+1.0)/128.0)*17.0;
+  float a=w0*upperScale,b=w1*upperScale,c=w0*lowerScale,d=w1*lowerScale,y=p.y;
+  if(p.x<0.0&&y<=top0-(top0-low)*f){float t=(y-low)/(top0-low);return c*(1.0-t-f)+d*f+a*t;}
+  if(p.x<0.0){float t=((1.0-f)*top0+f*top1-y)/(top1-low);return a*(1.0-f)+d*t+b*(f-t);}
+  if(y>=low+(top1-low)*f){float t=(y-low-f*(top1-low))/(top0-low);return a*t+b*f+c*(1.0-t-f);}
+  float t=(y-low)/(top1-low);return c*(1.0-f)+b*t+d*(f-t);
 }`;
