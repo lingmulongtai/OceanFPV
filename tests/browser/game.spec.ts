@@ -1,6 +1,17 @@
 import { test, expect, type Page } from '@playwright/test';
 import {CRUISE_OCCLUSION} from '../../src/generated/cruise-occlusion';
 
+const SCENE_LOAD_TIMEOUT=360000;
+async function loadScene(page:Page,navigate:()=>Promise<unknown>) {
+  // Async boot now resolves navigation before slow software scene initialization.
+  // Bound each complete load, then preserve the original budget for assertions.
+  const info=test.info(),assertionBudget=info.timeout,started=Date.now();
+  info.setTimeout(assertionBudget+SCENE_LOAD_TIMEOUT);
+  await navigate();
+  await expect(page.locator('#start')).toBeEnabled({timeout:Math.max(1,SCENE_LOAD_TIMEOUT-(Date.now()-started))});
+  info.setTimeout(assertionBudget+Date.now()-started);
+}
+
 async function verifyCabinVisibility(page:Page) {
   const actual=await page.evaluate(async()=>{
     const texture=(window as any).__OCEANFPV__.world.cruise.paint[0].aoMap,pixels=texture.image.data;
@@ -12,8 +23,7 @@ async function verifyCabinVisibility(page:Page) {
 
 async function ready(page: Page) {
   await page.addInitScript(()=> { if(!localStorage.getItem('oceanfpv:settings')) localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced'})); });
-  await page.goto('/?test=1');
-  await expect(page.locator('#start')).toBeEnabled({timeout:90000});
+  await loadScene(page,()=>page.goto('/?test=1',{timeout:SCENE_LOAD_TIMEOUT}));
   await page.evaluate(() => {
     const quality=document.querySelector<HTMLSelectElement>('#quality')!;
     if(quality.value!=='balanced') {quality.value='balanced';quality.dispatchEvent(new Event('input',{bubbles:true}));}
@@ -621,7 +631,7 @@ test('lighting and sea settings persist across a full reload', async ({page})=> 
   });
   expect(chosen).toEqual({open:true,light:'blue',sea:'calm'});
   // Reload from the fixed dialog view, avoiding unrelated resumed sea draws.
-  await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
+  await loadScene(page,()=>page.reload({timeout:SCENE_LOAD_TIMEOUT}));
   const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
   expect(persisted).toEqual({light:'blue',sea:'calm'});
 });
