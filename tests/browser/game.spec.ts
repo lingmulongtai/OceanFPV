@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {CRUISE_OCCLUSION} from '../../src/generated/cruise-occlusion';
+import {recordStartupTiming} from './startup-timing';
 
 const SCENE_LOAD_TIMEOUT=360000;
 async function loadScene(page:Page,navigate:()=>Promise<unknown>) {
@@ -7,8 +8,11 @@ async function loadScene(page:Page,navigate:()=>Promise<unknown>) {
   // Bound each complete load, then preserve the original budget for assertions.
   const info=test.info(),assertionBudget=info.timeout,started=Date.now();
   info.setTimeout(assertionBudget+SCENE_LOAD_TIMEOUT);
-  await navigate();
-  await expect(page.locator('#start')).toBeEnabled({timeout:Math.max(1,SCENE_LOAD_TIMEOUT-(Date.now()-started))});
+  const stopTiming=await recordStartupTiming(page,info);
+  try {
+    await navigate();
+    await expect(page.locator('#start')).toBeEnabled({timeout:Math.max(1,SCENE_LOAD_TIMEOUT-(Date.now()-started))});
+  } finally {await stopTiming?.();}
   info.setTimeout(assertionBudget+Date.now()-started);
 }
 
