@@ -619,31 +619,41 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   await page.setViewportSize({width:320,height:240});
   await ready(page);let safetyRecoveries=0,forcedRecoveries=0;
   // Compile the first FPV draw while normally paused, as in the radio/Xbox fixtures.
-  const warmup=await page.evaluate(async()=> {
+  const {rendering,...warmup}=await page.evaluate(async(isolateRendering)=> {
     const a=(window as any).__OCEANFPV__;
     document.querySelector<HTMLButtonElement>('#start')!.click();document.querySelector<HTMLButtonElement>('#home')!.click();
     for(let i=0;i<2;i++)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
-    document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!.finish();
-    return {paused:a.getState().paused,time:a.getState().time,flightTime:a.getState().flightTime,cameraError:a.camera.position.distanceTo(a.flight.position)};
-  });
+    const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!;gl.finish();
+    const fullTriangles=a.getState().triangles,debug=gl.getExtension('WEBGL_debug_renderer_info'),renderer=debug?gl.getParameter(debug.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
+    // Software rasterization delayed a single protocol call by 91 s in CI.
+    // Keep real input/physics/RAF; image tests and native mode draw the full scene.
+    if(isolateRendering){a.world.scene.visible=false;a.invalidate();for(let i=0;i<2;i++)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));gl.finish();}
+    return {paused:a.getState().paused,time:a.getState().time,flightTime:a.getState().flightTime,cameraError:a.camera.position.distanceTo(a.flight.position),rendering:{isolated:isolateRendering,visible:a.world.scene.visible,fullTriangles,controlTriangles:a.getState().triangles,renderer,glError:gl.getError()}};
+  },process.env.OCEANFPV_NATIVE_GPU!=='1');
+  expect(rendering.fullTriangles).toBeGreaterThan(1e6);expect(rendering.visible).toBe(!rendering.isolated);
+  expect(rendering.glError).toBe(0);
+  if(rendering.isolated)expect(rendering.controlTriangles).toBeLessThan(100);else expect(rendering.controlTriangles).toBeGreaterThan(1e6);
+  console.log(`Keyboard control rendering: ${JSON.stringify(rendering)}`);
   expect(warmup).toEqual({paused:true,time:0,flightTime:0,cameraError:0});console.log(`Keyboard first flight draw: ${JSON.stringify(warmup)}`);
   // Observe elapsed time and the supported launch pose in one browser task; slow
   // software-renderer protocol responses must not consume a separate poll budget.
   const waiting=await (async()=>{
     const deadline=Date.now()+60000;
     for(let attempt=0;Date.now()<deadline;attempt++) {
-      const observed=await page.evaluate(async({resume,budget})=>{
-        const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
+      const observed=await page.evaluate(async({resume,deadline})=>{
+        const a=(window as any).__OCEANFPV__;
+        if(Date.now()>deadline)throw new Error('Departure entered after the 60 s phase deadline');
         if(resume)document.querySelector<HTMLButtonElement>('#resume')!.click();
         while(a.getState().time<=9) {
           const state=a.getState();
-          if(a.flight.crashed||performance.now()>deadline)throw new Error(`Departure did not advance: ${JSON.stringify(state)}`);
+          if(a.flight.crashed||Date.now()>deadline)throw new Error(`Departure did not advance: ${JSON.stringify(state)}`);
           if(state.paused)break;
           await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
         }
         const launch=a.world.launchPose(a.getState().time);
-        return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused};
-      },{resume:attempt===0,budget:Math.max(0,deadline-Date.now())});
+        return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused,observedAt:Date.now()};
+      },{resume:attempt===0,deadline});
+      expect(observed.observedAt,'departure observed within its original browser deadline').toBeLessThanOrEqual(deadline);
       expect(Date.now(),'departure completed within the 60 s phase deadline').toBeLessThanOrEqual(deadline);
       if(!observed.paused)return observed;
       await recoverRenderPause(deadline);
@@ -670,19 +680,21 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
       await recoverRenderPause(deadline);await page.keyboard.down(key);
       let result,pauseDeadline:number|undefined;
       try {
-        result=await page.evaluate(async({kind,threshold,forward,budget})=>{
-          const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
+        result=await page.evaluate(async({kind,threshold,forward,deadline})=>{
+          const a=(window as any).__OCEANFPV__;
           for(;;){
             const state=a.getState(),flight=a.flight,value=kind==='altitude'?flight.position.y:flight.velocity.x*forward[0]+flight.velocity.z*forward[2];
-            if(performance.now()>deadline)throw new Error(`Keyboard ${kind} did not advance: ${JSON.stringify({...state,value,threshold})}`);
+            if(Date.now()>deadline)throw new Error(`Keyboard ${kind} did not advance: ${JSON.stringify({...state,value,threshold,observedAt:Date.now(),deadline})}`);
             if(flight.crashed||state.paused||value>threshold) {
               // Space-up must not activate a Resume button focused by the safety dialog.
               if(state.paused&&document.activeElement instanceof HTMLElement)document.activeElement.blur();
-              return {value,paused:state.paused,crashed:flight.crashed};
+              return {value,paused:state.paused,crashed:flight.crashed,observedAt:Date.now()};
             }
             await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
           }
-        },{kind,threshold,forward,budget:Math.max(0,deadline-Date.now())});
+        },{kind,threshold,forward,deadline});
+        console.log(`Keyboard ${kind} observation: ${JSON.stringify({...result,threshold,deadline,receivedAt:Date.now()})}`);
+        expect(result.observedAt,`Keyboard ${kind} observed within its original browser deadline`).toBeLessThanOrEqual(deadline);
         // Accept progress within its original budget, before slow key cleanup.
         expect(Date.now(),`Keyboard ${kind} completed within the 60 s phase deadline`).toBeLessThanOrEqual(deadline);
         expect(result.crashed).toBe(false);
