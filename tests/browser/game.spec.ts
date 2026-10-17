@@ -494,8 +494,20 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
   await verifyCabinVisibility(page);
   await expect(page.locator('#start-note')).toContainText('標準素材');
   expect(await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {detailed:!!w.rocks,contacts:w.fallbackRockObstacles.length,visible:w.rockPatches.filter((patch:any)=>patch.fallback).every((patch:any)=>patch.fallback.parent===w.scene),meshPatches:w.rockPatches.filter((patch:any)=>!patch.fallback).length,tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)};})).toEqual({detailed:false,contacts:270,visible:true,meshPatches:1,tints:[true,true,true]});
-  const first=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());
-  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.z)).not.toBe(first[2]);
+  // Observe real menu motion in the browser: CI traced a 21 m move whose result
+  // reached expect.poll after its deadline because software frames blocked transport.
+  const menuMotion=await page.evaluate(()=>new Promise<{first:number[];last:number[]}>((resolve,reject)=> {
+    const root=(window as any).__OCEANFPV__.world.cruise.root,first=root.position.toArray();let frame=0,done=false;
+    const sample=(expired=false)=> {
+      if(done)return;const last=root.position.toArray();
+      if(last[2]!==first[2]||expired) {
+        done=true;clearTimeout(timer);cancelAnimationFrame(frame);
+        if(last[2]!==first[2])resolve({first,last});else reject(new Error('The liner did not move during the 20 s browser observation'));
+      }else frame=requestAnimationFrame(()=>sample());
+    };
+    const timer=setTimeout(()=>sample(true),20000);frame=requestAnimationFrame(()=>sample());
+  }));
+  expect(menuMotion.last[2]).not.toBe(menuMotion.first[2]);
   const app=await page.evaluate(()=> {
     const a=(window as any).__OCEANFPV__;
     document.querySelector<HTMLButtonElement>('#start')!.click();
