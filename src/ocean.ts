@@ -305,7 +305,7 @@ export class Ocean {
         float breaking=whitecapFootprint(waveCoordinate,p,foamQDx,foamQDy,foamPDx,foamPDy),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
         vec3 foamColor=vec3(0.78,0.86,0.84)*(0.76+filteredGrain*0.3)*foamIllumination(normal);
         vec3 color=mix(waterRadiance*(1.0-fresnel)+reflected*fresnel+min(glint,vec3(9.0)),foamColor,foam);
-        float haze=1.0-exp(-distanceToEye*0.0001);color=mix(color,mix(vec3(0.45,0.62,0.72),vec3(0.62,0.45,0.32),dusk),haze);
+        color=seaAerialPerspective(color,view,distanceToEye,dusk);
         gl_FragColor=vec4(color,1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
