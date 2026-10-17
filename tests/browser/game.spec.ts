@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {CRUISE_OCCLUSION} from '../../src/generated/cruise-occlusion';
+import {recordStartupTiming} from './startup-timing';
 
 const SCENE_LOAD_TIMEOUT=360000;
 async function loadScene(page:Page,navigate:()=>Promise<unknown>) {
@@ -7,8 +8,11 @@ async function loadScene(page:Page,navigate:()=>Promise<unknown>) {
   // Bound each complete load, then preserve the original budget for assertions.
   const info=test.info(),assertionBudget=info.timeout,started=Date.now();
   info.setTimeout(assertionBudget+SCENE_LOAD_TIMEOUT);
-  await navigate();
-  await expect(page.locator('#start')).toBeEnabled({timeout:Math.max(1,SCENE_LOAD_TIMEOUT-(Date.now()-started))});
+  const stopTiming=await recordStartupTiming(page,info);
+  try {
+    await navigate();
+    await expect(page.locator('#start')).toBeEnabled({timeout:Math.max(1,SCENE_LOAD_TIMEOUT-(Date.now()-started))});
+  } finally {await stopTiming?.();}
   info.setTimeout(assertionBudget+Date.now()-started);
 }
 
@@ -207,8 +211,8 @@ test('detailed cliff water height gradient and attenuation agree on the GPU',asy
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/cliff-depth-probe.html');
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__CLIFF_DEPTH_PROBE__);},{timeout:60000}).toBe(true);
-  const result=await page.evaluate(()=>{const p=(window as any).__CLIFF_DEPTH_PROBE__;return {gpu:p.gpu,count:p.samples.length,heightError:p.heightError,gradientError:p.gradientError,envelopeError:p.envelopeError,opticalCount:p.opticalSamples.length,opticalMaximum:p.opticalMaximum,radianceCount:p.radianceSamples.length,radianceMaximum:p.radianceMaximum};});
-  console.log(`Cliff depth probe: ${JSON.stringify(result)}`);expect(result.count).toBe(77);expect(result.heightError).toBeLessThan(.003);expect(result.gradientError).toBeLessThan(.003);expect(result.envelopeError).toBeLessThan(.003);expect(result.opticalCount).toBe(616);expect(result.opticalMaximum).toBeLessThan(.003);expect(result.radianceCount).toBe(324);expect(result.radianceMaximum).toBeLessThan(.0001);expect(errors).toEqual([]);
+  const result=await page.evaluate(()=>{const p=(window as any).__CLIFF_DEPTH_PROBE__;return {gpu:p.gpu,count:p.samples.length,heightError:p.heightError,gradientError:p.gradientError,envelopeError:p.envelopeError,opticalCount:p.opticalSamples.length,opticalMaximum:p.opticalMaximum,radianceCount:p.radianceSamples.length,radianceMaximum:p.radianceMaximum,irradianceCount:p.irradianceSamples.length,irradianceMaximum:p.irradianceMaximum};});
+  console.log(`Cliff depth probe: ${JSON.stringify(result)}`);expect(result.count).toBe(77);expect(result.heightError).toBeLessThan(.003);expect(result.gradientError).toBeLessThan(.003);expect(result.envelopeError).toBeLessThan(.003);expect(result.opticalCount).toBe(616);expect(result.opticalMaximum).toBeLessThan(.003);expect(result.radianceCount).toBe(324);expect(result.radianceMaximum).toBeLessThan(.0001);expect(result.irradianceCount).toBe(20);expect(result.irradianceMaximum).toBeLessThan(.0001);expect(errors).toEqual([]);
 });
 
 test('production hull water masks agree on the GPU for cruise and yacht',async({page})=> {
@@ -395,10 +399,14 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
     w.ocean.advance(0.05,'breeze');w.advanceVessels(0.05);
     w.ocean.advance(0.05,'swell');w.advanceVessels(0.05);
     const presetCleared=w.launchVelocity===null&&w.launchSample.time===0.05;
-    return {error,held,refreshes,rewindCleared,presetCleared,floatError:Math.abs(w.cruise.root.position.y-w.ocean.heightAt(w.cruise.root.position.x,w.cruise.root.position.z)*0.2)};
+    w.ocean.advance(.1,'swell');w.advanceVessels(.1);const hadVelocity=w.launchVelocity!==null;
+    w.ocean.simulation.update(.1,[2.15,2.15,.75]);w.advanceVessels(.1);
+    const profileCleared=hadVelocity&&w.launchVelocity===null&&w.launchSample.time===.1;
+    w.ocean.advance(.1,'swell');w.advanceVessels(.1);
+    return {error,held,refreshes,rewindCleared,presetCleared,profileCleared,floatError:Math.abs(w.cruise.root.position.y-w.ocean.heightAt(w.cruise.root.position.x,w.cruise.root.position.z)*0.2)};
   });
   expect(motion.error).toBeLessThan(1e-6);expect(motion.held).toBeGreaterThan(10);expect(motion.refreshes).toBeGreaterThanOrEqual(5);
-  expect(motion.rewindCleared).toBe(true);expect(motion.presetCleared).toBe(true);expect(motion.floatError).toBeLessThan(1e-6);
+  expect(motion.rewindCleared).toBe(true);expect(motion.presetCleared).toBe(true);expect(motion.profileCleared).toBe(true);expect(motion.floatError).toBeLessThan(1e-6);
   const reset=await page.evaluate(()=> {
     const w=(window as any).__OCEANFPV__.world;w.advanceVessels(100);
     const old=w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray());w.advanceVessels(0);
@@ -899,11 +907,11 @@ test('nearshore displacement and geometric normals match CPU sampling on the GPU
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/nearshore-probe.html');
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__NEARSHORE_PROBE__);},{timeout:60000}).toBe(true);
-  const probe=await page.evaluate(()=>{const p=(window as any).__NEARSHORE_PROBE__;return {gpu:p.gpu,count:p.samples.length,bottomCount:p.bottomSamples.length,bottomError:p.bottomError,northeasternDepths:p.points.filter((point:any)=>point.coastIndex===1).map((point:any)=>({target:point.targetDepth,actual:point.bottomDepth,upper:point.upper})),measuredDepths:p.points.filter((point:any)=>point.coastIndex===2).map((point:any)=>({target:point.targetDepth,actual:point.bottomDepth})),heightError:p.heightError,normalError:p.normalError,varianceError:p.varianceError,varianceRelativeError:p.varianceRelativeError,shadingVarianceError:p.shadingVarianceError,contactError:p.contactError,mipCount:p.mipSamples.length,mipError:p.mipError,manualMipError:p.manualMipError,longWaveError:p.longWaveError,subpixelMaximum:p.subpixelMaximum};});
+  const probe=await page.evaluate(()=>{const p=(window as any).__NEARSHORE_PROBE__;return {gpu:p.gpu,count:p.samples.length,unequalCount:p.samples.filter((s:any)=>s.gains[0]===1.8&&s.gains[1]===.9&&s.gains[2]===.5).length,bottomCount:p.bottomSamples.length,bottomError:p.bottomError,northeasternDepths:p.points.filter((point:any)=>point.coastIndex===1).map((point:any)=>({target:point.targetDepth,actual:point.bottomDepth,upper:point.upper})),measuredDepths:p.points.filter((point:any)=>point.coastIndex===2).map((point:any)=>({target:point.targetDepth,actual:point.bottomDepth})),heightError:p.heightError,normalError:p.normalError,varianceError:p.varianceError,varianceRelativeError:p.varianceRelativeError,shadingVarianceError:p.shadingVarianceError,contactError:p.contactError,mipCount:p.mipSamples.length,mipError:p.mipError,manualMipError:p.manualMipError,longWaveError:p.longWaveError,subpixelMaximum:p.subpixelMaximum};});
   console.log(`Nearshore probe: ${JSON.stringify(probe)}`);
   expect(probe.measuredDepths.map((point:any)=>point.target)).toEqual([-5,0,.2,.8,1.5,2,2.5,3,4,6,8,8.2]);for(const point of probe.measuredDepths)expect(Math.abs(point.target-point.actual)).toBeLessThan(.05);
   for(const upper of [false,true]){const depths=probe.northeasternDepths.filter((point:any)=>point.upper===upper);expect(depths.map((point:any)=>point.target)).toEqual([-5,0,.2,.8,1.5,2,2.5,3,4,6,8,8.2]);for(const point of depths)expect(Math.abs(point.target-point.actual)).toBeLessThan(.05);}
-  expect(probe.bottomCount).toBe(12);expect(probe.bottomError).toBeLessThan(0.003);expect(probe.count).toBeGreaterThanOrEqual(2058);expect(probe.heightError).toBeLessThan(0.003);expect(probe.normalError).toBeLessThan(0.003);expect(probe.varianceRelativeError).toBeLessThan(0.0001);expect(probe.shadingVarianceError).toBeLessThan(0.0001);expect(probe.contactError).toBeLessThan(0.01);expect(errors).toEqual([]);
+  expect(probe.bottomCount).toBe(12);expect(probe.bottomError).toBeLessThan(0.003);expect(probe.count).toBeGreaterThanOrEqual(2744);expect(probe.unequalCount).toBeGreaterThanOrEqual(686);expect(probe.heightError).toBeLessThan(0.003);expect(probe.normalError).toBeLessThan(0.003);expect(probe.varianceRelativeError).toBeLessThan(0.0001);expect(probe.shadingVarianceError).toBeLessThan(0.0001);expect(probe.contactError).toBeLessThan(0.01);expect(errors).toEqual([]);
   expect(probe.mipCount).toBeGreaterThanOrEqual(448);expect(probe.mipError).toBeLessThan(0.001);expect(probe.manualMipError).toBeLessThan(0.000003);expect(probe.longWaveError).toBeLessThan(0.005);expect(probe.subpixelMaximum).toBeLessThan(0.000001);
 });
 test('all passenger tenders have real surface contacts and free space around their bows',async({page})=> {

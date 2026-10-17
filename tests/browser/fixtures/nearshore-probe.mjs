@@ -4,6 +4,7 @@ import {BATHY_COASTS,BATHY_SIZE,sampleCoastalDepth} from '../../../src/bathymetr
 import {IslandDepth} from '../../../src/island-depth.ts';
 import {nearshoreEnvelope} from '../../../src/nearshore.ts';
 import {sampleWaveMip,retainedWaveEnergy} from '../../../src/wave-mips.ts';
+import {SEA_BANDS} from '../../../src/sea.ts';
 const renderer=new T.WebGLRenderer();renderer.setSize(1,1);document.body.append(renderer.domElement);
 if(!renderer.getContext().getExtension('EXT_color_buffer_float'))throw new Error('Float target unavailable');
 const ocean=new Ocean(new T.Vector3(0,1,0));
@@ -43,7 +44,8 @@ for(const manual of [false,true]) {
   if(!manual&&!renderer.getContext().getExtension('OES_texture_float_linear'))continue;
   ocean.configureFiltering(!manual);
   uniforms.manualInterpolation=ocean.material.uniforms.manualInterpolation;
-  for(const state of ['calm','breeze','swell']) {
+  for(const [state,gains]of [['calm',SEA_BANDS.calm],['breeze',SEA_BANDS.breeze],['swell',SEA_BANDS.swell],['swell',[1.8,.9,.5]]]) {
+    const saved=SEA_BANDS[state];SEA_BANDS[state]=gains;
     ocean.advance(6,state);
     for(const controlled of [false,true]) {
       if(controlled)for(const [index,c]of ocean.simulation.cascades.entries()) {
@@ -54,24 +56,24 @@ for(const manual of [false,true]) {
       for(const point of points)for(const kind of ['height','normal','variance'])for(const lod of kind==='height'?[[0,0,0]]:[[0,0,0],[1.7,3.2,6],[7,7,7]]) {
         uniforms.probePoint.value.set(point.x,point.z);uniforms.probeMode.value=['height','normal','variance'].indexOf(kind);uniforms.probeLod.value.set(...lod);
         renderer.setRenderTarget(target);renderer.render(scene,camera);const actual=new Float32Array(4);renderer.readRenderTargetPixels(target,0,0,1,1,actual);
-        const scale=uniforms.seaScale.value,horizontal=uniforms.chopScale.value,bottom=bottomSample(point.x,point.z),envelope=nearshoreEnvelope(-bottom.height),sum=(channel,field='displacement')=>ocean.simulation.cascades.reduce((v,c)=>v+c.sample(point.x,point.z,channel,c[field]),0),filtered=(channel,field='displacement')=>ocean.simulation.cascades.reduce((v,c,i)=>v+sampleWaveMip(ocean.waveMipmaps[i][field],point.x/c.length+0.5/c.size,point.z/c.length+0.5/c.size,lod[i],channel),0);
+        const heights=uniforms.heightScales.value.toArray(),horizontal=uniforms.chopScales.value.toArray(),bottom=bottomSample(point.x,point.z),envelope=nearshoreEnvelope(-bottom.height),sum=(channel,scales,field='displacement')=>ocean.simulation.cascades.reduce((v,c,i)=>v+c.sample(point.x,point.z,channel,c[field])*scales[i],0),filtered=(channel,scales,field='displacement')=>ocean.simulation.cascades.reduce((v,c,i)=>v+sampleWaveMip(ocean.waveMipmaps[i][field],point.x/c.length+0.5/c.size,point.z/c.length+0.5/c.size,lod[i],channel)*scales[i],0);
         let expected;
-        if(kind==='height')expected=[sum(0)*horizontal,sum(1)*scale*envelope.value,sum(2)*horizontal,envelope.value];
+        if(kind==='height')expected=[sum(0,horizontal),sum(1,heights)*envelope.value,sum(2,horizontal),envelope.value];
         else if(kind==='variance') {
           const slope=uniforms.slopeVariance.value.toArray(),height=uniforms.heightVariance.value.toArray();
-          const missingSlope=ocean.waveMipmaps.reduce((sum,f,i)=>sum+Math.max(0,slope[i]-(retainedWaveEnergy(f.tangentX,lod[i])+retainedWaveEnergy(f.tangentZ,lod[i]))*scale**2),0);
-          const missingHeight=ocean.waveMipmaps.reduce((sum,f,i)=>sum+Math.max(0,height[i]-retainedWaveEnergy(f.displacement,lod[i])*scale**2),0);
+          const missingSlope=ocean.waveMipmaps.reduce((sum,f,i)=>sum+Math.max(0,slope[i]-(retainedWaveEnergy(f.tangentX,lod[i])+retainedWaveEnergy(f.tangentZ,lod[i]))*heights[i]**2),0);
+          const missingHeight=ocean.waveMipmaps.reduce((sum,f,i)=>sum+Math.max(0,height[i]-retainedWaveEnergy(f.displacement,lod[i])*heights[i]**2),0);
           expected=[0.5*(missingSlope*envelope.value**2+missingHeight*envelope.derivative**2*(bottom.dx**2+bottom.dz**2))];
         }else if(controlled) {
           // Independent central differences of the modified geometric height.
           // A 1 mm step crossed the steep reef's clamped waterline transition.
-          const amplitude=1.5*scale,height=(x,z)=>amplitude*nearshoreEnvelope(-bottomSample(x,z).height).value,e=0.00001;
+          const amplitude=heights.reduce((sum,gain,i)=>sum+(i+1)*.25*gain,0),height=(x,z)=>amplitude*nearshoreEnvelope(-bottomSample(x,z).height).value,e=0.00001;
           expected=new T.Vector3(-(height(point.x+e,point.z)-height(point.x-e,point.z))/(2*e),1,-(height(point.x,point.z+e)-height(point.x,point.z-e))/(2*e)).normalize().toArray();
         }else {
-          const tx=new T.Vector3(1+filtered(0,'tangentX')*horizontal,filtered(1,'tangentX')*scale*envelope.value-filtered(1)*scale*envelope.derivative*bottom.dx,filtered(2,'tangentX')*horizontal);
-          const tz=new T.Vector3(filtered(0,'tangentZ')*horizontal,filtered(1,'tangentZ')*scale*envelope.value-filtered(1)*scale*envelope.derivative*bottom.dz,1+filtered(2,'tangentZ')*horizontal),n=tz.cross(tx);n.y=Math.max(n.y,0.025);expected=n.normalize().toArray();
+          const tx=new T.Vector3(1+filtered(0,horizontal,'tangentX'),filtered(1,heights,'tangentX')*envelope.value-filtered(1,heights)*envelope.derivative*bottom.dx,filtered(2,horizontal,'tangentX'));
+          const tz=new T.Vector3(filtered(0,horizontal,'tangentZ'),filtered(1,heights,'tangentZ')*envelope.value-filtered(1,heights)*envelope.derivative*bottom.dz,1+filtered(2,horizontal,'tangentZ')),n=tz.cross(tx);n.y=Math.max(n.y,0.025);expected=n.normalize().toArray();
         }
-        const error=Math.max(...expected.map((v,i)=>Math.abs(v-actual[i])));samples.push({manual,state,controlled,kind,lod,point,actual:[...actual],expected,error});
+        const error=Math.max(...expected.map((v,i)=>Math.abs(v-actual[i])));samples.push({manual,state,gains,controlled,kind,lod,point,actual:[...actual],expected,error});
         // Raw variance can exceed 100 at steep coasts; compare relative precision
         // and the actual GGX contribution, which the production shader caps at 0.2.
         const relative=kind==='variance'?error/Math.max(1,Math.abs(expected[0])):0,shading=kind==='variance'?Math.abs(Math.min(0.2,actual[0])-Math.min(0.2,expected[0])):0;
@@ -83,6 +85,7 @@ for(const manual of [false,true]) {
       }
       if(controlled){ocean.advance(0,state);ocean.advance(6,state);}
     }
+    SEA_BANDS[state]=saved;
   }
 }
 // Regression: the old whole-band fade removed a 433 m wave at 18 m/pixel.

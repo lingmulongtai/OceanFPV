@@ -1,5 +1,7 @@
 # Ocean realism references
 
+The [2026-10-17 web-ocean comparison](WEB_OCEAN_PORT.md) records the subsequent AgX and illuminated coastal-colour port, raw comparison images, verification and remaining foam work. It supersedes the historical ACES output description below.
+
 Reviewed 2026-10-13. These are technical precedents, not claims of matching their complete renderer.
 
 - [Tessendorf, Simulating Ocean Water (author publications)](https://jtessen.people.clemson.edu/reports/index.html): Gaussian wave spectra, Hermitian time evolution, IFFT height fields and horizontal crest sharpening.
