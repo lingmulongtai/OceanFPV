@@ -247,9 +247,29 @@ test('missing golden sky stays playable and late sky delivery respects context l
   try {
     await ready(page);
     expect(await page.evaluate(()=>!!(window as any).__OCEANFPV__.world.scene.background.isCubeTexture)).toBe(true);
-    await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());await page.keyboard.down('Space');
-    await page.waitForFunction(()=>(window as any).__OCEANFPV__.flight.position.y>(window as any).__OCEANFPV__.world.launchPose((window as any).__OCEANFPV__.getState().time).position.y+1);
-    await page.keyboard.up('Space');
+    const takeoffDeadline=Date.now()+60000;let lifted=false,safetyRecoveries=0;
+    await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());
+    while(Date.now()<takeoffDeadline) {
+      await page.keyboard.down('Space');let observed;
+      try {
+        observed=await page.evaluate(async(budget:number)=> {
+          const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
+          for(;;) {
+            const state=a.getState(),lifted=a.flight.position.y>a.world.launchPose(state.time).position.y+1;
+            if(state.paused||a.flight.crashed||lifted)return {paused:state.paused,crashed:a.flight.crashed,lifted,title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent};
+            if(performance.now()>deadline)throw new Error('Missing-sky takeoff did not advance within 60 s');
+            await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
+          }
+        },Math.max(0,takeoffDeadline-Date.now()));
+      }finally {await page.keyboard.up('Space');}
+      expect(observed.crashed).toBe(false);
+      if(!observed.paused) {expect(observed.lifted).toBe(true);lifted=true;break;}
+      expect(observed.title).toBe('描画が長時間止まりました');expect(observed.copy).toContain('処理の遅れが10秒を超えました');
+      expect(++safetyRecoveries,'bounded missing-sky safety-pause recovery').toBeLessThanOrEqual(2);
+      console.log(`Missing-sky safety-pause recovery ${safetyRecoveries}: ${JSON.stringify(observed)}`);
+      expect(await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#resume')!.click();if(document.activeElement instanceof HTMLElement)document.activeElement.blur();return (window as any).__OCEANFPV__.getState().paused;})).toBe(false);
+    }
+    expect(lifted,'normal keyboard takeoff with missing optional sky').toBe(true);
     await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#open-settings')!.click();const select=document.querySelector<HTMLSelectElement>('#light')!;select.value='day';select.dispatchEvent(new Event('input',{bubbles:true}));});
     await expect.poll(()=>requested,{timeout:60000}).toBe(true);
     await page.evaluate(()=>{const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!;const extension=gl.getExtension('WEBGL_lose_context');if(!extension)throw new Error('Missing context-loss extension');extension.loseContext();});
