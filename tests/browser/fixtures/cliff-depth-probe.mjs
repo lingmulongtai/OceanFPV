@@ -26,7 +26,7 @@ const gl=renderer.getContext(),ext=gl.getExtension('WEBGL_debug_renderer_info');
 // Exercise the production fragment body with controlled foam inputs, not a copy of its depth loop.
 renderer.outputColorSpace=T.LinearSRGBColorSpace;renderer.toneMapping=T.NoToneMapping;
 Object.assign(uniforms,{probeHeight:{value:0},probeOffset:{value:new T.Vector2()},probeNormal:{value:new T.Vector3(0,1,0)}});
-const opticalMaterial=new T.ShaderMaterial({uniforms,
+const opticalMaterial=new T.ShaderMaterial({uniforms,defines:ocean.material.defines,
  vertexShader:'varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;uniform vec2 probePoint,probeOffset;uniform float probeHeight;void main(){worldPosition=vec3(probePoint.x,probeHeight,probePoint.y);waveCoordinate=probePoint+probeOffset;mirrorCoord=vec4(0,0,0,1);gl_Position=vec4(position.xy,0,1);}',
  fragmentShader:ocean.material.fragmentShader.replace('void main() {','uniform vec3 probeNormal;\nvoid main() {')
   .replace('float shoreFoam=0.0;','float shoreFoam=0.0;n=0.5;normal=probeNormal;shoreDetail=1.0;')

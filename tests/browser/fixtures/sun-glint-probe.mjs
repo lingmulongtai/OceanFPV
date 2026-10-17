@@ -9,7 +9,7 @@ const start=source.indexOf('vec3 halfV='),end=source.indexOf('float breaking=',s
 if(start<0||end<start||reflectionStart<0||reflectionEnd<reflectionStart)throw new Error('Missing production ocean lighting block');
 const uniforms={...ocean.material.uniforms,probeView:{value:new T.Vector3()},probeNormal:{value:new T.Vector3()},probeVariance:{value:0}};
 uniforms.sunColor.value.setRGB(1,1,1);
-const material=new T.ShaderMaterial({uniforms,vertexShader:'void main(){gl_Position=vec4(position.xy,0,1);}',fragmentShader:`${header}
+const material=new T.ShaderMaterial({uniforms,defines:ocean.material.defines,vertexShader:'void main(){gl_Position=vec4(position.xy,0,1);}',fragmentShader:`${header}
 uniform vec3 probeView,probeNormal;uniform float probeVariance;
 void main(){vec3 view=probeView,normal=probeNormal,normalFootprint=vec3(.04,.01,.02);float unresolvedVariance=probeVariance;
 ${source.slice(reflectionStart,reflectionEnd)}

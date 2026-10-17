@@ -115,6 +115,7 @@ export class Ocean {
     this.mesh.getRenderTarget().texture.generateMipmaps=true;this.mesh.getRenderTarget().texture.minFilter=T.LinearMipmapLinearFilter;
     this.mesh.rotation.x=-Math.PI/2;this.mesh.frustumCulled=false;
     this.material=this.mesh.material as T.ShaderMaterial;this.material.lights=false;this.material.side=T.DoubleSide;
+    Object.assign(this.material.defines,{ENVMAP_TYPE_CUBE_UV:'',CUBEUV_TEXEL_WIDTH:1/336,CUBEUV_TEXEL_HEIGHT:1/64,CUBEUV_MAX_MIP:'4.0'});
     Object.assign(this.material.uniforms,{
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
       dusk:{value:0.4},foamEnabled:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:2},()=>new T.Vector4())},vesselDirections:{value:Array.from({length:2},()=>new T.Vector2(1,0))},vesselWidths:{value:[17,4.5]},vesselSpeeds:{value:[0,0]},
@@ -126,6 +127,8 @@ export class Ocean {
       slopeMipCross:{value:Array.from({length:8},()=>new T.Vector3())},heightMipCross:{value:Array.from({length:8},()=>new T.Vector3())},
       wakePoints:{value:Array.from({length:2*WAKE_SAMPLES},()=>new T.Vector4())},wakeBounds:{value:Array.from({length:2},()=>new T.Vector4())},
       reflectionSize:{value:1536},
+      foamEnvironment:{value:null},hasFoamEnvironment:{value:false},foamEnvironmentIntensity:{value:0},foamEnvironmentRotation:{value:new T.Matrix3()},
+      foamSunIrradiance:{value:new T.Color(0)},foamSkyIrradiance:{value:new T.Color(0)},foamGroundIrradiance:{value:new T.Color(0)},foamHemisphereDirection:{value:new T.Vector3(0,1,0)},
       islands:{value:BATHY_COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.sizeZ??c.size))},
     });
     const cliffBottom=new T.DataTexture(new Float32Array([-60]),1,1,T.RedFormat,T.FloatType);cliffBottom.needsUpdate=true;
@@ -155,11 +158,20 @@ export class Ocean {
       ${wakeSurfaceCode}
       ${waterOpticsCode}
       uniform sampler2D mirrorSampler;
+      uniform sampler2D foamEnvironment;uniform bool hasFoamEnvironment;uniform float foamEnvironmentIntensity;
+      uniform mat3 foamEnvironmentRotation;uniform vec3 foamSunIrradiance,foamSkyIrradiance,foamGroundIrradiance,foamHemisphereDirection;
+      #include <cube_uv_reflection_fragment>
       uniform vec3 eye,sunDirection,sunColor;uniform float time,dusk,reflectionSize;uniform bool foamEnabled;
       uniform vec4 vessels[2];uniform vec2 vesselDirections[2];uniform float vesselWidths[2],vesselSpeeds[2];
       uniform mat4 cruiseInverse;
       uniform vec4 wakePoints[${2*WAKE_SAMPLES}],wakeBounds[2];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
+      vec3 foamIllumination(vec3 normal) {
+        vec3 irradiance=mix(foamGroundIrradiance,foamSkyIrradiance,0.5*dot(normal,foamHemisphereDirection)+0.5);
+        irradiance+=foamSunIrradiance*max(dot(normal,sunDirection),0.0);
+        if(hasFoamEnvironment)irradiance+=3.14159265359*textureCubeUV(foamEnvironment,foamEnvironmentRotation*normal,1.0).rgb*foamEnvironmentIntensity;
+        return max(irradiance,vec3(0.0))*0.31830988618;
+      }
       float hash(vec2 p) {
         uint h=uint(int(p.x))*0x9e3779b9u^uint(int(p.y))*0x85ebca6bu;
         h=(h^(h>>16u))*0x85ebca6bu;h=(h^(h>>13u))*0xc2b2ae35u;h^=h>>16u;
@@ -260,13 +272,33 @@ export class Ocean {
         float distribution=a2/(3.14159*den*den+0.000001),masking=2.0*nv/(nv+sqrt(a2+(1.0-a2)*nv*nv));masking*=2.0*nl/(nl+sqrt(a2+(1.0-a2)*nl*nl));
         vec3 glint=sunColor*distribution*masking*sunFresnel*0.19/max(4.0*nv,0.1);
         float breaking=smoothstep(0.12,0.8,displacementAt(waveCoordinate).w)*smoothstep(0.42,0.76,n),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
-        vec3 foamColor=mix(vec3(0.78,0.86,0.84),vec3(0.82,0.78,0.66),dusk)*(0.76+filteredGrain*0.3);
+        vec3 foamColor=vec3(0.78,0.86,0.84)*(0.76+filteredGrain*0.3)*foamIllumination(normal);
         vec3 color=mix(waterRadiance*(1.0-fresnel)+reflected*fresnel+min(glint,vec3(9.0)),foamColor,foam);
         float haze=1.0-exp(-distanceToEye*0.0001);color=mix(color,mix(vec3(0.45,0.62,0.72),vec3(0.62,0.45,0.32),dusk),haze);
         gl_FragColor=vec4(color,1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`;
+  }
+  private foamRotation=new T.Matrix4();
+  setFoamLighting(scene:T.Scene,sunlight:T.DirectionalLight,hemisphere:T.HemisphereLight) {
+    const u=this.material.uniforms,environment=scene.environment;
+    const height=(environment?.image as {height?:number}|undefined)?.height;
+    const valid=environment?.mapping===T.CubeUVReflectionMapping&&height!==undefined&&height>=64;
+    u.hasFoamEnvironment.value=valid;u.foamEnvironment.value=valid?environment:null;
+    u.foamEnvironmentIntensity.value=scene.environmentIntensity;
+    u.foamEnvironmentRotation.value.setFromMatrix4(this.foamRotation.makeRotationFromEuler(scene.environmentRotation)).transpose();
+    u.foamSunIrradiance.value.copy(sunlight.color).multiplyScalar(sunlight.intensity);
+    u.foamSkyIrradiance.value.copy(hemisphere.color).multiplyScalar(hemisphere.intensity);
+    u.foamGroundIrradiance.value.copy(hemisphere.groundColor).multiplyScalar(hemisphere.intensity);
+    hemisphere.getWorldPosition(u.foamHemisphereDirection.value).normalize();
+    if(valid) {
+      const maxMip=Math.log2(height!)-2,defines=this.material.defines;
+      const width=1/(3*Math.max(2**maxMip,112)),texelHeight=1/height!;
+      if(defines.CUBEUV_TEXEL_WIDTH!==width||defines.CUBEUV_TEXEL_HEIGHT!==texelHeight) {
+        Object.assign(defines,{CUBEUV_TEXEL_WIDTH:width,CUBEUV_TEXEL_HEIGHT:texelHeight,CUBEUV_MAX_MIP:maxMip.toFixed(1)});this.material.needsUpdate=true;
+      }
+    }
   }
   heightAt(x:number,z:number) {return this.simulation.heightAt(x,z,SEA_SCALE[this.state],this.coastalScale);}
   configureFiltering(floatLinear:boolean) {

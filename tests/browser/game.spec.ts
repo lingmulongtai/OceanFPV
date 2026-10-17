@@ -740,6 +740,15 @@ test('sun glint uses its microfacet angle while sky reflection keeps the surface
  expect(probe.count).toBe(54);expect(probe.changed).toBeGreaterThan(6);expect(probe.sunError).toBeLessThan(.000002);expect(probe.skyError).toBeLessThan(.000002);expect(probe.normalSpread).toBeLessThan(.000002);expect(probe.peakError).toBeLessThan(.000002);expect(errors).toEqual([]);
 });
 
+test('sea foam follows scene lighting and the rotated diffuse environment',async({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto('/tests/browser/fixtures/foam-lighting-probe.html');
+  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__FOAM_LIGHTING_PROBE__);},{timeout:60000}).toBe(true);
+  const probe=await page.evaluate(()=>{const p=(window as any).__FOAM_LIGHTING_PROBE__;return {gpu:p.gpu,count:p.count,maximum:p.maximum,rotationError:p.rotationError,environmentSpread:p.environmentSpread};});
+  console.log(`Foam lighting probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
+  expect(probe.count).toBe(70);expect(probe.maximum).toBeLessThan(.003);expect(probe.rotationError).toBeLessThan(.00001);expect(probe.environmentSpread).toBeGreaterThan(.05);expect(errors).toEqual([]);
+});
+
 test('mobile help fits the viewport and closes with the keyboard', async ({page})=> {
   await page.setViewportSize({width:390,height:844});await ready(page);
   await page.locator('#open-help').focus();await page.keyboard.press('Enter');await expect(page.locator('#help-dialog')).toBeVisible();
