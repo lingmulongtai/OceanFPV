@@ -31,7 +31,7 @@ export function buildMotorYacht() {
   paint.name=hullPaint.name='Yacht paint';teak.name='Yacht teak';
   const buckets=new Map<T.Material,T.BufferGeometry[]>(),boxes:VesselBox[]=[];
   const rods:{line:T.Line3;radius:number}[]=[],panes:T.Triangle[]=[],nearest=new T.Vector3();
-  const add=(geometry:T.BufferGeometry,material:T.Material)=>{const g=material===paint||material===hullPaint?metricPaintGeometry(geometry):geometry.index?geometry.toNonIndexed():geometry.clone();geometry.dispose();if(material===teak){const p=g.attributes.position,uv=g.attributes.uv;for(let i=0;i<p.count;i++)uv.setXY(i,p.getX(i)/1.8,p.getZ(i)/1.8);}if(!buckets.has(material))buckets.set(material,[]);buckets.get(material)!.push(g);};
+  const add=(geometry:T.BufferGeometry,material:T.Material)=>{const g=material===paint||material===hullPaint||material===teak?metricPaintGeometry(geometry,material===teak?1.8:2.5):geometry.index?geometry.toNonIndexed():geometry.clone();geometry.dispose();if(!buckets.has(material))buckets.set(material,[]);buckets.get(material)!.push(g);};
   const box=(size:number[],position:number[],material:T.Material=paint,solid=true,radius=0.08)=> {
     const geometry=new RoundedBoxGeometry(size[0],size[1],size[2],3,radius);geometry.translate(...position as [number,number,number]);add(geometry,material);
     if(solid)boxes.push({min:new T.Vector3(...position).sub(new T.Vector3(...size).multiplyScalar(0.5)),max:new T.Vector3(...position).add(new T.Vector3(...size).multiplyScalar(0.5)),radius});

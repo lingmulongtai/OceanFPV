@@ -51,8 +51,7 @@ export function buildCruiseGeometry(bake=bakeCabinOcclusion) {
   const blockers:T.BufferGeometry[]=[],aftBlockers:T.BufferGeometry[]=[];let capture=false,aoFloor=0,aoCabin=0,aoSide=1,aoEnd=1;
   const add=(g:T.BufferGeometry,p:number[],m:T.Material,rotation=new T.Euler(),scale=new T.Vector3(1,1,1),surface?:RoomSurface)=> {
     g.applyMatrix4(new T.Matrix4().compose(new T.Vector3(...p),new T.Quaternion().setFromEuler(rotation),scale));
-    if(m===teak){const position=g.attributes.position,uv=g.attributes.uv;for(let i=0;i<position.count;i++)uv.setXY(i,position.getX(i)/1.8,position.getZ(i)/1.8);}
-    if(m===white){const projected=metricPaintGeometry(g);g.dispose();g=projected;}
+    if(m===white||m===teak){const projected=metricPaintGeometry(g,m===teak?1.8:2.5);g.dispose();g=projected;}
     if(m===white||m===teak)roomOcclusionUV(g,aoFloor,aoCabin,aoSide,surface,aoEnd);
     if(capture&&m!==glass&&m!==cabinGlass&&m!==balconyGlass)blockers.push(g.clone());
     if(!buckets.has(m))buckets.set(m,[]);buckets.get(m)!.push(g.index?g.toNonIndexed():g);
