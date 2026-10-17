@@ -73,8 +73,8 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(forest).toBeGreaterThan(1000000);
   expect(rocks.triangles).toBe(14844);expect(rocks.perIsland).toEqual([51,79,79]);expect(rocks.placements).toBe(218);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
   expect(detailPrograms.length).toBeGreaterThan(0);for(const program of detailPrograms){expect(program.samplers).toBeLessThanOrEqual(program.limit);expect(program.names).toContain('groundDetailNormalMap');expect(program.names).toContain('groundDetailRoughnessMap');}
-  expect(waterPrograms.length).toBeGreaterThan(0);for(const program of waterPrograms){expect(program.samplers).toBe(14);expect(program.samplers).toBeLessThanOrEqual(program.limit);}
-  console.log(`Water production samplers: ${JSON.stringify(waterPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit})))}`);
+  expect(waterPrograms.length).toBeGreaterThan(0);for(const program of waterPrograms){expect(program.samplers).toBe(15);expect(program.names).toContain('foamEnvironment');expect(program.samplers).toBeLessThanOrEqual(program.limit);}
+  console.log(`Water production samplers: ${JSON.stringify(waterPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit,foamEnvironment:program.names.includes('foamEnvironment')})))}`);
   const recovered=loading.failures.filter((failure:any)=>failure.asset==='seaside_rock'&&failure.recovered);
   expect(detailRequests.length).toBe(3+recovered.length);expect(new Set(detailRequests).size).toBe(3);
   for(const url of new Set(detailRequests)){const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(url)![1];expect(detailRequests.filter(request=>request===url).length).toBe(1+recovered.filter((failure:any)=>failure.map===map).length);}
@@ -729,6 +729,24 @@ test('wake reflections follow the surface gradient on both sides and rotated hea
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__WAKE_SLOPE_PROBE__);},{timeout:60000}).toBe(true);
   const probe=await page.evaluate(()=>(window as any).__WAKE_SLOPE_PROBE__);console.log(`Wake slope probe: ${JSON.stringify(probe)}`);
   expect(probe.count).toBe(4035);expect(probe.maximum).toBeLessThan(.00005);expect(probe.symmetryError).toBeLessThan(.00001);expect(probe.rotationError).toBeLessThan(.00001);expect(errors).toEqual([]);
+});
+
+test('sun glint uses its microfacet angle while sky reflection keeps the surface angle',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+ await page.goto('/tests/browser/fixtures/sun-glint-probe.html');
+ await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SUN_GLINT_PROBE__);},{timeout:60000}).toBe(true);
+ const probe=await page.evaluate(()=>{const p=(window as any).__SUN_GLINT_PROBE__;return {gpu:p.gpu,count:p.count,sunError:p.sunError,skyError:p.skyError,normalSpread:p.normalSpread,peakError:p.peakError,changed:p.changed};});
+ console.log(`Sun glint probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
+ expect(probe.count).toBe(54);expect(probe.changed).toBeGreaterThan(6);expect(probe.sunError).toBeLessThan(.000002);expect(probe.skyError).toBeLessThan(.000002);expect(probe.normalSpread).toBeLessThan(.000002);expect(probe.peakError).toBeLessThan(.000002);expect(errors).toEqual([]);
+});
+
+test('sea foam follows scene lighting and the rotated diffuse environment',async({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto('/tests/browser/fixtures/foam-lighting-probe.html');
+  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__FOAM_LIGHTING_PROBE__);},{timeout:60000}).toBe(true);
+  const probe=await page.evaluate(()=>{const p=(window as any).__FOAM_LIGHTING_PROBE__;return {gpu:p.gpu,count:p.count,maximum:p.maximum,rotationError:p.rotationError,environmentSpread:p.environmentSpread};});
+  console.log(`Foam lighting probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
+  expect(probe.count).toBe(70);expect(probe.maximum).toBeLessThan(.003);expect(probe.rotationError).toBeLessThan(.00001);expect(probe.environmentSpread).toBeGreaterThan(.05);expect(errors).toEqual([]);
 });
 
 test('mobile help fits the viewport and closes with the keyboard', async ({page})=> {

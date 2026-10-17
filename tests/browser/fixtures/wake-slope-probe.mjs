@@ -5,7 +5,7 @@ const renderer=new T.WebGLRenderer();renderer.setSize(1,1);document.body.append(
 if(!renderer.getContext().getExtension('EXT_color_buffer_float'))throw new Error('Float target unavailable');
 const ocean=new Ocean(new T.Vector3(0,1,0)),header=ocean.material.fragmentShader.split('void main()')[0];
 const uniforms={point:{value:new T.Vector2()},direction:{value:new T.Vector2(1,0)},length:{value:260},width:{value:17},speed:{value:7},probeTime:{value:60},probeMode:{value:0}};
-const material=new T.ShaderMaterial({uniforms,vertexShader:'void main(){gl_Position=vec4(position.xy,0,1);}',fragmentShader:`${header}
+const material=new T.ShaderMaterial({uniforms,defines:ocean.material.defines,vertexShader:'void main(){gl_Position=vec4(position.xy,0,1);}',fragmentShader:`${header}
 uniform vec2 point,direction;uniform float length,width,speed,probeTime;uniform int probeMode;
 void main(){float c=direction.x,s=direction.y;vec2 local=vec2(c*point.x-s*point.y,s*point.x+c*point.y);
 vec2 slope=wakeSlope(local,local.y-length*0.5,width,speed,probeTime,direction);gl_FragColor=probeMode==0?vec4(normalize(vec3(-slope.x,1,-slope.y)),1):vec4(c,s,local);}`});
