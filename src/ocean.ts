@@ -276,7 +276,7 @@ export class Ocean {
         shoreFoam=(1.0-smoothstep(0.4,3.2,depth))*wash*smoothstep(0.23,0.65,n);
         shoreFoam=max(shoreFoam,smoothstep(0.3,0.7,1.0-normal.y)*(1.0-smoothstep(0.5,4.0,max(-bottomHeight,0.0))));
         shoreFoam*=shoreDetail;
-        vec3 waterRadiance=coastalWaterRadiance(p,bottom,depth,view,sunDirection,sunColor);
+        vec3 waterRadiance=coastalWaterRadiance(p,bottom,depth,view,sunDirection,sunColor,foamIllumination(vec3(0.0,1.0,0.0)));
         float crestLight=max(displacementAt(waveCoordinate).y,0.0)*(1.0-nv)*pow(max(dot(-sunDirection,view),0.0),3.0);waterRadiance+=vec3(0.018,0.11,0.078)*crestLight;
         vec3 halfV=normalize(view+sunDirection);
         float sunFresnel=0.0204+0.9796*pow(1.0-clamp(dot(view,halfV),0.0,1.0),5.0);
