@@ -309,8 +309,8 @@ test('cruise departure and lighting remain valid far along the straight route',a
 });
 
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
-  // Measured CI software startup alone took 198 s; retain time for real input and reset.
-  test.setTimeout(420000);
+  // CI startup reached 278 s and the complete scenario 428 s; keep the 60 s flight-phase deadlines.
+  test.setTimeout(600000);
   // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
   await page.setViewportSize({width:320,height:240});
   await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());
@@ -699,6 +699,8 @@ test('nearshore displacement and geometric normals match CPU sampling on the GPU
   expect(probe.mipCount).toBeGreaterThanOrEqual(448);expect(probe.mipError).toBeLessThan(0.001);expect(probe.manualMipError).toBeLessThan(0.000003);expect(probe.longWaveError).toBeLessThan(0.005);expect(probe.subpixelMaximum).toBeLessThan(0.000001);
 });
 test('all passenger tenders have real surface contacts and free space around their bows',async({page})=> {
+  // The full-scene CI contact probe completed correctly at 184 s, beyond the default 180 s.
+  test.setTimeout(300000);
   await ready(page);
   const evidence=await page.evaluate(async()=> {
     const app=(window as any).__OCEANFPV__,world=app.world,T=await import('/node_modules/three/build/three.module.js' as string),model=await import('/src/tender.ts' as string),root=world.cruise.root;
