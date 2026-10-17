@@ -685,13 +685,22 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
     const rejected={dialog:dialog.open,toast:document.querySelector('#toast')!.textContent,playing:app.getState().playing};
     pad.axes=[0,0,0,0.9];await until(()=>document.querySelector('#device-status')!.textContent!.includes('THROTTLE 0%'),'low throttle');
     click('[data-close="settings-dialog"]:last-of-type');click('#start');
+    // Complete the first real flight draw while normally paused; its shader/GPU
+    // startup must not consume the radio movement phase's unchanged 20 s budget.
+    click('#home');for(let i=0;i<2;i++)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+    document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!.finish();
+    const warmup={paused:app.getState().paused,time:app.getState().time,flightTime:app.getState().flightTime,cameraError:app.camera.position.distanceTo(app.flight.position)};
+    if(!warmup.paused||warmup.time!==0||warmup.flightTime!==0||warmup.cameraError>1e-6)throw new Error(`Radio first draw drifted: ${JSON.stringify(warmup)}`);
+    console.log(`Radio first flight draw: ${JSON.stringify(warmup)}`);click('#resume');
+    if(app.getState().paused)throw new Error('Radio low-throttle resume was rejected');
     const startTime=app.getState().time;await until(()=>app.getState().time>startTime+1,'zero-throttle deck wait');
     const launch=app.world.launchPose(app.getState().time),waiting={crashed:app.flight.crashed,armed:app.flight.armed,flightTime:app.getState().flightTime,error:app.flight.position.distanceTo(launch.position)},altitude=app.flight.position.y;
     pad.axes=[0,0,0,-0.8];await until(()=>app.flight.position.y>altitude+1,'radio takeoff');
-    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,waiting,climb:app.flight.position.y-altitude,started:document.querySelector('#intro')!.classList.contains('hidden')};
+    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,warmup,waiting,climb:app.flight.position.y-altitude,started:document.querySelector('#intro')!.classList.contains('hidden')};
   });
   expect(result.opened).toBe(true);expect(result.source).toBe('radio');expect(result.min).toBe(-0.8);expect(result.max).toBe(0.9);expect(result.saved).toBe(-0.8);
   expect(result.rejected.dialog).toBe(true);expect(result.rejected.toast).toContain('スロットルを下げ');expect(result.rejected.playing).toBe(false);expect(result.started).toBe(true);
+  expect(result.warmup).toEqual({paused:true,time:0,flightTime:0,cameraError:0});
   expect(result.waiting.crashed).toBe(false);expect(result.waiting.armed).toBe(true);expect(result.waiting.flightTime).toBeGreaterThan(1);expect(result.waiting.error).toBeLessThan(1e-6);expect(result.climb).toBeGreaterThan(1);
 });
 test('lighting and sea settings persist across a full reload', async ({page})=> {
