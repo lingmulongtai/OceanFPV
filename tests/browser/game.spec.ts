@@ -514,7 +514,10 @@ test('fixed dialog views stop GPU draws and redraw changed settings',async({page
     const app=(window as any).__OCEANFPV__;
     return {draws:(window as any).__glDraws,time:app.getState().time,fov:app.camera.fov,quality:app.world.quality,reflection:app.world.ocean.mesh.getRenderTarget().width};
   });
-  await ready(page);await page.locator('#open-help').click();
+  await ready(page);
+  // Reach the fixed-view handler in one task before software menu frames delay actionability probes.
+  await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#open-help')!.click());
+  await expect(page.locator('#help-dialog')).toBeVisible();
   const help=await snapshot();expect(await snapshot()).toEqual(help);
   await page.locator('[data-close="help-dialog"]').last().click();
   const moving=await snapshot();expect(moving.time).toBeGreaterThan(help.time);expect(moving.draws).toBeGreaterThan(help.draws);
