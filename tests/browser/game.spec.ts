@@ -769,7 +769,23 @@ test('fixed dialog views stop GPU draws and redraw changed settings',async({page
   }
   await page.locator('[data-close="settings-dialog"]').last().click();
   const resumed=await snapshot();expect(resumed.time).toBeGreaterThan(stopped.time);expect(resumed.draws).toBeGreaterThan(changed.draws);
-  await page.keyboard.press('Escape');const paused=await snapshot();expect(await snapshot()).toEqual(paused);
+  // Use an explicit pause request; a delayed Escape can resume a safety pause
+  // that opens between the active snapshot and the key's browser dispatch.
+  const stoppedByButton=await page.evaluate(()=> {
+    const app=(window as any).__OCEANFPV__,state=app.getState();
+    if(app.flight.crashed)throw new Error('Fixed-view flight crashed');
+    if(state.paused) {
+      const reason={title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};
+      if(!reason.open||reason.title!=='描画が長時間止まりました'||!reason.copy!.includes('処理の遅れが10秒を超えました'))throw new Error(`Unexpected fixed-view pause: ${JSON.stringify(reason)}`);
+      console.log(`Fixed-view safety-pause recovery: ${JSON.stringify(state)}`);
+      document.querySelector<HTMLButtonElement>('#resume')!.click();
+      if(app.getState().paused)throw new Error('Fixed-view render-pause resume was rejected');
+    }
+    document.querySelector<HTMLButtonElement>('#home')!.click();
+    return {paused:app.getState().paused,title:document.querySelector('#pause-title')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};
+  });
+  expect(stoppedByButton).toEqual({paused:true,title:'フライトを一時停止',open:true});
+  const paused=await snapshot();expect(await snapshot()).toEqual(paused);
 });
 
 test('lost WebGL context closes modal layers and leaves recovery reachable',async({page})=> {
