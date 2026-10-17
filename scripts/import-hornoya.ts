@@ -25,20 +25,20 @@ export function decodeHornoyaCrop(bytes:Uint8Array) {
   return source;
 }
 
-export function prepareHornoyaGrid(source:Float32Array) {
-  const {version,width,extentMetres,unitMetres,heights}=prepareCoastalGrid(source,1200,0,2147483647);
+export function prepareHornoyaGrid(source:Float32Array,vertices=769) {
+  const {version,width,extentMetres,unitMetres,heights}=prepareCoastalGrid(source,1200,0,2147483647,vertices);
   return {version,width,extentMetres,unitMetres,storageBits:32,source:HORNOYA_SOURCE,
     underwater:'Synthetic chamfer distance ×0.4 across the full 1200 m crop, capped at 9 m; no measured bathymetry',heights};
 }
 
-async function importHornoya(input:string,output:string) {
-  const grid=prepareHornoyaGrid(decodeHornoyaCrop(await readFile(input))),rows=Array.from({length:grid.width},(_,i)=>'    '+JSON.stringify(grid.heights.slice(i*grid.width,(i+1)*grid.width)).slice(1,-1));
+async function importHornoya(input:string,output:string,vertices:number) {
+  const grid=prepareHornoyaGrid(decodeHornoyaCrop(await readFile(input)),vertices),rows=Array.from({length:grid.width},(_,i)=>'    '+JSON.stringify(grid.heights.slice(i*grid.width,(i+1)*grid.width)).slice(1,-1));
   const formatted=JSON.stringify({...grid,heights:[]},null,2).replace('"heights": []','"heights": [\n'+rows.join(',\n')+'\n  ]')+'\n';
   await mkdir(dirname(output),{recursive:true});await writeFile(output,formatted);
-  console.log(JSON.stringify({output,width:grid.width,extentMetres:grid.extentMetres,min:Math.min(...grid.heights)*grid.unitMetres,max:Math.max(...grid.heights)*grid.unitMetres,sha256:createHash('sha256').update(formatted).digest('hex')}));
+  console.log(JSON.stringify({output,width:grid.width,extentMetres:grid.extentMetres,min:grid.heights.reduce((a,b)=>Math.min(a,b),Infinity)*grid.unitMetres,max:grid.heights.reduce((a,b)=>Math.max(a,b),-Infinity)*grid.unitMetres,sha256:createHash('sha256').update(formatted).digest('hex')}));
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href) {
-  const input=process.argv[2];if(!input)throw new Error('Usage: node --import tsx scripts/import-hornoya.ts <reviewed 1200x1200 crop.f32> [output.json]');
-  await importHornoya(input,process.argv[3]??'src/data/hornoya.json');
+  const input=process.argv[2];if(!input)throw new Error('Usage: node --import tsx scripts/import-hornoya.ts <reviewed 1200x1200 crop.f32> [output.json] [vertices=769]');
+  await importHornoya(input,process.argv[3]??'src/data/hornoya.json',Number(process.argv[4]??769));
 }

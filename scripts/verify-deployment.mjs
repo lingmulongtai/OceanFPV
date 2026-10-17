@@ -30,8 +30,11 @@ try {
     await page.locator('#open-settings').click();await page.locator('#light').selectOption('golden');await page.locator('[data-close="settings-dialog"]').last().click();
     await page.screenshot({path:path.join(output,'oceanfpv-golden.png')});
     await page.locator('#open-settings').click();await page.locator('#light').selectOption('day');await page.locator('[data-close="settings-dialog"]').last().click();
-    await page.locator('#start').click();await page.keyboard.down('Space');
-    await page.waitForFunction(()=>Number(document.getElementById('altitude')?.textContent)>8,{},{timeout:60000});
+    await page.locator('#start').click();
+    // Initial HTML contains placeholder telemetry; wait for the moving ship's first HUD sample.
+    await page.waitForFunction(()=>Number(document.getElementById('speed')?.textContent)>0);
+    const launchAltitude=Number(await page.locator('#altitude').textContent());await page.keyboard.down('Space');
+    await page.waitForFunction(start=>Number(document.getElementById('altitude')?.textContent)>start+3,launchAltitude,{timeout:60000});
     await page.keyboard.up('Space');await page.screenshot({path:path.join(output,'oceanfpv-flight.png')});
     await page.keyboard.press('Escape');await page.locator('#pause-dialog[open]').waitFor();
     await page.locator('#resume').click();await page.keyboard.press('KeyR');

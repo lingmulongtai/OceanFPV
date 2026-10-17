@@ -5,13 +5,12 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Ocean } from './ocean';
 import { SEA_SCALE, type SeaState } from './sea';
 import { GATES } from './race';
-import { closedHullGeometry } from './hull';
 import {cruiseHullContains} from './cruise-hull';
 import { buildCruiseShip, vesselBoxContains } from './cruise';
 import { buildMotorYacht,YACHT_BEAM } from './yacht';
-import { vesselPose, vesselWakeTrail, WAKE_SAMPLES } from './navigation';
+import { vesselPose, vesselWakeTrail, withinFlightArea, WAKE_SAMPLES } from './navigation';
 import { blendGroundCover, blendRockScale, wetCoastalSurface, loadSurfaces, type SurfaceGroup, type SurfaceFailure } from './surfaces';
-import { coastalTreeSites, terrainCover, terrainSurfaceHeight, TERRAIN_SEGMENTS, type TerrainProfile } from './terrain';
+import { coastalTreeSites, terrainCover, terrainSurfaceHeight, terrainSegments, type TerrainProfile } from './terrain';
 import { COASTS, type Coast } from './bathymetry';
 import { CoastalForest, type TreeSite } from './vegetation';
 import { CoastalRocks, coastalRockSites, lighthouseRockPatch, type RockPatch } from './rocks';
@@ -21,8 +20,9 @@ import {CoastalCliff} from './coastal-cliff';
 import {CliffGround} from './cliff-ground';
 
 export type LightPreset = 'golden' | 'day' | 'blue';
-type Collider = { min: T.Vector3; max: T.Vector3 };
 type NaturalObstacle={x:number;z:number;y:number;radius:number;height:number};
+// 1.2 m above the actual foredeck triangles, clear of winches and cabins.
+const CRUISE_LAUNCH=new T.Vector3(0,11.835878,-112);
 
 function canvasTexture(paint: (ctx: CanvasRenderingContext2D) => void, size = 512) {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
@@ -31,38 +31,18 @@ function canvasTexture(paint: (ctx: CanvasRenderingContext2D) => void, size = 51
   texture.anisotropy = 8; return texture;
 }
 
-function steelTexture() {
-  const texture = canvasTexture(ctx => {
-    ctx.fillStyle = '#899396'; ctx.fillRect(0, 0, 512, 512);
-    let seed = 173;
-    const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
-    for (let i = 0; i < 15000; i++) {
-      ctx.fillStyle = `rgba(27,33,35,${random()*0.12})`; ctx.fillRect(random()*512,random()*512,1,random()*4+1);
-    }
-    ctx.strokeStyle = 'rgba(20,30,35,.16)'; ctx.lineWidth = 1;
-    for (let x = 0; x <= 512; x += 128) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,512); ctx.stroke(); }
-    for (let y = 0; y < 512; y += 128) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(512,y); ctx.stroke(); }
-    ctx.fillStyle = 'rgba(210,218,220,.4)';
-    for (let x = 5; x < 512; x += 32) for (let y = 5; y < 512; y += 128) { ctx.beginPath(); ctx.arc(x,y,1.4,0,Math.PI*2); ctx.fill(); }
-  });
-  texture.wrapS = texture.wrapT = T.RepeatWrapping; texture.repeat.set(2, 3); return texture;
-}
-
 export class World {
   scene = new T.Scene();
-  ship = new T.Group();
   drone = new T.Group();
   sky = new Sky();
   sun = new T.Vector3();
   sunlight = new T.DirectionalLight(0xffe3bf, 3.3);
   hemisphere = new T.HemisphereLight(0xbdddea, 0x243b41, 1.75);
   ocean: Ocean;
-  radar = new T.Group();
   cruise=buildCruiseShip();
   yacht=new T.Group();
   private yachtContact:((p:T.Vector3)=>boolean)=()=>false;
   gateMeshes: T.Group[] = [];
-  colliders: Collider[] = [];
   islands: Coast[] = [];
   light: LightPreset = 'golden';
   private propellers: T.Mesh[] = [];
@@ -92,7 +72,7 @@ export class World {
 
   constructor() {
     wetCoastalSurface(this.rockMaterial,this.shorelineWash);
-    this.scene.add(this.ship,this.cruise.root,this.yacht,this.drone,this.sky,this.sunlight,this.hemisphere);
+    this.scene.add(this.cruise.root,this.yacht,this.drone,this.sky,this.sunlight,this.sunlight.target,this.hemisphere);
     this.sky.scale.setScalar(10000);
     this.sky.material.uniforms.turbidity.value = 4;
     this.sky.material.uniforms.rayleigh.value = 2.4;
@@ -112,7 +92,7 @@ export class World {
     this.sunlight.shadow.bias = -0.0003; this.sunlight.shadow.normalBias = 0.04;
     this.setLight('golden');
     this.ocean = new Ocean(this.sun,this.lighthouseReef); this.scene.add(this.ocean.mesh);
-    this.buildShip(); this.buildDrone(); this.buildGates();
+    this.buildDrone(); this.buildGates();
     for(const coast of COASTS)this.buildIsland(coast);
     this.buildLighthouse(); this.buildYacht();
     this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:this.cruise.paint,colour:false,roughness:1},{asset:'wood_floor_deck',resolution:'1k',materials:[this.cruise.teak],colour:true},{asset:'rocky_terrain',resolution:'2k',materials:[this.rockMaterial],colour:true});
@@ -169,122 +149,14 @@ export class World {
     this.sun.setFromSphericalCoords(1,T.MathUtils.degToRad(90-elevation),T.MathUtils.degToRad(azimuth));
     this.sky.material.uniforms.sunPosition.value.copy(this.sun).multiplyScalar(450000);
     this.sky.material.uniforms.rayleigh.value = preset === 'blue' ? 3.5 : 2.3;
-    this.sunlight.position.copy(this.sun).multiplyScalar(280);
+    this.sunlight.position.copy(this.sun).multiplyScalar(280).add(this.sunlight.target.position);
+    this.sunlight.target.updateMatrixWorld(true);
     this.sunlight.color.set(preset === 'day' ? 0xfff3e3 : preset === 'golden' ? 0xffcf8e : 0xe3a2ae);
     this.sunlight.intensity = preset === 'day' ? 3.4 : preset === 'golden' ? 2.6 : 1.4;
     this.hemisphere.intensity = preset === 'blue' ? 1.0 : 1.6;
     if (this.ocean) {
       this.ocean.material.uniforms.sunColor.value.copy(this.sunlight.color);
       this.ocean.material.uniforms.dusk.value = preset === 'day' ? 0 : preset === 'golden' ? 0.55 : 0.85;
-    }
-  }
-
-  private buildShip() {
-    const metal = steelTexture();
-    const paint = new T.MeshStandardMaterial({color:0xd1d9d7,map:metal,roughness:0.55,metalness:0.5,bumpMap:metal,bumpScale:0.025});
-    const dark = new T.MeshStandardMaterial({color:0x182e34,roughness:0.6,metalness:0.5});
-    const deck = new T.MeshStandardMaterial({color:0x5a625a,map:metal,roughness:0.87,metalness:0.18});
-    const windows = new T.MeshPhysicalMaterial({color:0x122c38,roughness:0.13,metalness:0.55,clearcoat:1,clearcoatRoughness:0.15});
-    const orange = new T.MeshStandardMaterial({color:0xc15325,roughness:0.7});
-    const white = new T.MeshStandardMaterial({color:0xd5d8cf,roughness:0.58});
-    const buckets = new Map<T.Material,T.BufferGeometry[]>();
-    const part = (geometry: T.BufferGeometry, p: number[], material: T.Material, rotation?: T.Euler) => {
-      const matrix = new T.Matrix4().compose(new T.Vector3(p[0],p[1],p[2]),new T.Quaternion().setFromEuler(rotation ?? new T.Euler()),new T.Vector3(1,1,1));
-      geometry.applyMatrix4(matrix);
-      if (!buckets.has(material)) buckets.set(material,[]); buckets.get(material)!.push(geometry.index ? geometry.toNonIndexed() : geometry);
-    };
-    const box = (s: number[], p: number[], m = paint, collision = false, bevel = 0.04) => {
-      part(bevel ? new RoundedBoxGeometry(s[0],s[1],s[2],2,bevel) : new T.BoxGeometry(s[0],s[1],s[2]),p,m);
-      if (collision) this.colliders.push({ min:new T.Vector3(p[0]-s[0]/2,p[1]-s[1]/2,p[2]-s[2]/2),max:new T.Vector3(p[0]+s[0]/2,p[1]+s[1]/2,p[2]+s[2]/2) });
-    };
-    const cylinder = (radius: number, height: number, p: number[], m = paint, rx = 0) => part(new T.CylinderGeometry(radius,radius,height,16),p,m,new T.Euler(rx,0,0));
-    const beam = (a: T.Vector3, b: T.Vector3, radius: number, material = paint) => {
-      const geometry = new T.CylinderGeometry(radius,radius,a.distanceTo(b),6);
-      const quaternion = new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),b.clone().sub(a).normalize());
-      geometry.applyMatrix4(new T.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5),quaternion,new T.Vector3(1,1,1)));
-      if (!buckets.has(material)) buckets.set(material,[]); buckets.get(material)!.push(geometry.toNonIndexed());
-    };
-    const hullMat = paint.clone();
-    this.surfaceGroups.push({asset:'blue_metal_plate',resolution:'2k',materials:[paint,hullMat,deck],colour:false});
-    hullMat.side = T.DoubleSide;
-    hullMat.onBeforeCompile = shader => {
-      shader.vertexShader = shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 hullPosition;').replace('#include <begin_vertex>','#include <begin_vertex>\nhullPosition = position;');
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 hullPosition;').replace('#include <color_fragment>','#include <color_fragment>\nfloat waterline = smoothstep(-0.28,0.15,hullPosition.y);\ndiffuseColor.rgb *= mix(vec3(0.18,0.23,0.24),vec3(1.0),waterline);\nfloat rust = pow(sin(hullPosition.z*2.7)*0.5+0.5,8.0)*exp(-abs(hullPosition.y-0.2)*3.0);\ndiffuseColor.rgb = mix(diffuseColor.rgb,vec3(0.22,0.09,0.04),rust*0.22);');
-    };
-    const hull = new T.Mesh(closedHullGeometry(),hullMat); hull.castShadow = hull.receiveShadow = true; this.ship.add(hull);
-    box([5.5,0.16,29],[0,1.73,-23],deck); box([6.3,0.16,31],[0,1.7,23],deck);
-    box([5.8,3.4,9],[0,3.4,-16],paint,true,0.15);
-    box([5,2.5,5.5],[0,6.2,-17],paint,true,0.15);
-    box([5.6,0.24,6.2],[0,7.65,-17],paint,true);
-    for (let i=-2;i<=2;i++) box([0.75,0.7,0.04],[i*0.94,6.75,-19.78],windows);
-    for (const side of [-1,1]) for(let i=0;i<4;i++) box([0.04,0.7,0.8],[side*2.52,6.75,-19+i*1.05],windows);
-    box([4.2,1.8,8],[0,2.7,24],paint,true,0.12);
-    for(const z of [-5,8]) {
-      cylinder(1.45,7,[0,5.3,z]); cylinder(1.49,0.7,[0,9.15,z],dark);
-      this.colliders.push({min:new T.Vector3(-1.5,1.8,z-1.5),max:new T.Vector3(1.5,9.5,z+1.5)});
-      for(let h=3;h<8;h+=0.55) box([0.11,0.18,2.7],[1.47,h,z],dark);
-      box([0.45,0.65,2.3],[0,9.6,z],dark);
-    }
-    for(const z of [-31,30]) {
-      cylinder(1.55,1.15,[0,2.3,z]); box([2.6,1.8,2.6],[0,3.05,z],paint,true,0.14);
-      cylinder(0.105,5.8,[0,3.25,z-3.5],dark,Math.PI/2);
-    }
-    for(const z of [1,17]) {
-      cylinder(1,0.3,[0,2,z],dark);
-      for(const x of [-0.65,0,0.65]) cylinder(0.25,7,[x,2.5,z],paint,Math.PI/2);
-    }
-    for(const side of [-1,1]) {
-      box([1.0,0.55,5],[side*2.8,3.05,10],white,false,0.19);
-      box([0.8,0.22,3.9],[side*2.8,3.41,10],dark);
-      for(const z of [-21,-11,12,23]) {
-        box([0.1,1.5,0.8],[side*3.2,2.6,z],paint);
-        cylinder(0.44,0.12,[side*3.29,3,z],orange,Math.PI/2);
-      }
-    }
-    for(const z of [-40,42]) for(const x of [-1.2,1.2]) { cylinder(0.17,0.42,[x,2.05,z],dark); box([0.9,0.1,0.7],[x,1.85,z],dark); }
-    cylinder(0.55,0.5,[0,2.14,-39],dark);
-    for(let z=-43;z<-36;z+=0.45) box([0.14,0.06,0.25],[0,1.95,z],dark);
-    for(const z of [-13,23]) {
-      const tip=new T.Vector3(0,z<0?20:14,z+2), base=new T.Vector3(0,3,z);
-      beam(base,tip,0.11); beam(tip.clone().add(new T.Vector3(-4,-2,0)),tip.clone().add(new T.Vector3(4,-2,0)),0.065);
-      for(const x of [-3,3]) for(const dz of [-7,9]) beam(tip,new T.Vector3(x,2,z+dz),0.012,dark);
-      this.colliders.push({min:new T.Vector3(-0.27,3,z-0.3),max:new T.Vector3(0.27,tip.y,z+2.3)});
-      for(let h=4;h<tip.y-1;h+=0.4) beam(new T.Vector3(-0.22,h,z+0.3),new T.Vector3(0.22,h,z+0.3),0.025);
-    }
-    for(const side of [-1,1]) {
-      let last:T.Vector3|null=null;
-      for(let i=1;i<90;i++) {
-        const u=i/90, p=new T.Vector3(side*4.4*Math.pow(Math.sin(Math.PI*u),0.42),1.65+0.75*Math.pow(1-u,4),-46+u*92);
-        beam(p,p.clone().add(new T.Vector3(0,1.05,0)),0.024);
-        if(last) for(const y of [0.5,1.05]) beam(last.clone().add(new T.Vector3(0,y,0)),p.clone().add(new T.Vector3(0,y,0)),0.015);
-        last=p;
-      }
-    }
-    for(const z of [-23,-9,12,20]) for(const x of [-1.8,1.8]) {
-      box([0.7,0.06,1.0],[x,1.86,z],dark); box([0.62,0.04,0.92],[x,1.91,z],paint);
-    }
-    for(const [material,geometries] of buckets) {
-      const merged=mergeGeometries(geometries); if(!merged) throw new Error('Ship geometry merge failed');
-      const mesh=new T.Mesh(merged,material); mesh.castShadow=mesh.receiveShadow=true; this.ship.add(mesh);
-      geometries.forEach(g=>g.dispose());
-    }
-    const marking=canvasTexture(ctx=> {
-      ctx.clearRect(0,0,512,512); ctx.strokeStyle='#e2dfbb';ctx.lineWidth=8;ctx.beginPath();ctx.arc(256,256,207,0,Math.PI*2);ctx.stroke();
-      ctx.font='bold 230px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#e2dfbb';ctx.fillText('H',256,263);
-      ctx.font='30px Arial';ctx.fillText('OCEAN · 07',256,480);
-    });
-    const pad=new T.Mesh(new T.PlaneGeometry(5,5),new T.MeshStandardMaterial({map:marking,transparent:true,depthWrite:false,roughness:0.85}));
-    pad.rotation.x=-Math.PI/2;pad.position.set(0,1.81,38);this.ship.add(pad);
-    const number=canvasTexture(ctx=> {ctx.clearRect(0,0,512,512);ctx.fillStyle='#e1e4d9';ctx.font='bold 230px Arial';ctx.textAlign='center';ctx.fillText('07',256,340);});
-    for(const side of [-1,1]) {
-      const n=new T.Mesh(new T.PlaneGeometry(2.8,1.4),new T.MeshStandardMaterial({map:number,transparent:true,depthWrite:false,side:T.DoubleSide}));
-      n.position.set(side*3.25,0.9,-36);n.rotation.y=side*Math.PI/2;this.ship.add(n);
-    }
-    const radar=new T.Mesh(new RoundedBoxGeometry(2.8,0.75,0.12,2,0.04),dark);
-    this.radar.position.set(0,20,-11);this.radar.add(radar);this.ship.add(this.radar);
-    for(const side of [-1,1]) {
-      const light=new T.Mesh(new T.SphereGeometry(0.12,8,8),new T.MeshBasicMaterial({color:side<0?0xff3a32:0x2ff5ae}));
-      light.position.set(side*2.8,7.5,-17);this.ship.add(light);
     }
   }
 
@@ -319,7 +191,7 @@ export class World {
   }
   private buildIsland(coast:Coast) {
     const {x,z,size,height,profile}=coast;this.islands.push({...coast});
-    const geo=new T.PlaneGeometry(size*2.4,size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geo.rotateX(-Math.PI/2);
+    const segments=terrainSegments(profile),geo=new T.PlaneGeometry(size*2.4,size*2.4,segments,segments);geo.rotateX(-Math.PI/2);
     const pos=geo.attributes.position;const colors:number[]=[],cover:number[]=[];
     for(let i=0;i<pos.count;i++) {
       const px=pos.getX(i),pz=pos.getZ(i);const y=this.terrain(px,pz,size,height,profile);pos.setY(i,y);
@@ -382,9 +254,10 @@ export class World {
     this.shorelineWash.value=SEA_SCALE[state];
     this.ocean.update(time,camera,state);
     this.sky.material.uniforms.time.value=time;
+    this.sunlight.target.position.set(camera.x,0,camera.z);
+    this.sunlight.position.copy(this.sun).multiplyScalar(280).add(this.sunlight.target.position);
     this.advanceVessels(time);
     this.forest?.update(camera,time,this.quality,this.light);
-    this.radar.rotation.y=time*0.7;
     this.drone.position.copy(dronePosition);this.drone.quaternion.copy(orientation);
     this.propellers.forEach((p,i)=>p.rotation.y=time*(i%2?-1:1)*motor*170);
   }
@@ -394,7 +267,7 @@ export class World {
     if(scale!==this.vesselSeaScale||time<this.vesselTime||time-this.vesselTime>=0.2) {
       this.launchSample=null;this.launchVelocity=null;
     }
-    for(const [i,kind,root,length,width]of [[0,'explorer',this.ship,92,4.4],[1,'cruise',this.cruise.root,260,17],[2,'yacht',this.yacht,28,YACHT_BEAM/2]] as const) {
+    for(const [i,kind,root,length,width]of [[0,'cruise',this.cruise.root,260,17],[1,'yacht',this.yacht,28,YACHT_BEAM/2]] as const) {
       const p=vesselPose(kind,time),forward=new T.Vector3(-Math.sin(p.heading),0,-Math.cos(p.heading));
       const h=this.ocean.heightAt(p.x,p.z)*(kind==='cruise'?0.2:0.45),half=length*0.3;
       const front=this.ocean.heightAt(p.x+forward.x*half,p.z+forward.z*half),back=this.ocean.heightAt(p.x-forward.x*half,p.z-forward.z*half);
@@ -408,28 +281,20 @@ export class World {
     // A wave snapshot spans several physics ticks. Keep its full-interval deck
     // velocity between snapshots instead of dividing the jump by one tick.
     if(this.ocean.simulation.time===time&&time!==this.launchSample?.time) {
-      const position=this.ship.localToWorld(new T.Vector3(0,5.4,38)),dt=time-(this.launchSample?.time??time);
+      const position=this.cruise.root.localToWorld(CRUISE_LAUNCH.clone()),dt=time-(this.launchSample?.time??time);
       this.launchVelocity=this.launchSample&&dt>0&&dt<0.2?position.clone().sub(this.launchSample.position).divideScalar(dt):null;
       this.launchSample={time,position};
     }
     this.vesselTime=time;this.vesselSeaScale=scale;
   }
   launchPose(time:number) {
-    this.advanceVessels(time);const pose=vesselPose('explorer',time);
-    const before=vesselPose('explorer',time-0.01),after=vesselPose('explorer',time+0.01),turn=Math.atan2(Math.sin(after.heading-before.heading),Math.cos(after.heading-before.heading))/0.02;
-    const offset=new T.Vector3(0,5.4,38).applyQuaternion(this.ship.quaternion);
-    return {position:this.ship.localToWorld(new T.Vector3(0,5.4,38)),velocity:this.launchVelocity?.clone()??new T.Vector3(pose.vx+turn*offset.z,0,pose.vz-turn*offset.x),heading:pose.heading};
+    this.advanceVessels(time);const pose=vesselPose('cruise',time);
+    return {position:this.cruise.root.localToWorld(CRUISE_LAUNCH.clone()),velocity:this.launchVelocity?.clone()??new T.Vector3(pose.vx,0,pose.vz),heading:pose.heading};
   }
-  collision(p:T.Vector3,_time:number,_state:SeaState,previous=p):string|null {
+  collision(p:T.Vector3,time:number,_state:SeaState,previous=p):string|null {
     if(this.cliff?.surface.contacts(p,previous))return '海岸の崖に接触しました';
     if(p.y < this.ocean.heightAt(p.x,p.z)+0.18) return '海面に接触しました';
-    if(p.y>500||Math.hypot(p.x,p.z)>1900) return '飛行エリアの外に出ました';
-    const local=p.clone();this.ship.worldToLocal(local);
-    if(local.z>-46&&local.z<46) {
-      const u=(local.z+46)/92, width=4.4*Math.pow(Math.max(Math.sin(Math.PI*u),0.012),0.42);
-      if(Math.abs(local.x)<width+0.2&&local.y<1.84+0.75*Math.pow(1-u,4)) return '船体・甲板に接触しました';
-    }
-    for(const c of this.colliders) if(local.x>c.min.x-0.2&&local.x<c.max.x+0.2&&local.y>c.min.y-0.2&&local.y<c.max.y+0.2&&local.z>c.min.z-0.2&&local.z<c.max.z+0.2) return '船の構造物に接触しました';
+    if(p.y>500||!withinFlightArea(p.x,p.z,time)) return '飛行エリアの外に出ました';
     const passenger=this.cruise.root.worldToLocal(p.clone());
     if(cruiseHullContains(passenger))return '客船の船体・甲板に接触しました';
     for(const c of this.cruise.boxes)if(vesselBoxContains(c,passenger))return '客船の構造物に接触しました';

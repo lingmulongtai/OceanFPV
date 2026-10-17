@@ -28,12 +28,12 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
-  const {loading,gpu,render,forest,rocks,cliff,detailPrograms,unsupportedVisible}=await page.evaluate(()=> {
+  const {loading,gpu,render,forest,rocks,cliff,detailPrograms,waterPrograms,unsupportedVisible}=await page.evaluate(()=> {
     const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
     const rocks=app.world.rocks;
     const w=app.world;
     return {loading:{failures:w.surfaceFailures,note:document.querySelector('#start-note')!.textContent,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),bed:w.ocean.material.uniforms.hasSeabedMap.value&&w.ocean.material.uniforms.seabedMap.value===w.coastalRockDetail.map,tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)},
-      detailPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap')),unsupportedVisible:!!document.querySelector('#unsupported')!.getClientRects().length,
+      detailPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap')),waterPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('islandBathymetry')),unsupportedVisible:!!document.querySelector('#unsupported')!.getClientRects().length,
       gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:w.forest?.sourceTriangles??0,cliff:w.cliff?.surface.geometry.index.count/3,
       rocks:{triangles:rocks?.shape.geometry.index.count/3,placements:rocks?.placements.length,instances:rocks?.group.children.reduce((sum:number,mesh:any)=>sum+mesh.count,0),reef:rocks?.placements.filter((p:any)=>Math.hypot(p.matrix.elements[12]-app.world.lighthouseReef.x,p.matrix.elements[14]-app.world.lighthouseReef.z)<50).length,
         perIsland:w.islands.map((c:any)=>rocks?.placements.filter((p:any)=>Math.abs(p.matrix.elements[12]-c.x)<c.size*1.2&&Math.abs(p.matrix.elements[14]-c.z)<c.size*1.2).length)}};
@@ -47,8 +47,10 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(unsupportedVisible).toBe(false);
   expect(render.triangles).toBeGreaterThan(30000);
   expect(forest).toBeGreaterThan(1000000);
-  expect(rocks.triangles).toBe(14844);expect(rocks.perIsland).toEqual([51,80,79]);expect(rocks.placements).toBe(219);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
+  expect(rocks.triangles).toBe(14844);expect(rocks.perIsland).toEqual([51,79,79]);expect(rocks.placements).toBe(218);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
   expect(detailPrograms.length).toBeGreaterThan(0);for(const program of detailPrograms){expect(program.samplers).toBeLessThanOrEqual(program.limit);expect(program.names).toContain('groundDetailNormalMap');expect(program.names).toContain('groundDetailRoughnessMap');}
+  expect(waterPrograms.length).toBeGreaterThan(0);for(const program of waterPrograms){expect(program.samplers).toBe(14);expect(program.samplers).toBeLessThanOrEqual(program.limit);}
+  console.log(`Water production samplers: ${JSON.stringify(waterPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit})))}`);
   const recovered=loading.failures.filter((failure:any)=>failure.asset==='seaside_rock'&&failure.recovered);
   expect(detailRequests.length).toBe(3+recovered.length);expect(new Set(detailRequests).size).toBe(3);
   for(const url of new Set(detailRequests)){const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(url)![1];expect(detailRequests.filter(request=>request===url).length).toBe(1+recovered.filter((failure:any)=>failure.map===map).length);}
@@ -101,7 +103,7 @@ test('one missing rock detail map retains coherent macro terrain and grass rende
 test('photographed cliff contacts, joined ground and shared water depth agree',async({page})=> {
   await ready(page);
   const result=await page.evaluate(()=>{
-    const w=(window as any).__OCEANFPV__.world,scan=w.cliff.surface,ground=w.cliffGround,Vector=w.ship.position.constructor,Ray=w.lighthouseReef.topRay.constructor;
+    const w=(window as any).__OCEANFPV__.world,scan=w.cliff.surface,ground=w.cliffGround,Vector=w.cruise.root.position.constructor,Ray=w.lighthouseReef.topRay.constructor;
     const ray=new Ray(new Vector(-350,2,-450),new Vector(-1,0,0)),hit=scan.tree.raycastFirst(ray,2);if(!hit)throw new Error('Missing photographed front face');
     const front=hit.point.clone().add(new Vector(2,0,0)),back=hit.point.clone().add(new Vector(-2,0,0));
     const contacts=[w.collision(back,0,'breeze',front),w.collision(front,0,'breeze',back)];
@@ -120,7 +122,7 @@ test('photographed cliff contacts, joined ground and shared water depth agree',a
 test('missing cliff leaves the original headland and its placements intact',async({page})=> {
   await page.route('**/models/coastal_cliff_02/**',route=>route.abort());await ready(page);
   const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {cliff:!!w.cliff,ground:!!w.cliffGround,rocks:w.rocks.placements.length,instances:w.rocks.group.children.reduce((n:number,mesh:any)=>n+mesh.count,0)};});
-  expect(state).toEqual({cliff:false,ground:false,rocks:227,instances:227});await expect(page.locator('#start-note')).toContainText('標準素材');
+  expect(state).toEqual({cliff:false,ground:false,rocks:226,instances:226});await expect(page.locator('#start-note')).toContainText('標準素材');
 });
 
 test('cliff join keeps fallback rock rendering and collision records together',async({page})=> {
@@ -140,11 +142,11 @@ test('detailed cliff water height gradient and attenuation agree on the GPU',asy
   console.log(`Cliff depth probe: ${JSON.stringify(result)}`);expect(result.count).toBe(77);expect(result.heightError).toBeLessThan(.003);expect(result.gradientError).toBeLessThan(.003);expect(result.envelopeError).toBeLessThan(.003);expect(result.opticalCount).toBe(616);expect(result.opticalMaximum).toBeLessThan(.003);expect(result.radianceCount).toBe(324);expect(result.radianceMaximum).toBeLessThan(.0001);expect(errors).toEqual([]);
 });
 
-test('production hull water masks agree on the GPU for cruise explorer and yacht',async({page})=> {
+test('production hull water masks agree on the GPU for cruise and yacht',async({page})=> {
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/hull-mask-probe.html');
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__HULL_MASK_PROBE__);},{timeout:60000}).toBe(true);
-  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(1704);
+  const result=await page.evaluate(()=>(window as any).__HULL_MASK_PROBE__);console.log(`Hull mask probe: ${JSON.stringify(result)}`);expect(result.count).toBe(1136);
   // SwiftShader's existing sin/pow bow profile differs by up to 1.36 mm; the new aft profile stays tighter.
   expect(result.widthError).toBeLessThan(.002);expect(result.aftWidthError).toBeLessThan(.0005);expect(result.maskErrors).toBe(0);expect(errors).toEqual([]);
 });
@@ -195,6 +197,25 @@ test('bow lounge windows expose supported room depth and preserve closed flight 
   expect(result.opaquePlinth).toBe(true);expect(result.plinthContact).toContain('客船');expect(result.samples).toHaveLength(7);for(const sample of result.samples){expect(sample.depth).toBeGreaterThan(6);expect(sample.zError).toBeLessThan(.00002);expect(sample.contact).toContain('客船');expect(sample.air).toBeNull();expect(sample.floorError).toBeLessThan(.00002);expect(sample.ceilingError).toBeLessThan(.00002);}
 });
 
+test('bridge foundation connects to the deck and matches flight contacts',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),root=w.cruise.root;
+    const samples=[];
+    for(const x of [-12.6,0,12.6]){
+      const origin=root.localToWorld(new T.Vector3(x,30,-77)),direction=new T.Vector3(0,0,1).transformDirection(root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(root,true)[0];
+      if(!hit)throw new Error('Missing bridge support');
+      // Start inside the support, above the deck cap; back faces do not mask its foundation.
+      const local=root.worldToLocal(hit.point.clone()),under=root.localToWorld(new T.Vector3(x,29.4,-64)),down=new T.Vector3(0,-1,0).transformDirection(root.matrixWorld),foundation=new T.Raycaster(under,down).intersectObject(root,true)[0];
+      if(!foundation)throw new Error('Missing bridge support foundation');
+      samples.push({paint:hit.object.material===w.cruise.paint[0],faceError:Math.abs(local.z+74.5),contact:w.collision(hit.point,a.getState().time,'breeze'),deckError:Math.abs(root.worldToLocal(foundation.point.clone()).y-29.28)});
+    }
+    return {samples,air:w.collision(root.localToWorld(new T.Vector3(14.5,30,-73)),a.getState().time,'breeze')};
+  });
+  expect(result.samples).toHaveLength(3);expect(result.air).toBeNull();
+  for(const sample of result.samples){expect(sample.paint).toBe(true);expect(sample.faceError).toBeLessThan(.00001);expect(sample.contact).toContain('客船');expect(sample.deckError).toBeLessThan(.00001);}
+});
+
 test('stern terrace walking surfaces and supports have matching flight contacts',async({page})=> {
   await ready(page);
   const result=await page.evaluate(async()=>{
@@ -218,15 +239,16 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
   await expect(page.locator('#start-note')).toContainText('標準素材');
   expect(await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {detailed:!!w.rocks,contacts:w.fallbackRockObstacles.length,visible:w.rockPatches.filter((patch:any)=>patch.fallback).every((patch:any)=>patch.fallback.parent===w.scene),meshPatches:w.rockPatches.filter((patch:any)=>!patch.fallback).length,tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)};})).toEqual({detailed:false,contacts:270,visible:true,meshPatches:1,tints:[true,true,true]});
   const first=await page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.toArray());
-  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.x)).not.toBe(first[0]);
+  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.world.cruise.root.position.z)).not.toBe(first[2]);
   const app=await page.evaluate(()=> {
-    const a=(window as any).__OCEANFPV__,expected=a.world.launchPose(a.getState().time);
+    const a=(window as any).__OCEANFPV__;
     document.querySelector<HTMLButtonElement>('#start')!.click();
-    const local=a.world.ship.worldToLocal(a.flight.position.clone());
-    return {local:local.toArray(),positionError:a.flight.position.distanceTo(expected.position),velocityError:a.flight.velocity.distanceTo(expected.velocity)};
+    const expected=a.world.launchPose(0),local=a.world.cruise.root.worldToLocal(a.flight.position.clone());
+    return {local:local.toArray(),time:a.getState().time,positionError:a.flight.position.distanceTo(expected.position),velocityError:a.flight.velocity.distanceTo(expected.velocity)};
   });
-  expect(Math.abs(app.local[0])).toBeLessThan(1);expect(Math.abs(app.local[2]-38)).toBeLessThan(2);
+  expect(Math.abs(app.local[0])).toBeLessThan(1e-6);expect(Math.abs(app.local[2]+112)).toBeLessThan(1e-6);
   expect(app.positionError).toBeLessThan(1e-6);expect(app.velocityError).toBeLessThan(1e-6);
+  expect(app.time).toBe(0);
   await page.keyboard.press('Escape');await expect(page.locator('#pause-dialog')).toBeVisible();
   const stopped=await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};});await page.waitForTimeout(300);
   expect(await page.evaluate(()=> {const w=(window as any).__OCEANFPV__.world;return {position:w.cruise.root.position.toArray(),wake:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};})).toEqual(stopped);
@@ -246,7 +268,7 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
     w.ocean.advance(0.05,'breeze');w.advanceVessels(0.05);
     w.ocean.advance(0.05,'swell');w.advanceVessels(0.05);
     const presetCleared=w.launchVelocity===null&&w.launchSample.time===0.05;
-    return {error,held,refreshes,rewindCleared,presetCleared,floatError:Math.abs(w.ship.position.y-w.ocean.heightAt(w.ship.position.x,w.ship.position.z)*0.45)};
+    return {error,held,refreshes,rewindCleared,presetCleared,floatError:Math.abs(w.cruise.root.position.y-w.ocean.heightAt(w.cruise.root.position.x,w.cruise.root.position.z)*0.2)};
   });
   expect(motion.error).toBeLessThan(1e-6);expect(motion.held).toBeGreaterThan(10);expect(motion.refreshes).toBeGreaterThanOrEqual(5);
   expect(motion.rewindCleared).toBe(true);expect(motion.presetCleared).toBe(true);expect(motion.floatError).toBeLessThan(1e-6);
@@ -255,35 +277,73 @@ test('vessels really travel, launch follows the moving deck and unavailable surf
     const old=w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray());w.advanceVessels(0);
     return {old,points:w.ocean.material.uniforms.wakePoints.value.map((p:any)=>p.toArray())};
   });
-  expect(reset.old).toHaveLength(39);expect(reset.old.some((p:number[])=>p[2]>0)).toBe(true);
-  for(let i=0;i<3;i++) {
+  expect(reset.old).toHaveLength(26);expect(reset.old.some((p:number[])=>p[2]>0)).toBe(true);
+  for(let i=0;i<2;i++) {
     const points=reset.points.slice(i*13,(i+1)*13);
     expect(points.every((p:number[])=>p[2]===0&&p[0]===points[0][0]&&p[1]===points[0][1])).toBe(true);
   }
 });
+test('cruise departure and lighting remain valid far along the straight route',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(()=> {
+    const a=(window as any).__OCEANFPV__,w=a.world,samples=[];
+    for(const time of [0,600,1800,3600]) {
+      w.ocean.advance(time,'breeze');const launch=w.launchPose(time),camera=launch.position.clone();
+      w.update(time,camera,'breeze',camera,a.flight.orientation,0);
+      const below=camera.clone();below.y-=1.2;
+      for(const light of ['golden','blue','day']) {
+        const select=document.querySelector<HTMLSelectElement>('#light')!;select.value=light;select.dispatchEvent(new Event('input',{bubbles:true}));
+        const atlasLight=w.forest.bakeScene.children.find((child:any)=>child.isDirectionalLight),atlasDirection=atlasLight.position.clone().sub(atlasLight.target.getWorldPosition(camera.clone())).normalize();
+        samples.push({time,preset:light,position:camera.toArray(),clear:w.collision(camera,time,'breeze'),deck:w.collision(below,time,'breeze'),sky:w.sky.position.length(),target:Math.hypot(w.sunlight.target.position.x-camera.x,w.sunlight.target.position.z-camera.z),light:w.sunlight.position.clone().sub(w.sunlight.target.position).distanceTo(w.sun.clone().multiplyScalar(280)),atlas:atlasDirection.distanceTo(w.sun)});
+      }
+    }
+    return samples;
+  });
+  for(const sample of result){expect(sample.clear).toBeNull();expect(sample.deck).toContain('客船');expect(sample.sky).toBeLessThan(1e-6);expect(sample.target).toBeLessThan(1e-6);expect(sample.light).toBeLessThan(1e-6);expect(sample.atlas).toBeLessThan(1e-6);}
+  expect(result.at(-1)!.position[2]).toBeLessThan(-14000);
+});
+
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
-  test.setTimeout(300000);
-  await ready(page);await page.locator('#start').click();
-  await page.keyboard.down('Space');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(8);await page.keyboard.up('Space');
+  // Measured CI software startup alone took 198 s; retain time for real input and reset.
+  test.setTimeout(420000);
+  // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
+  await page.setViewportSize({width:320,height:240});
+  await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());
+  // Observe elapsed time and the supported launch pose in one browser task; slow
+  // software-renderer protocol responses must not consume a separate poll budget.
+  const waiting=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,deadline=performance.now()+60000;
+    while(a.getState().time<=9) {
+      const state=a.getState();
+      if(state.paused||a.flight.crashed||performance.now()>deadline)throw new Error(`Departure did not advance: ${JSON.stringify(state)}`);
+      await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
+    }
+    const launch=a.world.launchPose(a.getState().time);
+    return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused};
+  });
+  expect(waiting.worldTime).toBeGreaterThan(9);expect(waiting.error).toBeLessThan(1e-6);expect(waiting.flightTime).toBeCloseTo(waiting.worldTime,6);expect(waiting.crashed).toBe(false);expect(waiting.armed).toBe(true);expect(waiting.paused).toBe(false);
+  const launchAltitude=waiting.altitude;
+  await page.keyboard.down('Space');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(launchAltitude+3);await page.keyboard.up('Space');
   const beforePitch=await page.evaluate(()=> {
     const flight=(window as any).__OCEANFPV__.flight,forward=flight.position.clone().set(0,0,-1).applyQuaternion(flight.orientation).setY(0).normalize();
     return {altitude:flight.position.y,forward:forward.toArray(),speed:flight.velocity.dot(forward)};
   });
-  expect(beforePitch.altitude).toBeGreaterThan(6);
+  expect(beforePitch.altitude).toBeGreaterThan(launchAltitude+2);
   const forwardSpeed=()=>page.evaluate((forward:number[])=> {const v=(window as any).__OCEANFPV__.flight.velocity;return v.x*forward[0]+v.z*forward[2];},beforePitch.forward);
   await page.keyboard.down('KeyW');await expect.poll(forwardSpeed).toBeGreaterThan(Math.max(0.8,beforePitch.speed+0.8));await page.keyboard.up('KeyW');
-  expect(await forwardSpeed()).toBeGreaterThan(0.5);
   await page.keyboard.press('Escape');await expect(page.locator('#pause-dialog')).toBeVisible();
-  const paused=await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray());
-  await page.waitForTimeout(300);expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray())).toEqual(paused);
-  await page.locator('#resume').click();
-  await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y=-4);
+  const paused=await page.evaluate((forward:number[])=>{const flight=(window as any).__OCEANFPV__.flight;return {position:flight.position.toArray(),speed:flight.velocity.x*forward[0]+flight.velocity.z*forward[2]};},beforePitch.forward);
+  expect(paused.speed).toBeGreaterThan(.5);
+  await page.waitForTimeout(300);expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray())).toEqual(paused.position);
+  await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#resume')!.click();(window as any).__OCEANFPV__.flight.position.y=-4;});
   await expect(page.locator('#pause-title')).toHaveText('フライト終了');
-  await page.keyboard.press('KeyR');await expect(page.locator('#pause-dialog')).toBeHidden();
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.crashed)).toBe(false);
-  await page.locator('#open-settings').click();await page.locator('#mode').selectOption('acro');
-  await page.locator('[data-close="settings-dialog"]').last().click();
-  expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.armed)).toBe(true);
+  await page.keyboard.press('KeyR');
+  const reset=await page.evaluate(()=> {
+    const flight=(window as any).__OCEANFPV__.flight,reset={visible:document.querySelector<HTMLDialogElement>('#pause-dialog')!.getClientRects().length>0,crashed:flight.crashed,armed:flight.armed};
+    document.querySelector<HTMLButtonElement>('#open-settings')!.click();const select=document.querySelector<HTMLSelectElement>('#mode')!;select.value='acro';select.dispatchEvent(new Event('input',{bubbles:true}));
+    document.querySelectorAll<HTMLButtonElement>('[data-close="settings-dialog"]').item(1).click();return {...reset,mode:flight.mode,armedAfterMode:flight.armed};
+  });
+  expect(reset).toEqual({visible:false,crashed:false,armed:true,mode:'acro',armedAfterMode:true});
 });
 test('render delays keep world and flight coupled and unsafe gaps pause without a jump',async({page})=> {
   test.setTimeout(300000);
@@ -363,32 +423,50 @@ test('lost WebGL context closes modal layers and leaves recovery reachable',asyn
 });
 test('race registers actual ordered gate crossing and saves a completed run', async ({page})=> {
   test.setTimeout(300000);
+  await page.setViewportSize({width:320,height:240});
   await ready(page);
   await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.getState().time),{timeout:60000}).toBeGreaterThan(2);
-  await page.locator('#race-mode').click();
+  await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#race-mode')!.click());
   const resetTime=await page.evaluate(()=> {
     document.querySelector<HTMLButtonElement>('#start')!.click();
     return (window as any).__OCEANFPV__.getState().time;
   });
   expect(resetTime).toBe(0);
-  const crossings=await page.evaluate(async()=> {
-    const app=(window as any).__OCEANFPV__,crossings:{progress:number;waited:number}[]=[];
+  const run=await page.evaluate(async()=> {
+    const app=(window as any).__OCEANFPV__,crossings:{progress:number;waited:number;stallResumes:number}[]=[];
+    const waitingStarted=performance.now();
+    do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}while(app.getState().time<0.5&&performance.now()-waitingStarted<20000);
+    const waiting={time:app.getState().time,flightTime:app.getState().flightTime,raceTime:app.race.elapsed,next:app.race.next};
     for(let index=0;index<18;index++) {
       const g=app.world.gateMeshes[index%6];
-      // Use the mesh orientation to put flight one step before the real plane.
+      // Use the mesh orientation to put flight just before the real plane.
       const normal=app.flight.position.clone().set(0,0,1).applyQuaternion(g.quaternion);
-      app.flight.position.copy(g.position).addScaledVector(normal,-0.08);
-      app.flight.velocity.copy(normal).multiplyScalar(24);app.flight.orientation.identity();
-      const start=performance.now(),progress=()=>app.race.laps.length*6+app.race.next;
+      // A catch-up frame must not carry this unattended approach into the ship after crossing.
+      const approach=()=>{app.flight.position.copy(g.position).addScaledVector(normal,-0.08);app.flight.velocity.copy(normal).multiplyScalar(2);app.flight.orientation.identity();};
+      approach();let start=performance.now(),stallResumes=0;
+      const progress=()=>app.race.laps.length*6+app.race.next;
+      if(index===3)while(performance.now()-start<10100){/* Exercise real render-stall pause and UI recovery mid-race. */}
       // Let real animation/physics frames cross the plane without a protocol poll per frame.
-      do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+      do {
+        await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+        if(progress()<18&&app.getState().paused) {
+          const title=document.querySelector('#pause-title')!.textContent;
+          if(title!=='描画が長時間止まりました'||++stallResumes>2)throw new Error(`Gate ${index+1} paused: ${JSON.stringify({title,progress:progress(),position:app.flight.position.toArray(),crashed:app.flight.crashed,stallResumes})}`);
+          // Keep the stall safeguard: resume through the same button as a player,
+          // then retry an uncrossed approach without changing race progress or physics.
+          document.querySelector<HTMLButtonElement>('#resume')!.click();if(progress()<index+1)approach();start=performance.now();
+        }
+      }
       while(progress()<index+1&&performance.now()-start<20000);
-      const crossed={progress:progress(),waited:performance.now()-start};crossings.push(crossed);
+      const crossed={progress:progress(),waited:performance.now()-start,stallResumes};crossings.push(crossed);
       if(crossed.progress!==index+1||crossed.waited>20000)break;
     }
-    return crossings;
+    return {waiting,crossings};
   });
+  const {waiting,crossings}=run;expect(waiting.time).toBeGreaterThan(0);expect(waiting.flightTime).toBeCloseTo(waiting.time,6);expect(waiting.raceTime).toBeCloseTo(waiting.time,6);expect(waiting.next).toBe(0);
+  console.log(`Race gate crossings: ${JSON.stringify(crossings)}`);
   expect(crossings).toHaveLength(18);
+  expect(crossings[3].stallResumes).toBeGreaterThanOrEqual(1);
   for(const [index,crossed]of crossings.entries()) {
     expect(crossed.progress).toBe(index+1);expect(crossed.waited).toBeLessThanOrEqual(20000);
   }
@@ -432,49 +510,79 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
 });
 test('radio calibration, axis assignment and low-throttle arming', async ({page})=> {
   test.setTimeout(300000);
+  await page.setViewportSize({width:320,height:240});
   await page.addInitScript(()=> {
     (window as any).__pad={id:'USB radio test',index:0,connected:true,mapping:'',axes:[0,0,0,0],buttons:[],timestamp:0};
     Object.defineProperty(navigator,'getGamepads',{value:()=>[(window as any).__pad]});
   });
-  await ready(page);await page.locator('#open-settings').click();await page.locator('[data-tab="controller"]').click();await page.locator('#input-source').selectOption('radio');
-  await page.locator('#calibrate').click();
-  await page.evaluate(()=> {(window as any).__pad.axes=[-0.8,-0.8,-0.8,-0.8];});
-  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.input.profile.calibration[0].min)).toBe(-0.8);
-  await page.evaluate(()=> {(window as any).__pad.axes=[0.9,0.9,0.9,0.9];});
-  await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.input.profile.calibration[0].max)).toBe(0.9);
-  await page.locator('#save-calibration').click();
-  expect(await page.evaluate(()=> JSON.parse(localStorage.getItem('oceanfpv:radio:USB radio test')!).calibration[0].min)).toBe(-0.8);
-  await page.locator('[data-close="settings-dialog"]').last().click();
-  await page.evaluate(()=> {(window as any).__pad.axes=[0,0,0,-0.8];});await page.waitForTimeout(150);await page.locator('#start').click();
-  await expect(page.locator('#toast')).toContainText('スロットルを下げ');await expect(page.locator('#settings-dialog')).toBeVisible();
-  await page.evaluate(()=> {(window as any).__pad.axes=[0,0,0,0.9];});await page.waitForTimeout(150);
-  await expect(page.locator('#device-status')).toContainText('THROTTLE 0%');
-  await page.locator('[data-close="settings-dialog"]').last().click();await page.locator('#start').click();await expect(page.locator('#intro')).toBeHidden();
+  await ready(page);
+  // Preserve real DOM handlers and RAF input polling while avoiding a rendered
+  // actionability wait for every calibration step on software-rendered CI.
+  const result=await page.evaluate(async()=> {
+    const app=(window as any).__OCEANFPV__,pad=(window as any).__pad;
+    const click=(selector:string)=>document.querySelector<HTMLButtonElement>(selector)!.click();
+    const until=async(check:()=>boolean,label:string)=> {
+      const start=performance.now();
+      do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));if(check())return;}while(performance.now()-start<20000);
+      throw new Error(`Radio UI did not reach ${label}`);
+    };
+    click('#open-settings');click('[data-tab="controller"]');
+    const source=document.querySelector<HTMLSelectElement>('#input-source')!;source.value='radio';source.dispatchEvent(new Event('input',{bubbles:true}));
+    const dialog=document.querySelector<HTMLDialogElement>('#settings-dialog')!,opened=dialog.open;
+    await until(()=>app.input.pad?.id===pad.id,'device');click('#calibrate');
+    pad.axes=[-0.8,-0.8,-0.8,-0.8];await until(()=>app.input.profile.calibration[0].min===-0.8,'minimum');
+    pad.axes=[0.9,0.9,0.9,0.9];await until(()=>app.input.profile.calibration[0].max===0.9,'maximum');
+    const min=app.input.profile.calibration[0].min,max=app.input.profile.calibration[0].max;click('#save-calibration');
+    const saved=JSON.parse(localStorage.getItem('oceanfpv:radio:USB radio test')!);click('[data-close="settings-dialog"]:last-of-type');
+    pad.axes=[0,0,0,-0.8];await until(()=>app.input.sticks().throttle>0.12,'high throttle');click('#start');
+    const rejected={dialog:dialog.open,toast:document.querySelector('#toast')!.textContent,playing:app.getState().playing};
+    pad.axes=[0,0,0,0.9];await until(()=>document.querySelector('#device-status')!.textContent!.includes('THROTTLE 0%'),'low throttle');
+    click('[data-close="settings-dialog"]:last-of-type');click('#start');
+    const startTime=app.getState().time;await until(()=>app.getState().time>startTime+1,'zero-throttle deck wait');
+    const launch=app.world.launchPose(app.getState().time),waiting={crashed:app.flight.crashed,armed:app.flight.armed,flightTime:app.getState().flightTime,error:app.flight.position.distanceTo(launch.position)},altitude=app.flight.position.y;
+    pad.axes=[0,0,0,-0.8];await until(()=>app.flight.position.y>altitude+1,'radio takeoff');
+    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,waiting,climb:app.flight.position.y-altitude,started:document.querySelector('#intro')!.classList.contains('hidden')};
+  });
+  expect(result.opened).toBe(true);expect(result.source).toBe('radio');expect(result.min).toBe(-0.8);expect(result.max).toBe(0.9);expect(result.saved).toBe(-0.8);
+  expect(result.rejected.dialog).toBe(true);expect(result.rejected.toast).toContain('スロットルを下げ');expect(result.rejected.playing).toBe(false);expect(result.started).toBe(true);
+  expect(result.waiting.crashed).toBe(false);expect(result.waiting.armed).toBe(true);expect(result.waiting.flightTime).toBeGreaterThan(1);expect(result.waiting.error).toBeLessThan(1e-6);expect(result.climb).toBeGreaterThan(1);
 });
 test('lighting and sea settings persist across a full reload', async ({page})=> {
   test.setTimeout(300000);
-  await ready(page);await page.locator('#open-settings').click();await page.locator('#light').selectOption('day');await page.locator('#sea').selectOption('calm');
-  await page.keyboard.press('Escape');await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
+  await ready(page);
+  // This test covers persistence; ordinary pointer interactions are checked in
+  // the scene tests. Batch DOM events to avoid animation-frame actionability
+  // waits consuming the two full software-rendered initializations.
+  const chosen=await page.evaluate(()=> {
+    document.querySelector<HTMLButtonElement>('#open-settings')!.click();
+    for(const [id,value]of [['light','blue'],['sea','calm']]){const select=document.getElementById(id) as HTMLSelectElement;select.value=value;select.dispatchEvent(new Event('input',{bubbles:true}));}
+    const saved=JSON.parse(localStorage.getItem('oceanfpv:settings')!);
+    return {open:document.querySelector<HTMLDialogElement>('#settings-dialog')!.open,light:saved.light,sea:saved.sea};
+  });
+  expect(chosen).toEqual({open:true,light:'blue',sea:'calm'});
+  await page.keyboard.press('Escape');await expect(page.locator('#settings-dialog')).not.toBeVisible();
+  await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
-  expect(persisted).toEqual({light:'day',sea:'calm'});
+  expect(persisted).toEqual({light:'blue',sea:'calm'});
 });
 
 test('mobile help fits the viewport and closes with the keyboard', async ({page})=> {
   await page.setViewportSize({width:390,height:844});await ready(page);
-  await page.locator('#open-help').click();await expect(page.locator('#help-dialog')).toBeVisible();
+  await page.locator('#open-help').focus();await page.keyboard.press('Enter');await expect(page.locator('#help-dialog')).toBeVisible();
   const box=await page.locator('#help-dialog').boundingBox();expect(box!.width).toBeLessThan(390);
   await page.screenshot({path:'test-results/oceanfpv-mobile-help.png'});
   await page.keyboard.press('Escape');await expect(page.locator('#help-dialog')).toBeHidden();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
 });
-test('terrain projections preserve physical periods and normal direction on the GPU',async({page})=> {
+test('terrain projections retain metre scale and coherent detail maps on the GPU',async({page})=> {
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/ground-probe.html');
   await page.waitForFunction(()=>!!((window as any).__GROUND_PROBE__||(window as any).__GROUND_PROBE_ERROR__),{},{timeout:60000});
   expect(await page.evaluate(()=>(window as any).__GROUND_PROBE_ERROR__)).toBeUndefined();
-  const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum,detailCount:p.detailSamples.length,detailMaximum:p.detailMaximum,loadingFailures:p.loadingFailures};});
+  const probe=await page.evaluate(()=>{const p=(window as any).__GROUND_PROBE__;return {gpu:p.gpu,count:p.samples.length,maximum:p.maximum,detailCount:p.detailSamples.length,detailMaximum:p.detailMaximum,stochasticCount:p.stochasticSamples.length,stochasticMaximum:p.stochasticMaximum,continuityMaximum:p.continuityMaximum,loadingFailures:p.loadingFailures};});
   console.log(`Ground material probe: ${JSON.stringify(probe)}`);
   expect(probe.count).toBe(96);expect(probe.maximum).toBeLessThan(0.002);expect(probe.detailCount).toBe(2592);expect(probe.detailMaximum).toBeLessThan(0.002);expect(errors).toEqual([]);
+  expect(probe.stochasticCount).toBe(20);expect(probe.stochasticMaximum).toBeLessThan(.002);expect(probe.continuityMaximum).toBeLessThan(.002);
   expect(probe.loadingFailures.map((failure:any)=>failure.phase)).toEqual(['fetch','fetch','fetch','body','body','body','decode','decode','decode',...Array(6).fill('body')]);
   for(const failure of probe.loadingFailures.slice(-6))expect(failure).toMatchObject({name:'TimeoutError',aborted:true,abortReason:'TimeoutError',recovered:false});
 });
@@ -494,11 +602,11 @@ test('headland bay and lighthouse reef match rendered flight contacts',async({pa
     const instanceMatrix=new T.Matrix4();(rockHit.object as any).getMatrixAt(rockHit.instanceId,instanceMatrix);instanceMatrix.premultiply(rockHit.object.matrixWorld);
     const rockNormal=rockHit.face!.normal.clone().applyMatrix3(new T.Matrix3().getNormalMatrix(instanceMatrix)).normalize();
     const measuredCoasts=[1,2].map(index=> {
-      const measured=world.islands[index],islet=world.scene.children.find((m:any)=>m.geometry?.attributes.groundCover&&m.position.x===measured.x&&m.position.z===measured.z),ip=islet.geometry.attributes.position,extent=measured.size*1.2,step=extent*2/192;
-      let measuredDepthError=0;for(let i=0;i<ip.count;i++)measuredDepthError=Math.max(measuredDepthError,Math.abs(ip.getY(i)-bottom[i*4+index]));
+      const measured=world.islands[index],islet=world.scene.children.find((m:any)=>m.geometry?.attributes.groundCover&&m.position.x===measured.x&&m.position.z===measured.z),ip=islet.geometry.attributes.position,width=Math.round(Math.sqrt(ip.count)),extent=measured.size*1.2,step=extent*2/(width-1),stride=Math.max(3,Math.floor((width-1)/64)),fineDepth=world.ocean.material.uniforms.islandBathymetry.value.image.data;
+      let measuredDepthError=0;for(let i=0;i<ip.count;i++)measuredDepthError=Math.max(measuredDepthError,Math.abs(ip.getY(i)-(index===1?fineDepth[i]:bottom[i*4+index])));
       const contacts=[];
-      for(let z=1;z<191&&contacts.length<12;z+=3)for(let x=1;x<191&&contacts.length<12;x+=3)for(const [u,v]of [[.2,.3],[.7,.8]]) {
-        if(contacts.length>=12)break;if(ip.getY(z*193+x)<8)continue;
+      for(let z=1;z<width-2&&contacts.length<12;z+=stride)for(let x=1;x<width-2&&contacts.length<12;x+=stride)for(const [u,v]of [[.2,.3],[.7,.8]]) {
+        if(contacts.length>=12)break;if(ip.getY(z*width+x)<8)continue;
         const px=measured.x-extent+(x+u)*step,pz=measured.z-extent+(z+v)*step;
         if(world.naturalObstacles.some((o:any)=>Math.hypot(px-o.x,pz-o.z)<o.radius+1)||world.rocks.placements.some((p:any)=>px>p.bounds.min.x-1&&px<p.bounds.max.x+1&&pz>p.bounds.min.z-1&&pz<p.bounds.max.z+1))continue;
         const surface=new T.Raycaster(new T.Vector3(px,100,pz),new T.Vector3(0,-1,0)).intersectObject(islet)[0];if(!surface||surface.point.y<8)continue;
@@ -513,7 +621,7 @@ test('headland bay and lighthouse reef match rendered flight contacts',async({pa
       reefHeight:hit.point.y,reefSurface:world.collision(hit.point,app.getState().time,'breeze'),reefAir:world.collision(hit.point.clone().add(new T.Vector3(0,0.6,0)),app.getState().time,'breeze'),previousGhost:world.collision(new T.Vector3(175,10,-135),app.getState().time,'breeze'),scannedSurface:world.collision(rockHit.point,app.getState().time,'breeze'),scannedAir:world.collision(rockHit.point.clone().addScaledVector(rockNormal,0.6),app.getState().time,'breeze'),reefTextures:['map','normalMap','roughnessMap'].map(key=>(hit.object as any).material[key]?.image.width)};
   });
   expect(coast.profile).toBe('headland');expect(coast.depthError).toBeLessThan(0.0001);
-  expect(coast.northeastern.profile).toBe('hornoya');expect(coast.northeastern.size).toBe(500);expect(coast.northeastern.vertices).toBe(193**2);expect(coast.northeastern.depthError).toBeLessThan(.0001);
+  expect(coast.northeastern.profile).toBe('hornoya');expect(coast.northeastern.size).toBe(500);expect(coast.northeastern.vertices).toBe(769**2);expect(coast.northeastern.depthError).toBeLessThan(.0001);
   expect(coast.northeastern.contacts).toHaveLength(12);expect(new Set(coast.northeastern.contacts.map((p:any)=>p.half)).size).toBe(2);
   for(const point of coast.northeastern.contacts){expect(point.surface).toBe('島に接触しました');expect(point.air).toBeNull();}
   expect(coast.measured.profile).toBe('measured-islet');expect(coast.measured.size).toBe(250);expect(coast.measured.vertices).toBe(193**2);expect(coast.measured.depthError).toBeLessThan(.0001);
@@ -529,11 +637,11 @@ test('nearshore displacement and geometric normals match CPU sampling on the GPU
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/tests/browser/fixtures/nearshore-probe.html');
   await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__NEARSHORE_PROBE__);},{timeout:60000}).toBe(true);
-  const probe=await page.evaluate(()=>{const p=(window as any).__NEARSHORE_PROBE__;return {gpu:p.gpu,count:p.samples.length,northeasternDepths:p.points.filter((point:any)=>point.coastIndex===1).map((point:any)=>({target:point.targetDepth,actual:point.bottomDepth,upper:point.upper})),measuredDepths:p.points.filter((point:any)=>point.coastIndex===2).map((point:any)=>({target:point.targetDepth,actual:point.bottomDepth})),heightError:p.heightError,normalError:p.normalError,varianceError:p.varianceError,varianceRelativeError:p.varianceRelativeError,shadingVarianceError:p.shadingVarianceError,contactError:p.contactError,mipCount:p.mipSamples.length,mipError:p.mipError,manualMipError:p.manualMipError,longWaveError:p.longWaveError,subpixelMaximum:p.subpixelMaximum};});
+  const probe=await page.evaluate(()=>{const p=(window as any).__NEARSHORE_PROBE__;return {gpu:p.gpu,count:p.samples.length,bottomCount:p.bottomSamples.length,bottomError:p.bottomError,northeasternDepths:p.points.filter((point:any)=>point.coastIndex===1).map((point:any)=>({target:point.targetDepth,actual:point.bottomDepth,upper:point.upper})),measuredDepths:p.points.filter((point:any)=>point.coastIndex===2).map((point:any)=>({target:point.targetDepth,actual:point.bottomDepth})),heightError:p.heightError,normalError:p.normalError,varianceError:p.varianceError,varianceRelativeError:p.varianceRelativeError,shadingVarianceError:p.shadingVarianceError,contactError:p.contactError,mipCount:p.mipSamples.length,mipError:p.mipError,manualMipError:p.manualMipError,longWaveError:p.longWaveError,subpixelMaximum:p.subpixelMaximum};});
   console.log(`Nearshore probe: ${JSON.stringify(probe)}`);
   expect(probe.measuredDepths.map((point:any)=>point.target)).toEqual([-5,0,.2,.8,1.5,2,2.5,3,4,6,8,8.2]);for(const point of probe.measuredDepths)expect(Math.abs(point.target-point.actual)).toBeLessThan(.05);
   for(const upper of [false,true]){const depths=probe.northeasternDepths.filter((point:any)=>point.upper===upper);expect(depths.map((point:any)=>point.target)).toEqual([-5,0,.2,.8,1.5,2,2.5,3,4,6,8,8.2]);for(const point of depths)expect(Math.abs(point.target-point.actual)).toBeLessThan(.05);}
-  expect(probe.count).toBeGreaterThanOrEqual(2058);expect(probe.heightError).toBeLessThan(0.003);expect(probe.normalError).toBeLessThan(0.003);expect(probe.varianceRelativeError).toBeLessThan(0.0001);expect(probe.shadingVarianceError).toBeLessThan(0.0001);expect(probe.contactError).toBeLessThan(0.01);expect(errors).toEqual([]);
+  expect(probe.bottomCount).toBe(12);expect(probe.bottomError).toBeLessThan(0.003);expect(probe.count).toBeGreaterThanOrEqual(2058);expect(probe.heightError).toBeLessThan(0.003);expect(probe.normalError).toBeLessThan(0.003);expect(probe.varianceRelativeError).toBeLessThan(0.0001);expect(probe.shadingVarianceError).toBeLessThan(0.0001);expect(probe.contactError).toBeLessThan(0.01);expect(errors).toEqual([]);
   expect(probe.mipCount).toBeGreaterThanOrEqual(448);expect(probe.mipError).toBeLessThan(0.001);expect(probe.manualMipError).toBeLessThan(0.000003);expect(probe.longWaveError).toBeLessThan(0.005);expect(probe.subpixelMaximum).toBeLessThan(0.000001);
 });
 test('all passenger tenders have real surface contacts and free space around their bows',async({page})=> {

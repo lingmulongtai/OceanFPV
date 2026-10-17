@@ -2,7 +2,9 @@ import * as T from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { SEA_SCALE, type SeaState } from './sea';
 import { SpectralSea } from './spectrum';
-import { bathymetryData, sampleBathymetry, BATHY_SIZE, BATHY_COASTS } from './bathymetry';
+import { bathymetryData, sampleBathymetry, sampleCoastalDepth, BATHY_SIZE, BATHY_COASTS } from './bathymetry';
+import {IslandDepth} from './island-depth';
+import {hornoyaDepthData,HORNOYA_SEGMENTS} from './hornoya';
 import {LighthouseReef} from './lighthouse-reef';
 import { nearshoreCode, nearshoreEnvelope } from './nearshore';
 import {waterOpticsCode} from './water-optics';
@@ -78,6 +80,7 @@ export class Ocean {
   readonly waveMipmaps=this.simulation.cascades.map(c=>({displacement:new WaveMipmaps(c.displacement,c.size),tangentX:new WaveMipmaps(c.tangentX,c.size),tangentZ:new WaveMipmaps(c.tangentZ,c.size)}));
   private bottomData:Float32Array;
   private cliffDepth:CliffDepth|null=null;
+  readonly islandDepth:IslandDepth;
   private coastalScale=(x:number,z:number)=>nearshoreEnvelope(-this.bottomAt(x,z).height).value;
   private textures:T.DataTexture[]=[];
   private fieldsDirty=true;
@@ -85,7 +88,7 @@ export class Ocean {
   private state:SeaState='breeze';
   private reflectedView:T.Camera|null=null;
   bottomAt(x:number,z:number) {
-    const ground=sampleBathymetry(this.bottomData,x,z),scan=this.cliffDepth?.sample(x,z);return scan&&scan.height>ground.height?scan:ground;
+    const ground=sampleCoastalDepth(this.bottomData,x,z,this.islandDepth),scan=this.cliffDepth?.sample(x,z);return scan&&scan.height>ground.height?scan:ground;
   }
   /** One atomic upload serves CPU wave/contact sampling and the water shader. */
   installIslandDepth(channel:number,geometry:T.BufferGeometry,scan:CliffSurface) {
@@ -100,6 +103,8 @@ export class Ocean {
   }
   constructor(sun:T.Vector3,reef=new LighthouseReef()) {
     this.bottomData=bathymetryData(reef);
+    const coast=BATHY_COASTS[1],extent=coast.size*1.2;
+    this.islandDepth=new IslandDepth(1,hornoyaDepthData(),HORNOYA_SEGMENTS+1,new T.Vector4(coast.x-extent,coast.z-extent,extent*2,extent*2));
     this.mesh=new Reflector(radialGeometry(),{textureWidth:1536,textureHeight:1536,multisample:0,clipBias:0.012});
     const reflect=this.mesh.onBeforeRender.bind(this.mesh);
     this.mesh.onBeforeRender=(renderer,scene,camera,...args)=> {
@@ -111,18 +116,21 @@ export class Ocean {
     this.material=this.mesh.material as T.ShaderMaterial;this.material.lights=false;this.material.side=T.DoubleSide;
     Object.assign(this.material.uniforms,{
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
-      dusk:{value:0.4},foamEnabled:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:3},()=>new T.Vector4())},headings:{value:[0,0,0]},vesselWidths:{value:[4.4,17,4.5]},vesselSpeeds:{value:[0,0,0]},
+      dusk:{value:0.4},foamEnabled:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:2},()=>new T.Vector4())},headings:{value:[0,0]},vesselWidths:{value:[17,4.5]},vesselSpeeds:{value:[0,0]},
       chopScale:{value:this.simulation.horizontalScale},
       slopeVariance:{value:new T.Vector3()},
       heightVariance:{value:new T.Vector3()},
       slopeMipEnergy:{value:Array.from({length:8},()=>new T.Vector3())},heightMipEnergy:{value:Array.from({length:8},()=>new T.Vector3())},
       slopeMipCross:{value:Array.from({length:8},()=>new T.Vector3())},heightMipCross:{value:Array.from({length:8},()=>new T.Vector3())},
-      wakePoints:{value:Array.from({length:3*WAKE_SAMPLES},()=>new T.Vector4())},wakeBounds:{value:Array.from({length:3},()=>new T.Vector4())},
+      wakePoints:{value:Array.from({length:2*WAKE_SAMPLES},()=>new T.Vector4())},wakeBounds:{value:Array.from({length:2},()=>new T.Vector4())},
       reflectionSize:{value:1536},
       islands:{value:BATHY_COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.sizeZ??c.size))},
     });
     const cliffBottom=new T.DataTexture(new Float32Array([-60]),1,1,T.RedFormat,T.FloatType);cliffBottom.needsUpdate=true;
     this.material.uniforms.cliffBathymetry={value:cliffBottom};this.material.uniforms.cliffBounds={value:new T.Vector4()};
+    const islandBottom=new T.DataTexture(this.islandDepth.data,this.islandDepth.width,this.islandDepth.width,T.RedFormat,T.FloatType);
+    islandBottom.magFilter=islandBottom.minFilter=T.NearestFilter;islandBottom.needsUpdate=true;
+    Object.assign(this.material.uniforms,{islandBathymetry:{value:islandBottom},islandBounds:{value:this.islandDepth.bounds},islandDepthSize:{value:this.islandDepth.width},islandDepthChannel:{value:this.islandDepth.channel}});
     const bottom=new T.DataTexture(this.bottomData,BATHY_SIZE,BATHY_SIZE,T.RGBAFormat,T.FloatType);
     bottom.magFilter=bottom.minFilter=T.NearestFilter;bottom.needsUpdate=true;this.material.uniforms.bathymetry={value:bottom};
     this.simulation.cascades.forEach((c,i)=> {
@@ -145,8 +153,8 @@ export class Ocean {
       ${waterOpticsCode}
       uniform sampler2D mirrorSampler;
       uniform vec3 eye,sunDirection,sunColor;uniform float time,dusk,reflectionSize;uniform bool foamEnabled;
-      uniform vec4 vessels[3];uniform float headings[3],vesselWidths[3],vesselSpeeds[3];
-      uniform vec4 wakePoints[${3*WAKE_SAMPLES}],wakeBounds[3];
+      uniform vec4 vessels[2];uniform float headings[2],vesselWidths[2],vesselSpeeds[2];
+      uniform vec4 wakePoints[${2*WAKE_SAMPLES}],wakeBounds[2];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
       float hash(vec2 p) {
         uint h=uint(int(p.x))*0x9e3779b9u^uint(int(p.y))*0x85ebca6bu;
@@ -192,13 +200,13 @@ export class Ocean {
         vec2 mirrorUV=mirrorCoord.xy/max(mirrorCoord.w,0.001);
         bool hullCutout=false;
         float wakeFoam=0.0,wakeWave=0.0,n=foamNoise(p*0.53+vec2(time*0.12,-time*0.09));
-        for(int i=0;i<3;i++) {
+        for(int i=0;i<2;i++) {
           vec2 rel=p-vessels[i].xz;float c=cos(headings[i]),s=sin(headings[i]);vec2 local=vec2(c*rel.x-s*rel.y,s*rel.x+c*rel.y);
           float length=vessels[i].w,width=vesselWidths[i],speed=vesselSpeeds[i],aft=local.y-length*0.5,bow=local.y+length*0.5;
           float u=(local.y+length*0.5)/length;
           if(u>0.0&&u<1.0) {
             float shape=pow(max(sin(u*3.14159),0.001),0.42);
-            if(i==1)shape=cruiseHullWidth(u,width)/width;
+            if(i==0)shape=cruiseHullWidth(u,width)/width;
             else if(i>0&&u>0.78)shape=mix(shape,0.72,smoothstep(0.78,1.0,u));
             if(abs(local.x)<width*shape*0.98)hullCutout=true;
           }

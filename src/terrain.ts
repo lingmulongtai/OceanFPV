@@ -1,6 +1,6 @@
 import {drainageCuts} from './drainage';
 import {measuredIsletHeight} from './measured-islet';
-import {hornoyaHeight} from './hornoya';
+import {hornoyaHeight,HORNOYA_SEGMENTS} from './hornoya';
 
 function hash(x:number,z:number) {let h=Math.imul(x,374761393)+Math.imul(z,668265263);h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;}
 function noise(x:number,z:number) {
@@ -9,6 +9,7 @@ function noise(x:number,z:number) {
 }
 export const TERRAIN_SEGMENTS=192;
 export type TerrainProfile='radial'|'headland'|'measured-islet'|'hornoya';
+export function terrainSegments(profile:TerrainProfile='radial'){return profile==='hornoya'?HORNOYA_SEGMENTS:TERRAIN_SEGMENTS;}
 function baseTerrainHeight(x:number,z:number,size:number,height:number,profile:TerrainProfile) {
   const coast=1+(noise(x*0.013+3,z*0.013-7)-0.5)*0.35;
   const r=Math.hypot(x,z*1.06)/size*coast;
@@ -51,10 +52,10 @@ export function terrainHeight(x:number,z:number,size:number,height:number,profil
   // Preserve coastal shelves exactly, including between grid vertices.
   return base-cut*fade(30,31,base);
 }
-/** The same diagonal interpolation as the 192×192 rendered terrain grid. */
+/** The same diagonal interpolation and resolution as each rendered terrain grid. */
 export function terrainSurfaceHeight(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
-  const extent=size*1.2,step=extent*2/TERRAIN_SEGMENTS;if(Math.abs(x)>extent||Math.abs(z)>extent)return -9;
-  const gx=(x+extent)/step,gz=(z+extent)/step,ix=Math.min(TERRAIN_SEGMENTS-1,Math.floor(gx)),iz=Math.min(TERRAIN_SEGMENTS-1,Math.floor(gz)),u=gx-ix,v=gz-iz;
+  const segments=terrainSegments(profile),extent=size*1.2,step=extent*2/segments;if(Math.abs(x)>extent||Math.abs(z)>extent)return -9;
+  const gx=(x+extent)/step,gz=(z+extent)/step,ix=Math.min(segments-1,Math.floor(gx)),iz=Math.min(segments-1,Math.floor(gz)),u=gx-ix,v=gz-iz;
   const px=-extent+ix*step,pz=-extent+iz*step,a=terrainHeight(px,pz,size,height,profile),b=terrainHeight(px,pz+step,size,height,profile),d=terrainHeight(px+step,pz,size,height,profile);
   if(u+v<=1)return a+(b-a)*v+(d-a)*u;
   const c=terrainHeight(px+step,pz+step,size,height,profile);return c+(b-c)*(1-u)+(d-c)*(1-v);
@@ -62,8 +63,8 @@ export function terrainSurfaceHeight(x:number,z:number,size:number,height:number
 
 /** Slope of the rendered triangle, used for ground cover and rooted vegetation. */
 export function terrainSlope(x:number,z:number,size:number,height:number,profile:TerrainProfile='radial') {
-  const extent=size*1.2,step=extent*2/TERRAIN_SEGMENTS;if(Math.abs(x)>extent||Math.abs(z)>extent)return Math.PI/2;
-  const gx=(x+extent)/step,gz=(z+extent)/step,ix=Math.min(TERRAIN_SEGMENTS-1,Math.floor(gx)),iz=Math.min(TERRAIN_SEGMENTS-1,Math.floor(gz)),u=gx-ix,v=gz-iz;
+  const segments=terrainSegments(profile),extent=size*1.2,step=extent*2/segments;if(Math.abs(x)>extent||Math.abs(z)>extent)return Math.PI/2;
+  const gx=(x+extent)/step,gz=(z+extent)/step,ix=Math.min(segments-1,Math.floor(gx)),iz=Math.min(segments-1,Math.floor(gz)),u=gx-ix,v=gz-iz;
   const px=-extent+ix*step,pz=-extent+iz*step,a=terrainHeight(px,pz,size,height,profile),b=terrainHeight(px,pz+step,size,height,profile),d=terrainHeight(px+step,pz,size,height,profile);
   if(u+v<=1)return Math.atan(Math.hypot(d-a,b-a)/step);
   const c=terrainHeight(px+step,pz+step,size,height,profile);return Math.atan(Math.hypot(c-b,c-d)/step);

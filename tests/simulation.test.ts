@@ -9,9 +9,9 @@ import { inverseFFT, SpectralSea } from '../src/spectrum';
 import { closedHullGeometry, foredeckGeometry, hullNameGeometry } from '../src/hull';
 import {cruiseHullGeometry,cruiseHullSidePose} from '../src/cruise-hull';
 import { deckGeometry, vesselBoxContains, windowRibbon } from '../src/cruise';
-import { vesselPose, vesselWakeTrail, WAKE_SAMPLES, WAKE_STEP } from '../src/navigation';
-import { coastalTreeSites, terrainHeight, terrainSurfaceHeight, TERRAIN_SEGMENTS } from '../src/terrain';
-import { bathymetryData, BATHY_SIZE, COASTS } from '../src/bathymetry';
+import { vesselPose, vesselWakeTrail, withinFlightArea, WAKE_SAMPLES, WAKE_STEP } from '../src/navigation';
+import { coastalTreeSites, terrainHeight, terrainSurfaceHeight, terrainSegments } from '../src/terrain';
+import { bathymetryData, sampleBathymetry, BATHY_SIZE, COASTS } from '../src/bathymetry';
 import { metricPaintGeometry } from '../src/paint';
 
 test('passenger glazing faces outwards on every side without DoubleSide correction',()=> {
@@ -80,7 +80,7 @@ test('coastal trees root on dry rendered triangles below 35 degrees',()=> {
     const measured=coast.profile==='measured-islet'||coast.profile==='hornoya';
     const sites=coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile);assert.ok(sites.length>(measured?0:60)&&sites.length<=170);
     assert.deepEqual(sites,coastalTreeSites(coast.x,coast.z,coast.size,coast.height,coast.profile));
-    const geometry=new PlaneGeometry(coast.size*2.4,coast.size*2.4,TERRAIN_SEGMENTS,TERRAIN_SEGMENTS);geometry.rotateX(-Math.PI/2);
+    const geometry=new PlaneGeometry(coast.size*2.4,coast.size*2.4,terrainSegments(coast.profile),terrainSegments(coast.profile));geometry.rotateX(-Math.PI/2);
     const p=geometry.attributes.position;for(let i=0;i<p.count;i++)p.setY(i,terrainHeight(p.getX(i),p.getZ(i),coast.size,coast.height,coast.profile));
     const material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(geometry,material);mesh.updateMatrixWorld();
     for(let i=0;i<sites.length;i+=5) {
@@ -162,14 +162,16 @@ test('rough seas generate more whitecaps and changing presets clears stale foam 
   for(let i=0;i<3;i++)assert.deepEqual(sea.cascades[i].displacement,fresh.cascades[i].displacement);
 });
 
-test('coastal water depths follow the same terrain triangles as visible shores',()=> {
+test('coarse water inputs retain each supplied channel triangle and unchanged shore meshes',()=> {
   const data=bathymetryData(),n=BATHY_SIZE;
   for(const [channel,coast]of COASTS.entries())for(let i=0;i<80;i++) {
     const gx=7.23+(i*31.7)%174,gz=4.71+(i*17.8)%181,ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz;
     const h=(x:number,z:number)=>data[(z*n+x)*4+channel],a=h(ix,iz),b=h(ix,iz+1),d=h(ix+1,iz),c=h(ix+1,iz+1);
     const sampled=u+v<=1?a+(b-a)*v+(d-a)*u:c+(b-c)*(1-u)+(d-c)*(1-v);
     const expected=terrainSurfaceHeight((gx/(n-1)*2-1)*coast.size*1.2,(gz/(n-1)*2-1)*coast.size*1.2,coast.size,coast.height,coast.profile);
-    assert.ok(Math.abs(sampled-expected)<0.00002);
+    const px=coast.x+(gx/(n-1)*2-1)*coast.size*1.2,pz=coast.z+(gz/(n-1)*2-1)*coast.size*1.2;
+    assert.ok(Math.abs(sampled-sampleBathymetry(data,px,pz).height)<.00002);
+    if(coast.profile!=='hornoya')assert.ok(Math.abs(sampled-expected)<0.00002);
   }
 });
 
@@ -204,7 +206,7 @@ test('terrain sampling stays finite and continuous through the coastline',()=> {
 });
 
 test('stern trails follow past ship transforms and never predate launch',()=> {
-  for(const [kind,length] of [['explorer',92],['cruise',260],['yacht',28]] as const)for(const time of [0,3,8,27,190]) {
+  for(const [kind,length] of [['cruise',260],['yacht',28]] as const)for(const time of [0,3,8,27,190]) {
     const trail=vesselWakeTrail(kind,time,length);assert.equal(trail.length,WAKE_SAMPLES);
     for(const point of trail) {
       assert.ok(point.age>=0&&point.age<=time&&point.age<=WAKE_STEP*(WAKE_SAMPLES-1));
@@ -213,15 +215,43 @@ test('stern trails follow past ship transforms and never predate launch',()=> {
     }
     assert.deepEqual(trail,vesselWakeTrail(kind,time,length));
   }
-  const turned=vesselWakeTrail('cruise',120,260),current=vesselPose('cruise',120),oldest=turned.at(-1)!;
+  const turned=vesselWakeTrail('yacht',120,28),current=vesselPose('yacht',120),oldest=turned.at(-1)!;
   const lateral=Math.cos(current.heading)*(oldest.x-turned[0].x)-Math.sin(current.heading)*(oldest.z-turned[0].z);
-  assert.ok(Math.abs(lateral)>50,'old stern positions must leave the current straight heading');
+  assert.ok(Math.abs(lateral)>50,'turning yachts leave a curved stern trail');
   vesselWakeTrail('cruise',800,260);
   const reset=vesselWakeTrail('cruise',0,260);assert.ok(reset.every(p=>p.age===0&&p.x===reset[0].x&&p.z===reset[0].z));
 });
 
+test('passenger ship holds a straight course without looping or teleporting',()=> {
+  for(const time of [0,1,60,300,900,3600]) {
+    const pose=vesselPose('cruise',time);
+    assert.equal(pose.x,0);assert.equal(pose.z,220-4.2*time);
+    assert.ok(Math.abs(pose.heading)<1e-12);assert.equal(pose.speed,4.2);
+    const trail=vesselWakeTrail('cruise',time,260);
+    for(const point of trail)assert.equal(point.x,0);
+    for(let i=1;i<trail.length;i++)assert.ok(trail[i].z>=trail[i-1].z);
+  }
+});
+
+test('flight area follows the sailed corridor without cutting off the islands',()=> {
+  for(const time of [0,60,900,3600]) {
+    const ship=vesselPose('cruise',time);
+    assert.ok(withinFlightArea(ship.x,ship.z-112,time));
+    for(let z=ship.z;z<220;z+=50)assert.ok(withinFlightArea(0,z,time));
+    assert.ok(withinFlightArea(1200,ship.z,time));
+    assert.ok(withinFlightArea(1500,-1000,time));
+    assert.equal(withinFlightArea(2000,ship.z,time),false);
+    assert.equal(withinFlightArea(0,ship.z-4000,time),false);
+  }
+  assert.equal(withinFlightArea(0,-3000,0),false);
+});
+
+test('race gates and their openings stay outside the straight liner corridor',()=> {
+  for(const gate of GATES)assert.ok(gate.position.x-gate.radius>25,'allow the hull, lifeboats and a clear flight opening');
+});
+
 test('vessel routes move continuously and the bow follows the travel direction',()=> {
-  for(const kind of ['explorer','cruise','yacht'] as const)for(let t=0;t<800;t+=13) {
+  for(const kind of ['cruise','yacht'] as const)for(let t=0;t<800;t+=13) {
     const pose=vesselPose(kind,t),next=vesselPose(kind,t+0.001);
     assert.ok(pose.speed>1);assert.ok(Math.hypot(next.x-pose.x,next.z-pose.z)>0);
     assert.ok(Math.abs((next.x-pose.x)/0.001-pose.vx)<0.002);assert.ok(Math.abs((next.z-pose.z)/0.001-pose.vz)<0.002);

@@ -44,7 +44,8 @@ async function boot() {
   const composer=new EffectComposer(renderer,renderTarget);composer.addPass(new RenderPass(world.scene,camera));
   const bloom=new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),0.035,0.35,2.4);composer.addPass(bloom);composer.addPass(new OutputPass());
   const flight=new Flight(),input=new Inputs(),race=new Race(),sound=new FlightAudio();
-  let sea:SeaState='breeze', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0;
+  let sea:SeaState='breeze', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0,launchHeld=false;
+  const departureAnchor=new T.Vector3();
   const clock=new SimulationClock();
   let lastHUD=0,lastControllerUI=0,frameCount=0,fpsTime=performance.now(),toastUntil=0;
   let cameraMode='fpv',cameraTilt=12,fov=95,returnToPause=false;
@@ -106,7 +107,7 @@ async function boot() {
     }
     if(world.light==='day'&&photoSky&&photoEnvironment) {
       world.scene.background=photoSky.texture;world.scene.environment=photoEnvironment.texture;world.scene.environmentIntensity=0.6;
-      world.sun.copy(photoSky.sun);world.sunlight.position.copy(world.sun).multiplyScalar(280);
+      world.sun.copy(photoSky.sun);world.sunlight.position.copy(world.sun).multiplyScalar(280).add(world.sunlight.target.position);
     }else {world.scene.background=skyTarget.texture;world.scene.environment=environment.texture;world.scene.environmentIntensity=1;}
     if(lightChanged)world.forest?.relight(renderer,world.scene);
     world.ocean.material.uniforms.foamEnabled.value=checked('foam');bloom.enabled=checked('bloom')&&value('quality')!=='balanced';
@@ -141,12 +142,14 @@ async function boot() {
   function startFlight() {
     if(!supported||$<HTMLButtonElement>('start').disabled)return;
     input.poll();if(!canArm()) {openDialog('settings-dialog');return;}
-    if(selectedRace){time=0;world.ocean.advance(time,sea);}
+    time=0;world.ocean.advance(time,sea);
     flight.reset();race.reset(selectedRace);flightTime=0;playing=true;paused=false;clock.reset(performance.now());input.clear();
     const launch=world.launchPose(time);flight.position.copy(launch.position);flight.previous.copy(launch.position);flight.velocity.copy(launch.velocity);flight.orientation.setFromAxisAngle(new T.Vector3(0,1,0),launch.heading);
+    launchHeld=true;departureAnchor.copy(flight.position);
     show('intro',false);show('intro-footer',false);show('scene-label',false);show('hud',hudVisible);document.body.classList.add('flying');
     flight.armed=true;world.updateGates(race.active,race.next);void sound.start();
-    toast(selectedRace?'緑のゲートを番号順に通過。6ゲート × 3周。':'Spaceで上昇、WASDで傾き、Q/Eで旋回。Escで一時停止。',5500);
+    const departureHelp=input.source==='radio'?'船首で離陸待機中。スロットルをゆっくり上げて離陸。':input.source==='xbox'?'左スティックを上げて離陸。右スティックで機体を傾けます。':'Spaceで離陸、WASDで傾き、Q/Eで旋回。Escで一時停止。';
+    toast(selectedRace?`${departureHelp} 緑のゲートを番号順に通過。6ゲート × 3周。`:departureHelp,5500);
     document.activeElement instanceof HTMLElement&&document.activeElement.blur();
   }
   function restart() {
@@ -166,7 +169,7 @@ async function boot() {
     closeAll();paused=false;clock.reset(performance.now());input.clear();void sound.start();
   }
   function menu() {
-    closeAll();playing=false;paused=false;clock.reset(performance.now());flight.reset();race.reset(false);input.clear();sound.update(0,false);document.exitPointerLock?.();
+    closeAll();playing=false;paused=false;launchHeld=false;clock.reset(performance.now());flight.reset();race.reset(false);input.clear();sound.update(0,false);document.exitPointerLock?.();
     show('intro',true);show('intro-footer',true);show('scene-label',true);show('hud',false);document.body.classList.remove('flying');world.updateGates(false,0);
   }
   function openDialog(id:string) {
@@ -290,7 +293,7 @@ async function boot() {
     const scale=race.active?1.7:0.14,origin=race.active?new T.Vector3():flight.position;
     const project=(x:number,z:number)=>[(x-origin.x)*scale,(z-origin.z)*scale];
     if(!race.active)for(const island of world.islands){const [x,z]=project(island.x,island.z);ctx.fillStyle='#90af8b30';ctx.beginPath();ctx.arc(x,z,island.size*scale,0,Math.PI*2);ctx.fill();}
-    for(const [root,length,width]of [[world.ship,92,4.4],[world.cruise.root,260,17],[world.yacht,28,4.5]]as const){const [x,z]=project(root.position.x,root.position.z);ctx.save();ctx.translate(x,z);ctx.rotate(-root.rotation.y);ctx.fillStyle='#d2e3d799';ctx.beginPath();ctx.moveTo(0,-length*0.5*scale);ctx.lineTo(width*scale,-length*0.35*scale);ctx.lineTo(width*scale,length*0.45*scale);ctx.lineTo(-width*scale,length*0.45*scale);ctx.lineTo(-width*scale,-length*0.35*scale);ctx.closePath();ctx.fill();ctx.restore();}
+    for(const [root,length,width]of [[world.cruise.root,260,17],[world.yacht,28,4.5]]as const){const [x,z]=project(root.position.x,root.position.z);ctx.save();ctx.translate(x,z);ctx.rotate(-root.rotation.y);ctx.fillStyle='#d2e3d799';ctx.beginPath();ctx.moveTo(0,-length*0.5*scale);ctx.lineTo(width*scale,-length*0.35*scale);ctx.lineTo(width*scale,length*0.45*scale);ctx.lineTo(-width*scale,length*0.45*scale);ctx.lineTo(-width*scale,-length*0.35*scale);ctx.closePath();ctx.fill();ctx.restore();}
     if(race.active) GATES.forEach((g,i)=> {const [x,z]=project(g.position.x,g.position.z);ctx.fillStyle=i===race.next?'#b5ebd4':'#769488';ctx.beginPath();ctx.arc(x,z,4,0,Math.PI*2);ctx.fill();});
     const pos=flight.position.clone();const direction=new T.Vector3(0,0,-1).applyQuaternion(flight.orientation);const angle=Math.atan2(direction.x,-direction.z);
     const [px,pz]=project(pos.x,pos.z);const x=Math.max(-108,Math.min(108,px)),z=Math.max(-108,Math.min(108,pz));ctx.translate(x,z);ctx.rotate(angle);
@@ -300,7 +303,7 @@ async function boot() {
     $('speed').textContent=String(Math.round(flight.velocity.length()*3.6));
     $('altitude').textContent=(flight.position.y-world.ocean.heightAt(flight.position.x,flight.position.z)).toFixed(1);
     $('vertical').textContent=(flight.velocity.y>=0?'+':'')+flight.velocity.y.toFixed(1);
-    $('flight-mode').textContent=flight.mode.toUpperCase();$('arm-state').textContent=flight.armed?'ARMED':'DISARMED';
+    $('flight-mode').textContent=flight.mode.toUpperCase();$('arm-state').textContent=flight.armed?(launchHeld?'DECK READY':'ARMED'):'DISARMED';
     $('input-label').textContent=input.source.toUpperCase();
     const direction=new T.Vector3(0,0,-1).applyQuaternion(flight.orientation);
     const heading=(T.MathUtils.radToDeg(Math.atan2(direction.x,-direction.z))+360)%360;
@@ -330,7 +333,19 @@ async function boot() {
       const advanced=clock.advance(performance.now(),step=> {
         time+=step;world.ocean.advance(time,sea);world.advanceVessels(time);
         if(!playing||flight.crashed||race.finished)return;
-        flight.step(step,sticks,sea==='swell'?0.65:sea==='breeze'?0.2:0);flightTime+=step;
+        if(launchHeld) {
+          const lifting=flight.armed&&(sticks.absoluteThrottle?sticks.throttle>9.81/31:sticks.throttle>0.05);
+          // Support only the departure point. Once moved away or lifted, never
+          // pull an airborne craft back to the moving ship.
+          if(lifting||flight.position.distanceToSquared(departureAnchor)>0.25)launchHeld=false;
+          else {
+            const launch=world.launchPose(time);flight.previous.copy(flight.position);flight.position.copy(launch.position);departureAnchor.copy(flight.position);
+            flight.velocity.copy(launch.velocity);flight.orientation.copy(world.cruise.root.quaternion);flight.angularVelocity.set(0,0,0);
+            flight.motor=flight.armed?(sticks.absoluteThrottle?Math.min(sticks.throttle,9.81/31):0.05):0;
+          }
+        }
+        if(!launchHeld)flight.step(step,sticks,sea==='swell'?0.65:sea==='breeze'?0.2:0);
+        flightTime+=step;
         const collision=world.collision(flight.position,time,sea,flight.previous);
         if(collision) {flight.crashed=true;flight.armed=false;flight.motor=0;pause('フライト終了',`${collision}。Rまたは「やり直す」で離陸地点へ。`);return false;}
         if(race.step(step,flight.previous,flight.position)) {
@@ -350,7 +365,7 @@ async function boot() {
     if(!playing) {
       const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
       const drift=reduced?0:Math.sin(time*0.045)*4;
-      camera.fov=58;camera.position.set(112+drift,42,137+drift);camera.lookAt(-25,10,-125);
+      camera.fov=58;camera.position.copy(world.cruise.root.localToWorld(new T.Vector3(180+drift,68,-245+drift)));camera.lookAt(world.cruise.root.localToWorld(new T.Vector3(0,20,-5)));
       world.drone.visible=false;
     } else {
       camera.fov=fov;
@@ -368,8 +383,7 @@ async function boot() {
       world.update(time,camera.position,sea,flight.position,flight.orientation,flight.motor);
       world.scene.backgroundRotation.y=time*0.00015;
       world.scene.environmentRotation.y=world.scene.backgroundRotation.y;
-      if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280);}
-      world.ship.updateMatrixWorld(true);
+      if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280).add(world.sunlight.target.position);}
       renderer.info.reset();composer.render();frameCount++;
       sceneDirty=false;wasFrozen=frozen;renderedFov=camera.fov;renderedPosition.copy(camera.position);renderedOrientation.copy(camera.quaternion);renderedOcean=world.ocean.material;renderedOceanVersion=world.ocean.material.version;
     }
@@ -386,7 +400,8 @@ async function boot() {
   });
   const [missingSurfaces]=await Promise.all([world.loadSurfaceTextures(renderer,lightingReady),lightingReady]);
   if(!supported)return;
-  camera.position.set(112,42,137);camera.lookAt(-25,10,-125);
+  world.advanceVessels(0);
+  camera.position.copy(world.cruise.root.localToWorld(new T.Vector3(180,68,-245)));camera.lookAt(world.cruise.root.localToWorld(new T.Vector3(0,20,-5)));
   world.update(0,camera.position,sea,flight.position,flight.orientation,0);
   composer.render();
   $<HTMLButtonElement>('start').disabled=false;

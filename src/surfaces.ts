@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {groundDetailCode} from './ground-detail';
 
 export type SurfaceGroup={asset:string;resolution:'1k'|'2k'|'4k';materials:T.MeshStandardMaterial[];colour:boolean;roughness?:number};
 export type SurfaceFailure={asset:string;map:string;phase:'fetch'|'body'|'decode';attempt:number;recovered:boolean;elapsedMs:number;phaseElapsedMs:number;name:string;message:string;aborted:boolean;abortReason:string|null};
@@ -29,7 +30,7 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
   const detailed=()=>!!(detail?.map&&detail.normalMap&&detail.roughnessMap);
   // Cached program variants reuse the last uniform set; keep optional bindings present and current.
   const detailUniforms={groundDetailMap:{get value(){return detail?.map??null;}},groundDetailNormalMap:{get value(){return detail?.normalMap??null;}},groundDetailRoughnessMap:{get value(){return detail?.roughnessMap??null;}},groundDetailNormalScale:{get value(){return detail?.normalScale??material.normalScale;}}};
-  material.customProgramCacheKey=()=>`coastal-cover-triplanar-${available()}-${detailed()}`;
+  material.customProgramCacheKey=()=>`coastal-cover-triplanar-phase-${available()}-${detailed()}`;
   material.onBeforeCompile=shader=> {
     if(!available())return;
     Object.assign(shader.uniforms,{coverMap:{value:cover.map},coverNormalMap:{value:cover.normalMap},coverRoughnessMap:{value:cover.roughnessMap}});
@@ -43,16 +44,25 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
       uniform sampler2D coverMap,coverNormalMap,coverRoughnessMap;
       ${detailed()?'uniform sampler2D groundDetailMap,groundDetailNormalMap,groundDetailRoughnessMap;uniform vec2 groundDetailNormalScale;':''}
       varying float vGroundCover;varying vec3 vGroundPosition,vGroundNormal;
+      ${detailed()?groundDetailCode:''}
       vec3 groundWeights(){vec3 w=pow(abs(normalize(vGroundNormal)),vec3(4.0));return w/max(dot(w,vec3(1.0)),0.0001);}
       vec4 groundSample(sampler2D surface,float metres){
         vec3 w=groundWeights();
         return texture2D(surface,vGroundPosition.zy/metres)*w.x+texture2D(surface,vGroundPosition.xz/metres)*w.y+texture2D(surface,vGroundPosition.xy/metres)*w.z;
+      }
+      ${detailed()?`vec4 groundFineSample(sampler2D surface){
+        vec3 w=groundWeights();
+        return groundDetailSample(surface,vGroundPosition.zy/2.0)*w.x+groundDetailSample(surface,vGroundPosition.xz/2.0)*w.y+groundDetailSample(surface,vGroundPosition.xy/2.0)*w.z;
+      }`:''}
+      vec4 groundNormalTexel(sampler2D surface,vec2 uv,float metres){
+        ${detailed()?'if(metres==2.0)return groundDetailSample(surface,uv);':''}
+        return texture2D(surface,uv);
       }`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <normalmap_pars_fragment>',`#include <normalmap_pars_fragment>
       #if defined(USE_NORMALMAP_TANGENTSPACE) && !defined(USE_TANGENT)
         vec3 groundNormal(sampler2D surface,float metres,vec2 strength,vec3 baseNormal,vec3 eyePosition){
           vec2 ux=vGroundPosition.zy/metres,uy=vGroundPosition.xz/metres,uz=vGroundPosition.xy/metres;
-          vec3 nx=texture2D(surface,ux).xyz*2.0-1.0,ny=texture2D(surface,uy).xyz*2.0-1.0,nz=texture2D(surface,uz).xyz*2.0-1.0;
+          vec3 nx=groundNormalTexel(surface,ux,metres).xyz*2.0-1.0,ny=groundNormalTexel(surface,uy,metres).xyz*2.0-1.0,nz=groundNormalTexel(surface,uz,metres).xyz*2.0-1.0;
           nx.xy*=strength;ny.xy*=strength;nz.xy*=strength;
           vec3 w=groundWeights();
           return normalize(normalize(getTangentFrame(eyePosition,baseNormal,ux)*nx)*w.x+normalize(getTangentFrame(eyePosition,baseNormal,uy)*ny)*w.y+normalize(getTangentFrame(eyePosition,baseNormal,uz)*nz)*w.z);
@@ -61,10 +71,10 @@ export function blendGroundCover(material:T.MeshStandardMaterial,cover:T.MeshSta
     shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`vec3 groundBase=diffuseColor.rgb;
       ${detailed()?`vec3 groundMacroMean=max(textureLod(map,vec2(0.5),16.0).rgb,vec3(0.04));
       float groundMacroStrength=0.35*smoothstep(0.45,0.75,abs(normalize(vGroundNormal).y));
-      diffuseColor.rgb*=groundSample(groundDetailMap,2.0).rgb*mix(vec3(1.0),groundSample(map,90.0).rgb/groundMacroMean,groundMacroStrength);`:'diffuseColor*=groundSample(map,90.0);'}
+      diffuseColor.rgb*=groundFineSample(groundDetailMap).rgb*mix(vec3(1.0),groundSample(map,90.0).rgb/groundMacroMean,groundMacroStrength);`:'diffuseColor*=groundSample(map,90.0);'}
       diffuseColor.rgb=mix(diffuseColor.rgb,groundBase*groundSample(coverMap,15.0).rgb,vGroundCover);`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>',`float groundRockRoughness=groundSample(roughnessMap,90.0).g;
-      ${detailed()?'groundRockRoughness=mix(groundRockRoughness,groundSample(groundDetailRoughnessMap,2.0).g,0.65);':''}
+      ${detailed()?'groundRockRoughness=mix(groundRockRoughness,groundFineSample(groundDetailRoughnessMap).g,0.65);':''}
       float roughnessFactor=roughness*mix(groundRockRoughness,groundSample(coverRoughnessMap,15.0).g,vGroundCover);`);
     shader.fragmentShader=shader.fragmentShader.replace('#include <normal_fragment_maps>',`
       #if defined(USE_NORMALMAP_TANGENTSPACE) && !defined(USE_TANGENT)

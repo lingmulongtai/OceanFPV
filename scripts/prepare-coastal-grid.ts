@@ -1,7 +1,7 @@
-/** Prepare metre-spaced coastal heights for the fixed 193-vertex terrain mesh. */
-export function prepareCoastalGrid(source:Float32Array,n:number,padding:number,maxEncodedHeight:number) {
-  if(!Number.isInteger(n)||n<2||!Number.isInteger(padding)||padding<0||!Number.isInteger(maxEncodedHeight)||maxEncodedHeight<0)throw new Error('Invalid coastal grid dimensions or storage range');
-  const width=193,extentMetres=n+padding*2,unitMetres=.001;
+/** Prepare metre-spaced coastal samples on the requested terrain grid. */
+export function prepareCoastalGrid(source:Float32Array,n:number,padding:number,maxEncodedHeight:number,width=193) {
+  if(!Number.isInteger(n)||n<2||!Number.isInteger(padding)||padding<0||!Number.isInteger(maxEncodedHeight)||maxEncodedHeight<0||!Number.isInteger(width)||width<2||width>n+padding*2+1)throw new Error('Invalid coastal grid dimensions or storage range');
+  const extentMetres=n+padding*2,unitMetres=.001;
   if(source.length!==n*n||source.some(h=>!Number.isFinite(h)||h===-32767))throw new Error('Missing or invalid DTM heights');
   const land=Uint8Array.from(source,h=>h>.3?1:0),seen=new Uint8Array(source.length);
   for(let seed=0;seed<land.length;seed++)if(land[seed]&&!seen[seed]) {

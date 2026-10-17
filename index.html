@@ -23,9 +23,9 @@
       <div class="mode-picker" role="group" aria-label="ゲームモード"><button class="active" id="free-mode" aria-pressed="true"><span>01</span> 自由飛行</button><button id="race-mode" aria-pressed="false"><span>02</span> タイムトライアル</button></div>
       <button class="primary launch" id="start" disabled>海へ飛び立つ <span>↗</span></button>
       <div class="start-note" id="start-note">海と空を準備しています…</div>
-      <div class="intro-meta"><span><b>260 m</b> OCEAN LINER</span><span><b>3 ships</b> MOVING FLEET</span></div>
+      <div class="intro-meta"><span><b>260 m</b> OCEAN LINER</span><span><b>2 ships</b> LINER / COASTAL YACHT</span></div>
     </section>
-    <div id="scene-label" class="scene-label"><span>01 / THE OPEN SEA</span><b>OCEAN MERIDIAN</b><small>260 m LINER · ESCORT / YACHT · FICTIONAL WATERS</small></div>
+    <div id="scene-label" class="scene-label"><span>01 / THE OPEN SEA</span><b>OCEAN MERIDIAN</b><small>260 m LINER · COASTAL YACHT · FICTIONAL WATERS</small></div>
     <div id="intro-footer" class="intro-footer"><span>WEBGL 2.0 <i>•</i> BROWSER FLIGHT</span><span>XBOX / USB RADIO / KEYBOARD</span><button id="footer-help">操作を確認 <span>→</span></button></div>
     <section id="hud" class="hud hidden" aria-label="飛行情報">
       <div class="compass"><div id="heading-ticks">W &nbsp; · &nbsp; NW &nbsp; · &nbsp; N &nbsp; · &nbsp; NE &nbsp; · &nbsp; E</div><b id="heading">000° N</b></div>
@@ -74,7 +74,7 @@
     </dialog>
     <dialog id="help-dialog" class="panel help-panel" aria-labelledby="help-title">
       <div class="panel-heading"><div><div class="eyebrow">PILOT BRIEFING</div><h2 id="help-title">フライトガイド</h2></div><button class="close icon-button" data-close="help-dialog" aria-label="ガイドを閉じる">×</button></div>
-      <p>初めてなら<strong>ANGLE・キーボード</strong>で自由飛行へ。ヘリパッド上空から、Spaceで少し上昇して船を離れましょう。スティックを戻すと傾きが戻り、高度を補助します。慣性があるので、止まるには逆方向へ傾けます。</p>
+      <p>初めてなら<strong>ANGLE・キーボード</strong>で自由飛行へ。豪華客船の船首で<strong>DECK READY</strong>の間は船に追従して待機します。Space、Xboxの左スティック上、送信機のスロットル上昇で離陸。船は島の間をまっすぐ航行します。スティックを戻すと傾きが戻り、高度を補助します。慣性があるので、止まるには逆方向へ傾けます。Rで出航地点からやり直せます。</p>
       <div class="help-controls"><div><kbd>W / S</kbd><span>前 / 後へ傾く</span></div><div><kbd>A / D</kbd><span>左 / 右へ傾く</span></div><div><kbd>Q / E</kbd><span>左 / 右へ旋回</span></div><div><kbd>Space / Shift</kbd><span>上昇 / 下降</span></div><div><kbd>F</kbd><span>アーム / 解除</span></div><div><kbd>R</kbd><span>離陸地点へリセット</span></div><div><kbd>C</kbd><span>一人称 / 追従カメラ</span></div><div><kbd>Esc / Tab</kbd><span>一時停止 / 設定</span></div><div><kbd>M / H</kbd><span>ミュート / HUD表示</span></div></div>
       <p><strong>タイムトライアル：</strong>明るい緑のゲートを番号順に、数字がある側へ抜けます。6ゲート×3周でゴール。最速記録をこのブラウザに保存します。途中で衝突したら全周をやり直します。</p>
       <p><strong>ACRO：</strong>スティックは姿勢ではなく回転速度を操作します。高度補助はありません。キーボード・Xboxの中立スロットルは水平ホバー付近、送信機は0〜100%の直接操作です。</p>

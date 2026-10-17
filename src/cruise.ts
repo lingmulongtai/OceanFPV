@@ -171,6 +171,8 @@ export function buildCruiseShip() {
     }
   }
   // Continuous bow bridge with individual mullions and a cantilevered roof.
+  // The foundation overlaps deck 6 aft and carries the projecting bridge forward.
+  box([27,1.95,14],[0,30.175,-67.5],white,true);
   box([31,2.5,9],[0,32.3,-70],white,true,0.35);box([31.2,1.65,0.09],[0,32.6,-74.56],glass);
   for(let x=-14;x<=14;x+=2)box([0.075,1.8,0.14],[x,32.6,-74.7],white);
   box([34.2,0.42,12],[0,33.82,-70],white);

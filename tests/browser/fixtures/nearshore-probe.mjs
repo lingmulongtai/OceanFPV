@@ -1,28 +1,43 @@
 import * as T from 'three';
 import {Ocean} from '../../../src/ocean.ts';
-import {BATHY_COASTS,BATHY_SIZE,sampleBathymetry} from '../../../src/bathymetry.ts';
+import {BATHY_COASTS,BATHY_SIZE,sampleCoastalDepth} from '../../../src/bathymetry.ts';
+import {IslandDepth} from '../../../src/island-depth.ts';
 import {nearshoreEnvelope} from '../../../src/nearshore.ts';
 import {sampleWaveMip,retainedWaveEnergy} from '../../../src/wave-mips.ts';
 const renderer=new T.WebGLRenderer();renderer.setSize(1,1);document.body.append(renderer.domElement);
 if(!renderer.getContext().getExtension('EXT_color_buffer_float'))throw new Error('Float target unavailable');
-const ocean=new Ocean(new T.Vector3(0,1,0)),uniforms={...ocean.material.uniforms,probePoint:{value:new T.Vector2()},probeMode:{value:0},probeLod:{value:new T.Vector3()},probeFootprint:{value:0}};
+const ocean=new Ocean(new T.Vector3(0,1,0));
+// Match application startup: declare filtering before the first program upload.
+ocean.configureFiltering(!!renderer.getContext().getExtension('OES_texture_float_linear'));
+const uniforms={...ocean.material.uniforms,probePoint:{value:new T.Vector2()},probeMode:{value:0},probeLod:{value:new T.Vector3()},probeFootprint:{value:0}};
 const header=ocean.material.vertexShader.split('uniform mat4 textureMatrix;')[0];
 const material=new T.ShaderMaterial({uniforms,vertexShader:'void main(){gl_Position=vec4(position.xy,0,1);}',fragmentShader:`${header}
 uniform vec2 probePoint;uniform int probeMode;uniform vec3 probeLod;uniform float probeFootprint;
-void main(){if(probeMode==0)gl_FragColor=vec4(displacementAt(probePoint).xyz,nearshoreAt(probePoint).x);else if(probeMode==1)gl_FragColor=vec4(normalAt(probePoint,probeLod),1);else if(probeMode==2)gl_FragColor=vec4(spectralVarianceAt(probePoint,probeLod),0,0,1);else if(probeMode==3)gl_FragColor=fieldSampleLod(tangentX0,cascadeUV(probePoint,433.0),probeLod.x);else gl_FragColor=vec4(waveLod(probeFootprint),1);}`});
+void main(){if(probeMode==0)gl_FragColor=vec4(displacementAt(probePoint).xyz,nearshoreAt(probePoint).x);else if(probeMode==1)gl_FragColor=vec4(normalAt(probePoint,probeLod),1);else if(probeMode==2)gl_FragColor=vec4(spectralVarianceAt(probePoint,probeLod),0,0,1);else if(probeMode==3)gl_FragColor=fieldSampleLod(tangentX0,cascadeUV(probePoint,433.0),probeLod.x);else if(probeMode==4)gl_FragColor=vec4(waveLod(probeFootprint),1);else gl_FragColor=vec4(coastalBottom(probePoint),1);}`});
 const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,0.1,10),target=new T.WebGLRenderTarget(1,1,{type:T.FloatType});
 scene.add(new T.Mesh(new T.PlaneGeometry(2,2),material));camera.position.z=1;
-const data=uniforms.bathymetry.value.image.data,points=[];
+const data=uniforms.bathymetry.value.image.data,detailImage=uniforms.islandBathymetry.value.image,detail=new IslandDepth(uniforms.islandDepthChannel.value,detailImage.data,detailImage.width,uniforms.islandBounds.value),bottomSample=(x,z)=>sampleCoastalDepth(data,x,z,detail),points=[];
 for(const [coastIndex,coast]of BATHY_COASTS.entries())for(const [u,v]of coastIndex===1?[[.23,.31],[.73,.61]]:[[.23,.31]])for(const depth of [-5,0,0.2,0.8,1.5,2,2.5,3,4,6,8,8.2]) {
-  let closest;
-  for(let z=0;z<BATHY_SIZE-1;z++)for(let x=0;x<BATHY_SIZE-1;x++) {
-    const px=coast.x+((x+u)/(BATHY_SIZE-1)*2-1)*coast.size*1.2,pz=coast.z+((z+v)/(BATHY_SIZE-1)*2-1)*(coast.sizeZ??coast.size)*1.2;
-    const bottom=sampleBathymetry(data,px,pz),error=Math.abs(-bottom.height-depth);
+  let closest;const size=coastIndex===detail.channel?detail.width:BATHY_SIZE,stride=coastIndex===detail.channel?4:1;
+  for(let z=0;z<size-1;z+=stride)for(let x=0;x<size-1;x+=stride) {
+    const px=coast.x+((x+u)/(size-1)*2-1)*coast.size*1.2,pz=coast.z+((z+v)/(size-1)*2-1)*(coast.sizeZ??coast.size)*1.2;
+    const bottom=bottomSample(px,pz),error=Math.abs(-bottom.height-depth);
     if(!closest||error<closest.error)closest={x:px,z:pz,error,coastIndex,upper:u+v>1,targetDepth:depth,bottomDepth:-bottom.height};
   }
   points.push(closest);
 }
 points.push({x:10000,z:10000});
+// Land heights clamp the wave envelope to zero, so read the actual bottom field
+// directly as well: these cells cover the tall cliff, summit and both triangles.
+const bottomSamples=[];let bottomError=0;
+for(const [cx,cz]of [[217,487],[251,419],[384,384],[320,256],[35,35],[0,0]])for(const [u,v]of [[.2,.3],[.7,.8]]) {
+  const x=detail.bounds.x+(cx+u)/(detail.width-1)*detail.bounds.z,z=detail.bounds.y+(cz+v)/(detail.width-1)*detail.bounds.w;
+  uniforms.probePoint.value.set(x,z);uniforms.probeMode.value=5;
+  renderer.setRenderTarget(target);renderer.render(scene,camera);const actual=new Float32Array(4);renderer.readRenderTargetPixels(target,0,0,1,1,actual);
+  const bottom=bottomSample(x,z),expected=[bottom.height,bottom.dx,bottom.dz],error=Math.max(...expected.map((value,i)=>Math.abs(value-actual[i])));
+  bottomSamples.push({cell:[cx,cz],upper:u+v>1,x,z,actual:[...actual],expected,error});bottomError=Math.max(bottomError,error);
+  if(!Number.isFinite(error)||error>0.003)throw new Error(`Detailed bottom mismatch ${JSON.stringify(bottomSamples.at(-1))}`);
+}
 const samples=[];let heightError=0,normalError=0,varianceError=0,varianceRelativeError=0,shadingVarianceError=0,contactError=0;
 for(const manual of [false,true]) {
   if(!manual&&!renderer.getContext().getExtension('OES_texture_float_linear'))continue;
@@ -39,7 +54,7 @@ for(const manual of [false,true]) {
       for(const point of points)for(const kind of ['height','normal','variance'])for(const lod of kind==='height'?[[0,0,0]]:[[0,0,0],[1.7,3.2,6],[7,7,7]]) {
         uniforms.probePoint.value.set(point.x,point.z);uniforms.probeMode.value=['height','normal','variance'].indexOf(kind);uniforms.probeLod.value.set(...lod);
         renderer.setRenderTarget(target);renderer.render(scene,camera);const actual=new Float32Array(4);renderer.readRenderTargetPixels(target,0,0,1,1,actual);
-        const scale=uniforms.seaScale.value,horizontal=uniforms.chopScale.value,bottom=sampleBathymetry(data,point.x,point.z),envelope=nearshoreEnvelope(-bottom.height),sum=(channel,field='displacement')=>ocean.simulation.cascades.reduce((v,c)=>v+c.sample(point.x,point.z,channel,c[field]),0),filtered=(channel,field='displacement')=>ocean.simulation.cascades.reduce((v,c,i)=>v+sampleWaveMip(ocean.waveMipmaps[i][field],point.x/c.length+0.5/c.size,point.z/c.length+0.5/c.size,lod[i],channel),0);
+        const scale=uniforms.seaScale.value,horizontal=uniforms.chopScale.value,bottom=bottomSample(point.x,point.z),envelope=nearshoreEnvelope(-bottom.height),sum=(channel,field='displacement')=>ocean.simulation.cascades.reduce((v,c)=>v+c.sample(point.x,point.z,channel,c[field]),0),filtered=(channel,field='displacement')=>ocean.simulation.cascades.reduce((v,c,i)=>v+sampleWaveMip(ocean.waveMipmaps[i][field],point.x/c.length+0.5/c.size,point.z/c.length+0.5/c.size,lod[i],channel),0);
         let expected;
         if(kind==='height')expected=[sum(0)*horizontal,sum(1)*scale*envelope.value,sum(2)*horizontal,envelope.value];
         else if(kind==='variance') {
@@ -50,7 +65,7 @@ for(const manual of [false,true]) {
         }else if(controlled) {
           // Independent central differences of the modified geometric height.
           // A 1 mm step crossed the steep reef's clamped waterline transition.
-          const amplitude=1.5*scale,height=(x,z)=>amplitude*nearshoreEnvelope(-sampleBathymetry(data,x,z).height).value,e=0.00001;
+          const amplitude=1.5*scale,height=(x,z)=>amplitude*nearshoreEnvelope(-bottomSample(x,z).height).value,e=0.00001;
           expected=new T.Vector3(-(height(point.x+e,point.z)-height(point.x-e,point.z))/(2*e),1,-(height(point.x,point.z+e)-height(point.x,point.z-e))/(2*e)).normalize().toArray();
         }else {
           const tx=new T.Vector3(1+filtered(0,'tangentX')*horizontal,filtered(1,'tangentX')*scale*envelope.value-filtered(1)*scale*envelope.derivative*bottom.dx,filtered(2,'tangentX')*horizontal);
@@ -92,4 +107,4 @@ for(const manual of [false,true]) {
   }
 }
 if(longWaveError>0.005||subpixelMaximum>0.000001)throw new Error('Visible long waves lost or subpixel waves retained');
-const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');window.__NEARSHORE_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),points,samples,heightError,normalError,varianceError,varianceRelativeError,shadingVarianceError,contactError,mipSamples,mipError,manualMipError,longWaveError,subpixelMaximum};
+const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');window.__NEARSHORE_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),points,bottomSamples,bottomError,samples,heightError,normalError,varianceError,varianceRelativeError,shadingVarianceError,contactError,mipSamples,mipError,manualMipError,longWaveError,subpixelMaximum};
