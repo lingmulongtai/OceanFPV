@@ -72,6 +72,9 @@ export class World {
 
   constructor(cabinVisibility?:Uint8Array|null) {
     this.cruise=buildCruiseShip(cabinVisibility);
+    const beforeRender=this.scene.onBeforeRender,afterRender=this.scene.onAfterRender;
+    this.scene.onBeforeRender=(...args)=>{beforeRender.apply(this.scene,args);this.cruise.beginPoolView(args[2]);};
+    this.scene.onAfterRender=(...args)=>{this.cruise.endPoolView();afterRender.apply(this.scene,args);};
     wetCoastalSurface(this.rockMaterial,this.shorelineWash);
     this.scene.add(this.cruise.root,this.yacht,this.drone,this.sky,this.sunlight,this.sunlight.target,this.hemisphere);
     this.sky.scale.setScalar(10000);
