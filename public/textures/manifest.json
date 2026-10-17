@@ -153,5 +153,50 @@
     "license": "CC0-1.0",
     "downloadedAt": "2026-10-17T14:11:07.851Z",
     "authors": {"Greg Zaal": "Original", "Jarod Guest": "Sky edits"}
+  },
+  {
+    "bytes": 11379735,
+    "sha256": "ba6b56261e0288f12cb4ca6070acb340b617dab8ffe36dd0a7f129c22683a2c9",
+    "file": "marble_cliff_05_diff_4k.jpg",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/marble_cliff_05/marble_cliff_05_diff_4k.jpg",
+    "md5": "1179955cd22bbab03830d3bbfc1576cb",
+    "asset": "marble_cliff_05",
+    "license": "CC0-1.0",
+    "artist": "Amal Kumar",
+    "physicalSizeMetres": [
+      20.0020694732666,
+      20.001800537109375
+    ],
+    "retrievedAt": "2026-10-17T18:02:14.5467481Z"
+  },
+  {
+    "bytes": 10976432,
+    "sha256": "61bb7e65ae3c96564e0ec8fd0cbb15199fb7b4e3e3bb92265c1c2fbabcd92567",
+    "file": "marble_cliff_05_nor_gl_4k.jpg",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/marble_cliff_05/marble_cliff_05_nor_gl_4k.jpg",
+    "md5": "47789a0689acc36190b6ad9a3fdf77ad",
+    "asset": "marble_cliff_05",
+    "license": "CC0-1.0",
+    "artist": "Amal Kumar",
+    "physicalSizeMetres": [
+      20.0020694732666,
+      20.001800537109375
+    ],
+    "retrievedAt": "2026-10-17T18:02:16.4693521Z"
+  },
+  {
+    "bytes": 6104929,
+    "sha256": "123620cdf96acfe788ef3a609d36bf4594eb5eb8e01fcbfed940976c526b29ff",
+    "file": "marble_cliff_05_rough_4k.jpg",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/marble_cliff_05/marble_cliff_05_rough_4k.jpg",
+    "md5": "c015f99d805eea61a73ec40c9331d15a",
+    "asset": "marble_cliff_05",
+    "license": "CC0-1.0",
+    "artist": "Amal Kumar",
+    "physicalSizeMetres": [
+      20.0020694732666,
+      20.001800537109375
+    ],
+    "retrievedAt": "2026-10-17T18:02:18.4838642Z"
   }
 ]
