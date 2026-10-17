@@ -106,9 +106,15 @@ export class World {
   async loadSurfaceTextures(renderer:T.WebGLRenderer,prepareLighting:(texturesReady:Promise<unknown>)=>Promise<unknown>) {
     const textures=loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy(),this.surfaceFailures);
     const lightingReady=Promise.all([prepareLighting(textures),textures]);
+    performance.mark('oceanfpv:cliff-load-start');
     const assetsReady=CoastalCliff.load(renderer,this.shorelineWash).then(async cliff=> {
+      performance.mark('oceanfpv:cliff-load-settled');
+      performance.mark('oceanfpv:cliff-install-start');
       if(cliff&&this.headlandMesh){this.installCliff(cliff,this.headlandMesh);}else cliff?.dispose();
+      performance.mark('oceanfpv:cliff-install-ready');
+      performance.mark('oceanfpv:natural-assets-start');
       const [missing,forest,rocks]=await Promise.all([textures,CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady,forest=>{this.forest=forest;}),CoastalRocks.load(renderer,this.rockPatches,this.shorelineWash)]);
+      performance.mark('oceanfpv:natural-assets-settled');
       if(!this.cliff)missing.push('coastal cliff');
       // Keep the painted terrain colours only when photographs are unavailable.
       this.groundMaterials.forEach(material=>{if(material.map)material.vertexColors=false;material.needsUpdate=true;});

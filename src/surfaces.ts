@@ -134,6 +134,7 @@ export function wetCoastalSurface(material:T.MeshStandardMaterial,wash:{value:nu
 }
 /** Optional local assets fail as one coherent material group, retaining fallback. */
 export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number,failures:SurfaceFailure[]=[]) {
+  performance.mark('oceanfpv:surface-textures-start');
   const unique=new Map<string,SurfaceGroup>();
   for(const group of groups){const key=`${group.asset}:${group.resolution}:${group.colour}:${group.roughness??''}`;const existing=unique.get(key);if(existing)existing.materials.push(...group.materials);else unique.set(key,{...group,materials:[...group.materials]});}
   const results=await Promise.all(Array.from(unique.values()).map(async group=> {
@@ -171,5 +172,6 @@ export async function loadSurfaces(groups:SurfaceGroup[],anisotropy:number,failu
     }
     return null;
   }));
+  performance.mark('oceanfpv:surface-textures-settled');
   return results.filter((result):result is string=>result!==null);
 }

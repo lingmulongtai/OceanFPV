@@ -23,23 +23,32 @@ const show = (id:string,visible:boolean) => $(id).classList.toggle('hidden',!vis
 const canvas = $<HTMLCanvasElement>('scene');
 
 async function boot() {
+  performance.mark('oceanfpv:boot-start');
   let renderer:T.WebGLRenderer;
   try {
     renderer = new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
   } catch {
     show('unsupported',true);$('start-note').textContent='WebGL2を利用できません。';return;
   }
+  performance.mark('oceanfpv:renderer-created');
   renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.AgXToneMapping;renderer.toneMappingExposure=0.7;
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;
   renderer.info.autoReset=false;
-  const world=new World(await loadCruiseOcclusion());
+  performance.mark('oceanfpv:cabin-occlusion-start');
+  const cabinOcclusion=await loadCruiseOcclusion();
+  performance.mark('oceanfpv:cabin-occlusion-ready');
+  performance.mark('oceanfpv:world-build-start');
+  const world=new World(cabinOcclusion);
+  performance.mark('oceanfpv:world-build-ready');
   world.ocean.configureFiltering(renderer.extensions.has('OES_texture_float_linear'),renderer.extensions.has('EXT_color_buffer_float'));
   // Bake the expensive procedural atmosphere once; the visible background and
   // water reflection sample the same HDR sky. Slow rotation gives cloud drift.
+  performance.mark('oceanfpv:procedural-lighting-start');
   const skyScene=new T.Scene();skyScene.add(world.sky);const skyTarget=new T.WebGLCubeRenderTarget(512,{type:T.HalfFloatType});
   const skyCamera=new T.CubeCamera(1,20000,skyTarget);skyCamera.update(renderer,skyScene);
   world.scene.background=skyTarget.texture;
   const pmrem=new T.PMREMGenerator(renderer);let environment=pmrem.fromCubemap(skyTarget.texture);world.scene.environment=environment.texture;pmrem.dispose();
+  performance.mark('oceanfpv:procedural-lighting-submitted');
   type PhotoEnvironment={sky:NonNullable<Awaited<ReturnType<typeof loadPhotographicSky>>>;environment:T.WebGLRenderTarget};
   const photoEnvironments=new Map<PhotographicSkyPreset,PhotoEnvironment|null>(),pendingSkies=new Map<PhotographicSkyPreset,Promise<void>>();
   const proceduralFog=world.scene.fog!.color.clone();
@@ -139,7 +148,9 @@ async function boot() {
       if(!supported){sky.texture.dispose();return;}
       const generator=new T.PMREMGenerator(renderer);let target:T.WebGLRenderTarget;
       try {
+        performance.mark(`oceanfpv:photo-${preset}-pmrem-start`);
         target=generator.fromEquirectangular(sky.texture);
+        performance.mark(`oceanfpv:photo-${preset}-pmrem-submitted`);
       } catch {sky.texture.dispose();photoEnvironments.set(preset,null);return;}
       finally {generator.dispose();}
       if(!supported||renderer.getContext().isContextLost()){target.dispose();sky.texture.dispose();return;}
@@ -425,14 +436,20 @@ async function boot() {
   performance.mark('oceanfpv:initial-gpu-start');
   if(!await waitForGpu(renderer.getContext() as WebGL2RenderingContext)||!supported)return;
   performance.mark('oceanfpv:initial-gpu-ready');
+  performance.mark('oceanfpv:scene-assets-start');
   const missingSurfaces=await world.loadSurfaceTextures(renderer,texturesReady=> {skyDecodeReady=texturesReady;return ensurePhotographicSky(world.light);});
+  performance.mark('oceanfpv:scene-assets-ready');
   if(!supported)return;
+  performance.mark('oceanfpv:first-view-start');
   world.advanceVessels(0);
   camera.position.copy(world.cruise.root.localToWorld(new T.Vector3(180,68,-245)));camera.lookAt(world.cruise.root.localToWorld(new T.Vector3(0,20,-5)));
   world.update(0,camera.position,sea,flight.position,flight.orientation,0);
   world.ocean.setLighting(world.scene,world.sunlight,world.hemisphere);
+  performance.mark('oceanfpv:first-draw-start');
   composer.render();
+  performance.mark('oceanfpv:first-draw-submitted');
   $<HTMLButtonElement>('start').disabled=false;
+  performance.mark('oceanfpv:game-ready');
   $('start-note').textContent=missingSurfaces.length?'一部の素材を読み込めませんでした。標準素材でプレイできます。':innerWidth<600?'PCのキーボードまたは接続コントローラーでプレイできます。':'インストール不要 · キーボード / Xbox / USB送信機';
   if(import.meta.env.DEV&&new URLSearchParams(location.search).has('test')) {
     Object.assign(window,{__OCEANFPV__:{flight,race,input,world,camera,invalidate:()=>{sceneDirty=true;},getState:()=>({playing,paused,time,flightTime,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})}});
