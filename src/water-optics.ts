@@ -4,7 +4,8 @@ uniform sampler2D seabedMap;
 uniform bool hasSeabedMap;
 vec3 coastalWaterRadiance(vec2 p,vec3 bottom,float depth,vec3 view,vec3 sun,vec3 sunlight,vec3 diffuseLight) {
   // Upwelling follows smooth incident illumination, rather than emitting a fixed colour.
-  vec3 deep=vec3(0.006,0.045,0.082)*diffuseLight;
+  // web-ocean's coastal chromaticity, normalized to this scene's original albedo luminance.
+  vec3 deep=vec3(0.00933,0.04665,0.05598)*diffuseLight;
   // The synthetic island skirts stop at 9m: fade this proxy before its square boundary.
   float confidence=1.0-smoothstep(4.0,8.0,depth);
   if(confidence<=0.0)return deep;

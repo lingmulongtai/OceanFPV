@@ -53,7 +53,7 @@ for(const depth of [0,.25,1,3,5,7.5,8,9,60])for(const view of [[0,1,0],[.8,.6,0]
  radianceUniforms.hasSeabedMap.value=photographed;radianceUniforms.probeDepth.value=depth;radianceUniforms.probeBottom.value.set(-depth,...gradient);radianceUniforms.probeView.value.copy(v);radianceUniforms.probeSun.value.copy(sun);
  renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
  const path=depth*(1/Math.sqrt(1-(1-v.y*v.y)/1.333**2)+1/Math.sqrt(1-(1-sun.y*sun.y)/1.333**2)),confidence=1-smooth(4,8,depth);
- const deep=[.006,.045,.082],albedo=photographed?bedColour:[.12,.13,.12],light=.18+.42*Math.max(0,normal.dot(sun));
+ const deep=[.00933,.04665,.05598],albedo=photographed?bedColour:[.12,.13,.12],light=.18+.42*Math.max(0,normal.dot(sun));
  const expected=deep.map((scatter,i)=>{const transmission=Math.exp(-[.45,.12,.07][i]*path)*confidence;return scatter*(1-transmission)+albedo[i]*light*transmission;});
  const error=Math.max(...expected.map((value,i)=>Math.abs(value-pixel[i])));radianceMaximum=Math.max(radianceMaximum,error);radianceSamples.push({depth,view,sunlight,gradient,photographed,actual:[...pixel],expected,error});
 }
@@ -63,7 +63,7 @@ radianceUniforms.hasSeabedMap.value=false;radianceUniforms.probeView.value.set(0
 for(const depth of [0,2,5,8,60])for(const light of [[0,0,0],[.2,.6,1.4],[1,1,1],[2,2,2]]) {
  radianceUniforms.probeDepth.value=depth;radianceUniforms.probeBottom.value.set(-depth,0,0);radianceUniforms.probeIrradiance.value.set(...light);
  renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
- const expected=[.006,.045,.082].map((scatter,i)=>{const transmission=Math.exp(-[.45,.12,.07][i]*2*depth)*(1-smooth(4,8,depth));return scatter*light[i]*(1-transmission)+[.12,.13,.12][i]*.6*transmission;});
+ const expected=[.00933,.04665,.05598].map((scatter,i)=>{const transmission=Math.exp(-[.45,.12,.07][i]*2*depth)*(1-smooth(4,8,depth));return scatter*light[i]*(1-transmission)+[.12,.13,.12][i]*.6*transmission;});
  const error=Math.max(...expected.map((value,i)=>Math.abs(value-pixel[i])));irradianceMaximum=Math.max(irradianceMaximum,error);irradianceSamples.push({depth,light,actual:[...pixel],expected,error});
 }
 window.__CLIFF_DEPTH_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',samples,heightError,gradientError,envelopeError,opticalSamples,opticalMaximum,radianceSamples,radianceMaximum,irradianceSamples,irradianceMaximum};
