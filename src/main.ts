@@ -45,7 +45,7 @@ async function boot() {
   const composer=new EffectComposer(renderer,renderTarget);composer.addPass(new RenderPass(world.scene,camera));
   const bloom=new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),0.035,0.35,2.4);composer.addPass(bloom);composer.addPass(new OutputPass());
   const flight=new Flight(),input=new Inputs(),race=new Race(),sound=new FlightAudio();
-  let sea:SeaState='breeze', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0,launchHeld=false;
+  let sea:SeaState='swell', selectedRace=false, playing=false, paused=false, hudVisible=true, time=0,flightTime=0,launchHeld=false;
   const departureAnchor=new T.Vector3();
   const clock=new SimulationClock();
   let lastHUD=0,lastControllerUI=0,frameCount=0,fpsTime=performance.now(),toastUntil=0;
