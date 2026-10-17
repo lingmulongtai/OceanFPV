@@ -5,8 +5,11 @@ import {IslandDepth} from '../../../src/island-depth.ts';
 import {nearshoreEnvelope} from '../../../src/nearshore.ts';
 import {sampleWaveMip,retainedWaveEnergy} from '../../../src/wave-mips.ts';
 import {SEA_BANDS} from '../../../src/sea.ts';
+import {installWaveFFT,waveFFTActive} from '../../../src/spectrum.ts';
+import {loadWaveFFT} from '../../../src/wave-fft-load.ts';
 const renderer=new T.WebGLRenderer();renderer.setSize(1,1);document.body.append(renderer.domElement);
 if(!renderer.getContext().getExtension('EXT_color_buffer_float'))throw new Error('Float target unavailable');
+if(new URLSearchParams(location.search).has('wave-fft')&&!installWaveFFT(await loadWaveFFT()))throw new Error('Optional FFT probe could not install its kernel');
 const ocean=new Ocean(new T.Vector3(0,1,0));
 // Match application startup: declare filtering before the first program upload.
 ocean.configureFiltering(!!renderer.getContext().getExtension('OES_texture_float_linear'));
@@ -111,4 +114,4 @@ for(const manual of [false,true]) {
   }
 }
 if(longWaveError>0.005||subpixelMaximum>0.000001)throw new Error('Visible long waves lost or subpixel waves retained');
-const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');window.__NEARSHORE_PROBE__={gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),points,bottomSamples,bottomError,samples,heightError,normalError,varianceError,varianceRelativeError,shadingVarianceError,contactError,mipSamples,mipError,manualMipError,longWaveError,subpixelMaximum};
+const gl=renderer.getContext(),extension=gl.getExtension('WEBGL_debug_renderer_info');window.__NEARSHORE_PROBE__={accelerated:waveFFTActive(),gpu:gl.getParameter(extension.UNMASKED_RENDERER_WEBGL),points,bottomSamples,bottomError,samples,heightError,normalError,varianceError,varianceRelativeError,shadingVarianceError,contactError,mipSamples,mipError,manualMipError,longWaveError,subpixelMaximum};
