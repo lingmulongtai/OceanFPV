@@ -28,13 +28,14 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
-  const {loading,gpu,render,forest,rocks,cliff,detailPrograms,waterPrograms,unsupportedVisible}=await page.evaluate(()=> {
+  const {loading,gpu,render,forest,rocks,cliff,detailPrograms,waterPrograms,unsupportedVisible,wakeDirections}=await page.evaluate(()=> {
     const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
     const rocks=app.world.rocks;
     const w=app.world;
     return {loading:{failures:w.surfaceFailures,note:document.querySelector('#start-note')!.textContent,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),bed:w.ocean.material.uniforms.hasSeabedMap.value&&w.ocean.material.uniforms.seabedMap.value===w.coastalRockDetail.map,tints:w.scene.children.filter((mesh:any)=>mesh.geometry?.attributes.groundCover).map((mesh:any)=>mesh.material.vertexColors)},
       detailPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('groundDetailMap')),waterPrograms:(window as any).__GROUND_PROGRAMS__.filter((program:any)=>program.names.includes('islandBathymetry')),unsupportedVisible:!!document.querySelector('#unsupported')!.getClientRects().length,
       gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',render:app.getState(),forest:w.forest?.sourceTriangles??0,cliff:w.cliff?.surface.geometry.index.count/3,
+      wakeDirections:w.ocean.material.uniforms.vesselDirections.value.map((direction:any,i:number)=>({actual:direction.toArray(),heading:(i===0?w.cruise.root:w.yacht).rotation.y})),
       rocks:{triangles:rocks?.shape.geometry.index.count/3,placements:rocks?.placements.length,instances:rocks?.group.children.reduce((sum:number,mesh:any)=>sum+mesh.count,0),reef:rocks?.placements.filter((p:any)=>Math.hypot(p.matrix.elements[12]-app.world.lighthouseReef.x,p.matrix.elements[14]-app.world.lighthouseReef.z)<50).length,
         perIsland:w.islands.map((c:any)=>rocks?.placements.filter((p:any)=>Math.abs(p.matrix.elements[12]-c.x)<c.size*1.2&&Math.abs(p.matrix.elements[14]-c.z)<c.size*1.2).length)}};
   });
@@ -45,6 +46,7 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
     expect(gpu).not.toMatch(/SwiftShader|Microsoft Basic|unavailable/i);expect(gpu).toContain('Direct3D11');
   }
   expect(unsupportedVisible).toBe(false);
+  for(const direction of wakeDirections){expect(direction.actual[0]).toBeCloseTo(Math.cos(direction.heading),8);expect(direction.actual[1]).toBeCloseTo(Math.sin(direction.heading),8);}
   expect(render.triangles).toBeGreaterThan(30000);
   expect(forest).toBeGreaterThan(1000000);
   expect(rocks.triangles).toBe(14844);expect(rocks.perIsland).toEqual([51,79,79]);expect(rocks.placements).toBe(218);expect(rocks.instances).toBe(rocks.placements);expect(rocks.reef).toBe(9);expect(cliff).toBe(943284);
@@ -604,6 +606,14 @@ test('lighting and sea settings persist across a full reload', async ({page})=> 
   await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
   expect(persisted).toEqual({light:'blue',sea:'calm'});
+});
+
+test('wake reflections follow the surface gradient on both sides and rotated headings',async({page})=> {
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto('/tests/browser/fixtures/wake-slope-probe.html');
+  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__WAKE_SLOPE_PROBE__);},{timeout:60000}).toBe(true);
+  const probe=await page.evaluate(()=>(window as any).__WAKE_SLOPE_PROBE__);console.log(`Wake slope probe: ${JSON.stringify(probe)}`);
+  expect(probe.count).toBe(4035);expect(probe.maximum).toBeLessThan(.00005);expect(probe.symmetryError).toBeLessThan(.00001);expect(probe.rotationError).toBeLessThan(.00001);expect(errors).toEqual([]);
 });
 
 test('mobile help fits the viewport and closes with the keyboard', async ({page})=> {

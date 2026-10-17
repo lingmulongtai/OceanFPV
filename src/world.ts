@@ -273,7 +273,7 @@ export class World {
       const front=this.ocean.heightAt(p.x+forward.x*half,p.z+forward.z*half),back=this.ocean.heightAt(p.x-forward.x*half,p.z-forward.z*half);
       root.position.set(p.x,h,p.z);root.rotation.set((front-back)/(half*2)*0.55,p.heading,0,'YXZ');root.updateMatrixWorld(true);
       if(kind==='cruise')this.ocean.material.uniforms.cruiseInverse.value.copy(root.matrixWorld).invert();
-      this.ocean.material.uniforms.vessels.value[i].set(p.x,h,p.z,length);this.ocean.material.uniforms.headings.value[i]=p.heading;
+      this.ocean.material.uniforms.vessels.value[i].set(p.x,h,p.z,length);this.ocean.material.uniforms.vesselDirections.value[i].set(Math.cos(p.heading),Math.sin(p.heading));
       this.ocean.material.uniforms.vesselWidths.value[i]=width;this.ocean.material.uniforms.vesselSpeeds.value[i]=p.speed;
       const trail=vesselWakeTrail(kind,time,length),bounds=new T.Box2(),padding=3*Math.sqrt(width*width+trail.at(-1)!.age*Math.max(...trail.map(point=>point.speed))*1.1);
       trail.forEach((point,j)=> {this.ocean.material.uniforms.wakePoints.value[i*WAKE_SAMPLES+j].set(point.x,point.z,point.age,point.speed);bounds.expandByPoint(new T.Vector2(point.x,point.z));});

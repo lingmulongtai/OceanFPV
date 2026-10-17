@@ -13,6 +13,7 @@ import { WaveMipmaps } from './wave-mips';
 import {type CliffSurface} from './cliff';
 import {CliffDepth,CLIFF_DEPTH_SIZE} from './cliff-depth';
 import {cruiseHullCode} from './cruise-hull';
+import {wakeSurfaceCode} from './wake-surface';
 
 function radialGeometry(quality='high') {
   const segments=quality==='ultra'?512:quality==='high'?384:192,rings=quality==='ultra'?360:quality==='high'?280:170;
@@ -116,7 +117,7 @@ export class Ocean {
     this.material=this.mesh.material as T.ShaderMaterial;this.material.lights=false;this.material.side=T.DoubleSide;
     Object.assign(this.material.uniforms,{
       mirrorSampler:{value:this.mesh.getRenderTarget().texture},eye:{value:new T.Vector3()},time:{value:0},sunDirection:{value:sun},sunColor:{value:new T.Color(0xffe7bf)},seaScale:{value:SEA_SCALE.breeze},
-      dusk:{value:0.4},foamEnabled:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:2},()=>new T.Vector4())},headings:{value:[0,0]},vesselWidths:{value:[17,4.5]},vesselSpeeds:{value:[0,0]},
+      dusk:{value:0.4},foamEnabled:{value:true},seabedMap:{value:null},hasSeabedMap:{value:false},vessels:{value:Array.from({length:2},()=>new T.Vector4())},vesselDirections:{value:Array.from({length:2},()=>new T.Vector2(1,0))},vesselWidths:{value:[17,4.5]},vesselSpeeds:{value:[0,0]},
       cruiseInverse:{value:new T.Matrix4()},
       chopScale:{value:this.simulation.horizontalScale},
       slopeVariance:{value:new T.Vector3()},
@@ -151,10 +152,11 @@ export class Ocean {
         gl_Position=projectionMatrix*viewMatrix*world;
       }`;
     this.material.fragmentShader=`${spectralCode}
+      ${wakeSurfaceCode}
       ${waterOpticsCode}
       uniform sampler2D mirrorSampler;
       uniform vec3 eye,sunDirection,sunColor;uniform float time,dusk,reflectionSize;uniform bool foamEnabled;
-      uniform vec4 vessels[2];uniform float headings[2],vesselWidths[2],vesselSpeeds[2];
+      uniform vec4 vessels[2];uniform vec2 vesselDirections[2];uniform float vesselWidths[2],vesselSpeeds[2];
       uniform mat4 cruiseInverse;
       uniform vec4 wakePoints[${2*WAKE_SAMPLES}],wakeBounds[2];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
@@ -204,9 +206,10 @@ export class Ocean {
         vec3 cruiseLocal=mat3(cruiseInverse)*(worldPosition-vessels[0].xyz);
         float cruiseWidth=cruiseHullWidthAt(cruiseLocal);
         bool hullCutout=cruiseWidth>=0.0&&abs(cruiseLocal.x)<cruiseWidth*0.98;
-        float wakeFoam=0.0,wakeWave=0.0,n=foamNoise(p*0.53+vec2(time*0.12,-time*0.09));
+        float wakeFoam=0.0,n=foamNoise(p*0.53+vec2(time*0.12,-time*0.09));
+        vec2 wakeGradient=vec2(0);
         for(int i=0;i<2;i++) {
-          vec2 rel=p-vessels[i].xz;float c=cos(headings[i]),s=sin(headings[i]);vec2 local=vec2(c*rel.x-s*rel.y,s*rel.x+c*rel.y);
+          vec2 rel=p-vessels[i].xz;float c=vesselDirections[i].x,s=vesselDirections[i].y;vec2 local=vec2(c*rel.x-s*rel.y,s*rel.x+c*rel.y);
           float length=vessels[i].w,width=vesselWidths[i],speed=vesselSpeeds[i],aft=local.y-length*0.5,bow=local.y+length*0.5;
           float u=(local.y+length*0.5)/length;
           if(i==1&&u>0.0&&u<1.0) {
@@ -218,7 +221,7 @@ export class Ocean {
           float launched=1.0-smoothstep(max(time*speed-2.0,0.0),max(time*speed,0.01),safeAft);
           float trail=step(0.0,aft)*exp(-safeAft/80.0)*smoothstep(0.5,3.0,speed)*launched,kelvin=abs(local.x)-width-safeAft*0.354,crest=exp(-kelvin*kelvin/(3.0+safeAft*0.1));
           wakeFoam+=trail*crest*0.72*smoothstep(0.18,0.75,n);
-          wakeWave+=trail*crest*sin(kelvin*1.7-aft*0.14-time*1.8)*0.35;
+          wakeGradient+=wakeSlope(local,aft,width,speed,time,vesselDirections[i]);
           if(all(greaterThanEqual(p,wakeBounds[i].xy))&&all(lessThanEqual(p,wakeBounds[i].zw))) {
             float historical=0.0;
             for(int j=0;j<${WAKE_SAMPLES-1};j++) {
@@ -234,7 +237,7 @@ export class Ocean {
           float edge=exp(-pow((abs(local.x)-width)/1.8,2.0))*(1.0-smoothstep(length*0.44,length*0.53,abs(local.y))),bowFoam=exp(-bow*bow/40.0-local.x*local.x/(width*width));
           wakeFoam+=(edge*0.22+bowFoam*0.75)*smoothstep(0.2,0.65,n)*smoothstep(0.2,3.0,speed);
         }
-        normal=normalize(normal+vec3(wakeWave*0.12,0.0,wakeWave*0.16));
+        normal=normalize(vec3(normal.x-wakeGradient.x*normal.y,normal.y,normal.z-wakeGradient.y*normal.y));
         float nv=max(dot(normal,view),0.015),fresnel=0.0204+0.9796*pow(1.0-nv,5.0);
         float distortion=0.012+0.16/max(distanceToEye,2.0);
         vec2 reflectionUV=mirrorUV+normal.xz*distortion;
