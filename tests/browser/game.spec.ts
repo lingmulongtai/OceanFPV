@@ -398,6 +398,23 @@ test('cruise hull surfaces have matching flight contacts and clear surrounding a
   expect(samples).toHaveLength(32);for(const sample of samples){expect(sample.contact).toContain('船体');expect(sample.clear).toBeNull();if(sample.z>=80&&sample.z<=120)expect(sample.width).toBeGreaterThan(15);}
 });
 
+test('supported mooring fittings stop fast crossings on the moving cruise ship',async({page})=> {
+  await ready(page);
+  const result=await page.evaluate(()=>{
+    const a=(window as any).__OCEANFPV__,w=a.world,V=a.flight.position.constructor,samples=[];
+    for(const time of [0,39,900]){
+      w.ocean.advance(time,'breeze');w.advanceVessels(time);
+      for(const x of [-5,5])for(const [y,z]of [[11.23,-113],[9.85,116]]){
+        const at=(dx:number,dy=0)=>w.cruise.root.localToWorld(new V(x+dx,y+dy,z)),from=at(-1),to=at(1);
+        samples.push({time,post:w.collision(at(0),time,'breeze'),air:w.collision(at(0,.8),time,'breeze'),from:w.collision(from,time,'breeze'),to:w.collision(to,time,'breeze'),forward:w.collision(to,time,'breeze',from),reverse:w.collision(from,time,'breeze',to)});
+      }
+    }
+    return samples;
+  });
+  expect(result).toHaveLength(12);
+  for(const sample of result){expect(sample.post).toContain('係船設備');expect(sample.air).toBeNull();expect(sample.from).toBeNull();expect(sample.to).toBeNull();expect(sample.forward).toContain('係船設備');expect(sample.reverse).toContain('係船設備');}
+});
+
 test('aft lounge windows reveal real room depth and retain closed flight contacts',async({page})=> {
   await ready(page);
   const result=await page.evaluate(async()=>{

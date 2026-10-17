@@ -313,6 +313,7 @@ export class World {
     if(this.cruise.terraceContains(passenger))return '客船のテラスに接触しました';
     if(this.cruise.guardContacts(passenger,this.cruise.root.worldToLocal(previous.clone())))return '客船の手すりに接触しました';
     if(this.cruise.cabanaContacts(passenger,this.cruise.root.worldToLocal(previous.clone())))return '客船のプール甲板の設備に接触しました';
+    if(this.cruise.mooringContacts(passenger,this.cruise.root.worldToLocal(previous.clone())))return '客船の係船設備に接触しました';
     const pool=this.cruise.poolContact(passenger,this.cruise.root.worldToLocal(previous.clone()));
     if(pool)return pool==='water'?'プールの水面に接触しました':'客船のプールに接触しました';
     for(const island of this.islands) {
