@@ -42,6 +42,36 @@ async function recordGroundPrograms(page:Page) {
   });
 }
 
+async function verifyTreeBounds(page:Page) {
+  const result=await page.evaluate(async()=> {
+    const a=(window as any).__OCEANFPV__,w=a.world,f=w.forest,T=await import('/node_modules/three/build/three.module.js' as string);
+    const matrix=new T.Matrix4(),sphere=new T.Sphere(),camera=new T.PerspectiveCamera(65,1.5,.1,5000),frustum=new T.Frustum(),violations:string[]=[];let cases=0,time=10;
+    const keys=(values:any[])=>values.map(m=>m.elements.map(Math.fround).join(',')).sort();
+    try {
+      for(const quality of ['ultra','balanced','high','ultra'])for(const position of [f.points[0].position,f.points.at(-1).position,new T.Vector3(100000,100000,100000)]) {
+        f.update(position,time++,quality,w.light);f.group.updateMatrixWorld(true);
+        const limit=quality==='ultra'?8:quality==='high'?4:1,selected=f.points.map((p:any)=>({p,d:p.position.distanceToSquared(position)})).filter((p:any)=>p.d<110*110).sort((a:any,b:any)=>a.d-b.d).slice(0,limit).map((p:any)=>p.p.matrix);
+        const primitives=new Map<string,any[]>();
+        for(const mesh of f.near) {
+          if(!primitives.has(mesh.geometry.uuid))primitives.set(mesh.geometry.uuid,[]);
+          if(mesh.visible!==(mesh.count>0)||mesh.count>1||!mesh.frustumCulled||!mesh.castShadow||!mesh.receiveShadow)violations.push('visibility or camera culling');
+          if(!mesh.count)continue;
+          mesh.getMatrixAt(0,matrix);primitives.get(mesh.geometry.uuid)!.push(matrix.clone());mesh.geometry.computeBoundingSphere();sphere.copy(mesh.geometry.boundingSphere).applyMatrix4(matrix);
+          if(sphere.center.distanceTo(mesh.boundingSphere.center)+sphere.radius>mesh.boundingSphere.radius+1e-4)violations.push('stale bounds');
+          for(const offset of [new T.Vector3(30,5,40),new T.Vector3(-30,-5,-40),new T.Vector3(0,100,0)]) {
+            camera.position.copy(sphere.center).add(offset);camera.lookAt(sphere.center);camera.updateMatrixWorld();frustum.setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
+            if(!frustum.intersectsObject(mesh))violations.push('visible tree rejected');
+          }
+        }
+        for(const actual of primitives.values())if(JSON.stringify(keys(actual))!==JSON.stringify(keys(selected)))violations.push('selected tree coverage');
+        if(f.sprites.count+selected.length!==f.points.length)violations.push('sprite coverage');cases++;
+      }
+    } finally {f.update(a.camera.position,a.getState().time,w.quality,w.light);}
+    return{cases,violations};
+  });
+  expect(result).toEqual({cases:12,violations:[]});
+}
+
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
   const atlasResponses:number[]=[];page.on('response',response=>{if(response.url().endsWith('.rgba'))atlasResponses.push(response.status());});
   await recordGroundPrograms(page);const detailRequests:string[]=[];page.on('request',request=>{if(/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.test(request.url()))detailRequests.push(request.url());});
@@ -79,6 +109,7 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(detailRequests.length).toBe(3+recovered.length);expect(new Set(detailRequests).size).toBe(3);
   for(const url of new Set(detailRequests)){const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(url)![1];expect(detailRequests.filter(request=>request===url).length).toBe(1+recovered.filter((failure:any)=>failure.map===map).length);}
   console.log(`Ground production samplers: ${JSON.stringify(detailPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit})))}`);
+  await verifyTreeBounds(page);
   expect(errors).toEqual([]);
 });
 

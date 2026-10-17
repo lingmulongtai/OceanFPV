@@ -70,7 +70,11 @@ export class CoastalForest {
     this.spriteMaterial.customProgramCacheKey=()=> 'coastal-tree-atlas-coverage';
     const plane=new T.PlaneGeometry(1,1);this.frame=new T.InstancedBufferAttribute(new Float32Array(this.points.length),1);plane.setAttribute('treeFrame',this.frame);
     this.sprites=new T.InstancedMesh(plane,this.spriteMaterial,this.points.length);this.sprites.frustumCulled=false;this.group.add(this.sprites);
-    for(const template of templates) {const mesh=new T.InstancedMesh(template.geometry,template.material,8);mesh.count=0;mesh.visible=false;mesh.castShadow=mesh.receiveShadow=true;mesh.frustumCulled=false;this.near.push(mesh);this.group.add(mesh);}
+    // Separate bounds let each main, reflection and shadow camera reject hidden trees.
+    for(const template of templates)for(let i=0;i<8;i++) {
+      const mesh=new T.InstancedMesh(template.geometry,template.material,1);mesh.count=0;mesh.visible=false;mesh.castShadow=mesh.receiveShadow=true;
+      this.near.push(mesh);this.group.add(mesh);
+    }
   }
   /** Reuse the scene's HDR environment and lights when its preset changes. */
   relight(renderer:T.WebGLRenderer,lighting:T.Scene) {
@@ -96,7 +100,11 @@ export class CoastalForest {
     const limit=quality==='ultra'?8:quality==='high'?4:1;
     const closest=this.points.map((p,i)=>({i,d:p.position.distanceToSquared(camera)})).filter(p=>p.d<110*110).sort((a,b)=>a.d-b.d).slice(0,limit);
     const detailed=new Set(closest.map(p=>p.i));
-    this.near.forEach(mesh=>{mesh.count=closest.length;mesh.visible=closest.length>0;closest.forEach((p,i)=>mesh.setMatrixAt(i,this.points[p.i].matrix));mesh.instanceMatrix.needsUpdate=true;});
+    this.near.forEach((mesh,i)=> {
+      const point=closest[i%8];mesh.count=point?1:0;mesh.visible=!!point;
+      if(!point)return;
+      mesh.setMatrixAt(0,this.points[point.i].matrix);mesh.instanceMatrix.needsUpdate=true;mesh.computeBoundingSphere();
+    });
     let spriteCount=0;
     for(let i=0;i<this.points.length;i++) {
       if(detailed.has(i))continue;const point=this.points[i],dx=camera.x-point.position.x,dz=camera.z-point.position.z,angle=Math.atan2(dx,dz);
