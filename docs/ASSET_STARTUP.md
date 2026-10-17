@@ -45,3 +45,34 @@ timeouts on all machines. Full remote CI and public acceptance remain pending.
 
 Production bundle: `index-BtWJ6QPw.js`, SHA-256
 `03c0bef5e61f6237921ac05685f5bc2ed9004dcf35b626385bd40d544787c3da`.
+
+## Remaining timeout and process diagnostics
+
+PR #72 at `88ddebe` still failed its CI peer retry. The second rock-normal
+attempt reached 25,000 ms, with 7,966 ms attributed to the body phase: about
+17 seconds passed before that phase began. Local three-context sequences with
+and without Playwright recording both recovered all images. These passes do
+not identify the CI cause or establish that the ordering fix is sufficient.
+
+The first three startup cases now record Chromium process timing in CI, or
+locally when `OCEANFPV_STARTUP_TRACE=1`. The browser CDP endpoint includes the
+separate NetworkService; a page endpoint filters the process set, as shown in
+[Chromium's tracing handler](https://github.com/chromium/chromium/blob/main/content/browser/devtools/protocol/tracing_handler.cc).
+Network/socket events, renderer tasks and GPU events share the trace clock.
+Resource timing and long tasks provide an additional page-side reference.
+
+Each test attaches `startup-process-timing.json.gz`,
+`startup-resource-timing.json` and `startup-trace-completion.json` to the normal
+test output. Collection uses a 32 MiB buffer that stops recording when full;
+check `dataLossOccurred` before assuming the timeline is complete. The new
+collector does not copy response bodies or screenshots. Recording can affect
+scheduling, so it is diagnostic evidence rather than a startup benchmark.
+
+Normal startup and single/peer retries passed on Direct3D11 and SwiftShader.
+After correcting the endpoint, the peer case passed again on both; both final
+traces contain NetworkService, renderer and GPU, with no reported data loss.
+The strict build and all 179 unit tests pass. Image deadlines, retry policy,
+material coherence and full-detail assertions remain unchanged. This test-only
+addition retains `index-C28xksFz.js`, SHA-256
+`136abcdf47048b76d934f27883c59c111f40c8bdefe2ffe7c21d1fe7985e538a`.
+The intermittent CI failure still requires a process trace from that environment.
