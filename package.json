@@ -12,7 +12,8 @@
     "bake:cabin": "node --import tsx scripts/bake-cruise-occlusion.ts",
     "check:cabin": "node --import tsx scripts/bake-cruise-occlusion.ts --check",
     "import:islet": "node --import tsx scripts/import-measured-islet.ts",
-    "import:northeast": "node --import tsx scripts/import-hornoya.ts"
+    "import:northeast": "node --import tsx scripts/import-hornoya.ts",
+    "import:northwest": "node --import tsx scripts/import-trenyken.ts"
   },
   "dependencies": {
     "three": "0.186.1",
