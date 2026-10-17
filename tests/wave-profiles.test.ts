@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SpectralSea,type WaveBandScales} from '../src/spectrum';
 import {nearshoreEnvelope} from '../src/nearshore';
+import {SEA_BANDS,SEA_SCALE} from '../src/sea';
 
 test('uniform band profiles retain scalar fields, compression and contact heights exactly',()=>{
   const scalar=new SpectralSea(),bands=new SpectralSea();
@@ -11,6 +12,21 @@ test('uniform band profiles retain scalar fields, compression and contact height
     for(let i=0;i<3;i++)assert.deepEqual(bands.cascades[i].displacement,scalar.cascades[i].displacement);
     for(const [x,z]of [[-713.4,39.7],[150.23,-411.9],[10000,10000]])assert.equal(bands.heightAt(x,z,[gain,gain,gain]),scalar.heightAt(x,z,gain));
   }
+});
+
+test('swell keeps large-wave height while steady local wind foam remains intermittent',()=>{
+  assert.deepEqual(SEA_BANDS.calm,[SEA_SCALE.calm,SEA_SCALE.calm,SEA_SCALE.calm]);
+  assert.deepEqual(SEA_BANDS.breeze,[SEA_SCALE.breeze,SEA_SCALE.breeze,SEA_SCALE.breeze]);
+  assert.deepEqual(SEA_BANDS.swell,[SEA_SCALE.swell,SEA_SCALE.swell,SEA_SCALE.breeze]);
+  const swell=new SpectralSea(),uniform=new SpectralSea();swell.update(0,SEA_BANDS.swell);uniform.update(0,SEA_SCALE.swell);
+  let time=0;for(let tick=0;tick<960;tick++){time+=1/120;swell.update(time,SEA_BANDS.swell);uniform.update(time,SEA_SCALE.swell);}
+  for(let band=0;band<3;band++){
+    const a=swell.cascades[band],b=uniform.cascades[band];
+    assert.deepEqual(a.tangentX,b.tangentX);assert.deepEqual(a.tangentZ,b.tangentZ);
+    for(let i=0;i<a.displacement.length;i++)if(i%4!==3)assert.equal(a.displacement[i],b.displacement[i]);
+  }
+  const mean=(sea:SpectralSea)=>sea.cascades[2].displacement.reduce((sum,value,i)=>sum+(i%4===3?value:0),0)/(128*128);
+  assert.ok(mean(uniform)>.1);assert.ok(mean(swell)<mean(uniform)*.25);
 });
 
 test('unequal band gains share one compression bound and reconstruct coastal contact heights',()=>{
