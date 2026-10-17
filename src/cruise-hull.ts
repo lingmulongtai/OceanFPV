@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {MeshBVH} from 'three-mesh-bvh';
 import {closedHullGeometry,hullDeckHeight,hullHalfWidth} from './hull';
 
 /** Broad aft shoulder, then elliptical corners tangent to the flat transom. */
@@ -21,6 +22,8 @@ export function cruiseHullSection(z:number) {
 }
 
 const cruiseSurfaceGeometry=cruiseHullGeometry(),cruiseVertices=cruiseSurfaceGeometry.attributes.position;
+cruiseSurfaceGeometry.computeBoundingBox();
+const cruiseContactTree=new MeshBVH(cruiseSurfaceGeometry,{indirect:true});
 /** Exact side-triangle intersection in the local Y/Z plane, without contact padding. */
 export function cruiseHullSurface(y:number,z:number,side:number) {
   if(z < -130||z > 130||y < -7||y > 11.12)return null;
@@ -41,21 +44,15 @@ export function cruiseHullSurface(y:number,z:number,side:number) {
   return null;
 }
 
-/** Closed hull volume at the same triangle diagonal as the six-row mesh. */
+/** The rendered closed volume, expanded by a physical distance for drone contact. */
 export function cruiseHullContains(p:T.Vector3,padding=.2) {
-  if(p.z < -130-padding||p.z > 130+padding||p.y < -7-padding)return false;
-  const u=T.MathUtils.clamp(p.z/260+.5,0,1),station=Math.min(127,Math.floor(u*128)),f=u*128-station;
-  let top0=Math.fround(hullDeckHeight(station/128,260,9)),top1=Math.fround(hullDeckHeight((station+1)/128,260,9));
-  if(p.y>T.MathUtils.lerp(top0,top1,f)+padding)return false;
-  const lower=p.y<Math.fround(-3.36),low=lower?-7:Math.fround(-3.36),upperScale=lower?.94:1,lowerScale=lower?.48:.94;
-  if(lower)top0=top1=Math.fround(-3.36);
-  const y=T.MathUtils.clamp(p.y,low,T.MathUtils.lerp(top0,top1,f)),w0=cruiseHullHalfWidth(station/128),w1=cruiseHullHalfWidth((station+1)/128),a=Math.fround(w0*upperScale),b=Math.fround(w1*upperScale),c=Math.fround(w0*lowerScale),d=Math.fround(w1*lowerScale);
-  let width:number;
-  if(p.x<0&&y<=top0-(top0-low)*f){const t=(y-low)/(top0-low);width=c*(1-t-f)+d*f+a*t;}
-  else if(p.x<0){const t=((1-f)*top0+f*top1-y)/(top1-low);width=a*(1-f)+d*t+b*(f-t);}
-  else if(y>=low+(top1-low)*f){const t=(y-low-f*(top1-low))/(top0-low);width=a*t+b*f+c*(1-t-f);}
-  else {const t=(y-low)/(top1-low);width=c*(1-f)+b*t+d*(f-t);}
-  return Math.abs(p.x)<=width+padding;
+  const {min,max}=cruiseSurfaceGeometry.boundingBox!;
+  if(p.x<min.x-padding||p.x>max.x+padding||p.y<min.y-padding||p.y>max.y+padding||p.z<min.z-padding||p.z>max.z+padding)return false;
+  const surface=cruiseHullSurface(p.y,p.z,p.x<0?-1:1);
+  if(surface&&Math.abs(p.x)<=surface.width)return true;
+  if(padding<=0)return false;
+  const nearest=cruiseContactTree.closestPointToPoint(p,undefined,0,padding);
+  return nearest!==null&&nearest.distance<=padding;
 }
 
 // Evaluate the same side-triangle bands at the displaced fragment's local height.

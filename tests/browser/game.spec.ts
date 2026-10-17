@@ -158,7 +158,7 @@ test('cruise aft hull surfaces have matching flight contacts and clear surroundi
     const a=(window as any).__OCEANFPV__,w=a.world,T=await import('/node_modules/three/build/three.module.js' as string),hull=w.cruise.root.children.find((mesh:any)=>mesh.material===w.cruise.paint[1]),samples=[];
     for(const side of [-1,1])for(const z of [80,100,110,120,125,129])for(const y of [4.2,7.6]) {
       const origin=w.cruise.root.localToWorld(new T.Vector3(side*30,y,z)),direction=new T.Vector3(-side,0,0).transformDirection(w.cruise.root.matrixWorld),hit=new T.Raycaster(origin,direction).intersectObject(hull)[0];if(!hit)throw new Error('Missing aft hull');
-      const outside=hit.point.clone().addScaledVector(direction,-.3);samples.push({z,y,width:Math.abs(w.cruise.root.worldToLocal(hit.point.clone()).x),contact:w.collision(hit.point,a.getState().time,'breeze'),clear:w.collision(outside,a.getState().time,'breeze')});
+      const outward=hit.face!.normal.clone().transformDirection(hull.matrixWorld),outside=hit.point.clone().addScaledVector(outward,.3);samples.push({z,y,width:Math.abs(w.cruise.root.worldToLocal(hit.point.clone()).x),contact:w.collision(hit.point,a.getState().time,'breeze'),clear:w.collision(outside,a.getState().time,'breeze')});
     }
     return samples;
   });

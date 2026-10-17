@@ -13,11 +13,31 @@ test('closed cruise contact follows actual side triangles and leaves outside air
   const geometry=cruiseHullGeometry(),material=new T.MeshBasicMaterial(),mesh=new T.Mesh(geometry,material);mesh.updateMatrixWorld(true);
   for(const side of [-1,1])for(const z of [-129,-110,-50,0,80,100,110,120,125,129])for(const y of [-6,-3,1,4.2,7.6]) {
     const hit=new T.Raycaster(new T.Vector3(side*30,y,z),new T.Vector3(-side,0,0)).intersectObject(mesh)[0];assert.ok(hit);
-    assert.equal(cruiseHullContains(hit.point),true);assert.equal(cruiseHullContains(hit.point.clone().add(new T.Vector3(side*.25,0,0))),false);
+    assert.equal(cruiseHullContains(hit.point),true);assert.equal(cruiseHullContains(hit.point.clone().addScaledVector(hit.face!.normal,.25)),false);
     assert.equal(cruiseHullContains(hit.point.clone().add(new T.Vector3(-side*.01,0,0)),0),true);
   }
   for(const z of [-130,0,130]){const {top}=cruiseHullSection(z);assert.equal(cruiseHullContains(new T.Vector3(0,top,z)),true);assert.equal(cruiseHullContains(new T.Vector3(0,top+.25,z)),false);}
   assert.equal(cruiseHullContains(new T.Vector3(0,5,130.3)),false);geometry.dispose();material.dispose();
+});
+
+test('cruise contact padding follows mesh distance around sloped sides, caps and corners',()=> {
+  const geometry=cruiseHullGeometry(),positions=geometry.attributes.position,index=geometry.index!,triangle=new T.Triangle(),closest=new T.Vector3();
+  const samples=[new T.Vector3(0,5,-130.15),new T.Vector3(0,5,-130.25),new T.Vector3(0,5,130.15),new T.Vector3(0,5,130.25),new T.Vector3(0,-7.15,0),new T.Vector3(0,-7.25,0)];
+  for(const side of [-1,1])for(const z of [-129,-110,0,120,129])for(const y of [-6,-3,4.2,9]){
+    const surface=cruiseHullSurface(y,z,side);assert.ok(surface);
+    for(const offset of [.15,.25])samples.push(new T.Vector3(side*surface.width,y,z).addScaledVector(surface.normal,offset));
+  }
+  for(const row of [0,2,3]){
+    const vertex=new T.Vector3().fromBufferAttribute(positions,row);
+    for(const distance of [.15,.25])samples.push(vertex.clone().addScaledVector(new T.Vector3(-1,row===0?1:-1,-1).normalize(),distance));
+  }
+  for(const point of samples){
+    let distance=Infinity;
+    for(let i=0;i<index.count;i+=3){triangle.a.fromBufferAttribute(positions,index.getX(i));triangle.b.fromBufferAttribute(positions,index.getX(i+1));triangle.c.fromBufferAttribute(positions,index.getX(i+2));triangle.closestPointToPoint(point,closest);distance=Math.min(distance,point.distanceTo(closest));}
+    assert.equal(cruiseHullContains(point,0),false,`outside volume: ${point.toArray()}`);
+    assert.equal(cruiseHullContains(point),distance<=.2,`mesh distance ${distance}: ${point.toArray()}`);
+  }
+  geometry.dispose();
 });
 
 test('cruise profile keeps closed outward triangles and leaves legacy vessels unchanged',()=> {
