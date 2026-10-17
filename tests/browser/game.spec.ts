@@ -860,7 +860,8 @@ test('race registers actual ordered gate crossing and saves a completed run', as
   await expect(page.locator('#results')).toContainText('TOTAL');
   expect(await page.evaluate(()=>Number(localStorage.getItem('oceanfpv:best')))).toBeGreaterThan(0);
 });
-test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', async ({page})=> {
+test('Xbox mapping, armed flight and disconnect pause work through Gamepad API', async ({page})=> {
+  await page.setViewportSize({width:320,height:240});
   await page.addInitScript(()=> {
     (window as any).__pad={id:'Xbox test controller',index:0,connected:true,mapping:'standard',axes:[0,0,0,0],buttons:Array.from({length:17},()=>({pressed:false,value:0,touched:false})),timestamp:0};
     Object.defineProperty(navigator,'getGamepads',{value:()=>[(window as any).__pad]});
@@ -882,11 +883,32 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
   const climbed=await page.evaluate(async()=> {
     const app=(window as any).__OCEANFPV__;
     document.querySelector<HTMLButtonElement>('#start')!.click();
-    const initial=app.flight.position.y,start=performance.now();
+    // As in the radio fixture, compile the first FPV draw while normally paused.
+    document.querySelector<HTMLButtonElement>('#home')!.click();
+    for(let i=0;i<2;i++)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+    document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!.finish();
+    const warmup={paused:app.getState().paused,time:app.getState().time,flightTime:app.getState().flightTime,cameraError:app.camera.position.distanceTo(app.flight.position)};
+    if(!warmup.paused||warmup.time!==0||warmup.flightTime!==0||warmup.cameraError>1e-6)throw new Error(`Xbox first draw drifted: ${JSON.stringify(warmup)}`);
+    console.log(`Xbox first flight draw: ${JSON.stringify(warmup)}`);
+    document.querySelector<HTMLButtonElement>('#resume')!.click();
+    if(app.getState().paused)throw new Error('Xbox neutral-stick resume was rejected');
+    const initial=app.flight.position.y,start=performance.now();let safetyRecoveries=0;
     (window as any).__pad.axes=[0,-1,0,-0.5];
-    do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+    do {
+      await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+      const state=app.getState();if(app.flight.crashed)throw new Error('Xbox takeoff crashed');
+      if(state.paused) {
+        const reason={title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};
+        if(!reason.open||reason.title!=='描画が長時間止まりました'||!reason.copy!.includes('処理の遅れが10秒を超えました')||++safetyRecoveries>2)throw new Error(`Unexpected Xbox pause: ${JSON.stringify({...state,...reason,safetyRecoveries})}`);
+        console.log(`Xbox safety-pause recovery ${safetyRecoveries}: ${JSON.stringify(state)}`);
+        document.querySelector<HTMLButtonElement>('#resume')!.click();
+        if(document.activeElement instanceof HTMLElement)document.activeElement.blur();
+        if(app.getState().paused)throw new Error('Xbox render-pause resume was rejected');
+      }
+    }
     while((app.flight.position.y<=7||app.flight.position.y<=initial+1)&&performance.now()-start<20000);
-    const climbed={initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks(),seaScale:app.world.ocean.material.uniforms.seaScale.value};
+    const climbed={initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks(),seaScale:app.world.ocean.material.uniforms.seaScale.value,warmup,paused:app.getState().paused,crashed:app.flight.crashed,waited:performance.now()-start,safetyRecoveries};
+    if(climbed.paused||climbed.crashed)throw new Error(`Xbox flight was not active before disconnect: ${JSON.stringify(climbed)}`);
     // Disconnect before another protocol round trip can queue a slow sea draw
     // and make the independent render-stall safeguard win this input test.
     (window as any).__pad=null;const disconnectedAt=performance.now();
@@ -895,6 +917,7 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
     return {...climbed,disconnect:{title:document.querySelector('#pause-title')!.textContent,waited:performance.now()-disconnectedAt}};
   });
   expect(climbed.altitude).toBeGreaterThan(7);expect(climbed.altitude-climbed.initial).toBeGreaterThan(1);
+  expect(climbed.warmup).toEqual({paused:true,time:0,flightTime:0,cameraError:0});expect(climbed.paused).toBe(false);expect(climbed.crashed).toBe(false);expect(climbed.waited).toBeLessThanOrEqual(20000);expect(climbed.safetyRecoveries).toBeLessThanOrEqual(2);
   expect(climbed.armed).toBe(true);expect(climbed.source).toBe('xbox');
   expect(climbed.seaScale).toBe(2.15);
   expect(climbed.sticks.throttle).toBe(1);expect(climbed.sticks.pitch).toBeLessThan(0);expect(climbed.sticks.absoluteThrottle).toBe(false);
