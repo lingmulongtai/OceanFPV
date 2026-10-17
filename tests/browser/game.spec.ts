@@ -42,6 +42,36 @@ async function recordGroundPrograms(page:Page) {
   });
 }
 
+async function verifyTreeBounds(page:Page) {
+  const result=await page.evaluate(async()=> {
+    const a=(window as any).__OCEANFPV__,w=a.world,f=w.forest,T=await import('/node_modules/three/build/three.module.js' as string);
+    const matrix=new T.Matrix4(),sphere=new T.Sphere(),camera=new T.PerspectiveCamera(65,1.5,.1,5000),frustum=new T.Frustum(),violations:string[]=[];let cases=0,time=10;
+    const keys=(values:any[])=>values.map(m=>m.elements.map(Math.fround).join(',')).sort();
+    try {
+      for(const quality of ['ultra','balanced','high','ultra'])for(const position of [f.points[0].position,f.points.at(-1).position,new T.Vector3(100000,100000,100000)]) {
+        f.update(position,time++,quality,w.light);f.group.updateMatrixWorld(true);
+        const limit=quality==='ultra'?8:quality==='high'?4:1,selected=f.points.map((p:any)=>({p,d:p.position.distanceToSquared(position)})).filter((p:any)=>p.d<110*110).sort((a:any,b:any)=>a.d-b.d).slice(0,limit).map((p:any)=>p.p.matrix);
+        const primitives=new Map<string,any[]>();
+        for(const mesh of f.near) {
+          if(!primitives.has(mesh.geometry.uuid))primitives.set(mesh.geometry.uuid,[]);
+          if(mesh.visible!==(mesh.count>0)||mesh.count>1||!mesh.frustumCulled||!mesh.castShadow||!mesh.receiveShadow)violations.push('visibility or camera culling');
+          if(!mesh.count)continue;
+          mesh.getMatrixAt(0,matrix);primitives.get(mesh.geometry.uuid)!.push(matrix.clone());mesh.geometry.computeBoundingSphere();sphere.copy(mesh.geometry.boundingSphere).applyMatrix4(matrix);
+          if(sphere.center.distanceTo(mesh.boundingSphere.center)+sphere.radius>mesh.boundingSphere.radius+1e-4)violations.push('stale bounds');
+          for(const offset of [new T.Vector3(30,5,40),new T.Vector3(-30,-5,-40),new T.Vector3(0,100,0)]) {
+            camera.position.copy(sphere.center).add(offset);camera.lookAt(sphere.center);camera.updateMatrixWorld();frustum.setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
+            if(!frustum.intersectsObject(mesh))violations.push('visible tree rejected');
+          }
+        }
+        for(const actual of primitives.values())if(JSON.stringify(keys(actual))!==JSON.stringify(keys(selected)))violations.push('selected tree coverage');
+        if(f.sprites.count+selected.length!==f.points.length)violations.push('sprite coverage');cases++;
+      }
+    } finally {f.update(a.camera.position,a.getState().time,w.quality,w.light);}
+    return{cases,violations};
+  });
+  expect(result).toEqual({cases:12,violations:[]});
+}
+
 test('renders the sea, detailed scene, and usable menu without WebGL errors', async ({page})=> {
   const atlasResponses:number[]=[];page.on('response',response=>{if(response.url().endsWith('.rgba'))atlasResponses.push(response.status());});
   await recordGroundPrograms(page);const detailRequests:string[]=[];page.on('request',request=>{if(/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.test(request.url()))detailRequests.push(request.url());});
@@ -49,6 +79,10 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   await page.setViewportSize({width:960,height:640});
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
   await ready(page);
+  // Keep this static scene audit from queuing an animated software-GPU frame
+  // between every assertion and the lazy Three.js imports used for tree bounds.
+  await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#open-help')!.click());
+  await expect(page.locator('#help-dialog')).toBeVisible();
   await verifyCabinVisibility(page);expect(atlasResponses).toEqual([200]);
   const {loading,gpu,render,forest,rocks,cliff,detailPrograms,waterPrograms,unsupportedVisible,wakeDirections}=await page.evaluate(()=> {
     const app=(window as any).__OCEANFPV__,gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,ext=gl.getExtension('WEBGL_debug_renderer_info');
@@ -79,6 +113,8 @@ test('renders the sea, detailed scene, and usable menu without WebGL errors', as
   expect(detailRequests.length).toBe(3+recovered.length);expect(new Set(detailRequests).size).toBe(3);
   for(const url of new Set(detailRequests)){const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(url)![1];expect(detailRequests.filter(request=>request===url).length).toBe(1+recovered.filter((failure:any)=>failure.map===map).length);}
   console.log(`Ground production samplers: ${JSON.stringify(detailPrograms.map((program:any)=>({samplers:program.samplers,limit:program.limit})))}`);
+  await verifyTreeBounds(page);
+  const closed=await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#help-dialog [data-close="help-dialog"]')!.click();return !document.querySelector<HTMLDialogElement>('#help-dialog')!.open;});expect(closed).toBe(true);
   expect(errors).toEqual([]);
 });
 
@@ -108,6 +144,14 @@ for(const peer of [false,true])test(peer?'expired rock response and peer both re
   expect(requests.filter(map=>map==='rough').length).toBe(2);
   if(peer){expect(recovered.filter((failure:any)=>failure.map==='nor_gl')).toEqual([expect.objectContaining({phase:'body',message:'Controlled response deadline',attempt:1,recovered:true})]);expect(requests.filter(map=>map==='diff').length).toBe(1);}
   expect(errors).toEqual([]);
+});
+
+test('photographic sky downloads before material readiness but defers decoding',async({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto('/tests/browser/fixtures/sky-decode-probe.html');
+  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SKY_DECODE_PROBE__);},{timeout:60000}).toBe(true);
+  const probe=await page.evaluate(()=>(window as any).__SKY_DECODE_PROBE__);console.log(`Sky decode ordering: ${JSON.stringify(probe)}`);
+  expect(probe.before).toEqual({parseCalls:0,settled:false});expect(probe.parseCalls).toBe(1);expect(probe.settled).toBe(true);expect([probe.width,probe.height,probe.bytes]).toEqual([4096,2048,67108864]);expect(errors).toEqual([]);
 });
 
 test('one missing rock detail map retains coherent macro terrain and grass rendering',async({page})=> {
@@ -756,6 +800,23 @@ test('sun glint uses its microfacet angle while sky reflection keeps the surface
  const probe=await page.evaluate(()=>{const p=(window as any).__SUN_GLINT_PROBE__;return {gpu:p.gpu,count:p.count,sunError:p.sunError,skyError:p.skyError,normalSpread:p.normalSpread,peakError:p.peakError,changed:p.changed};});
  console.log(`Sun glint probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
  expect(probe.count).toBe(54);expect(probe.changed).toBeGreaterThan(6);expect(probe.sunError).toBeLessThan(.000002);expect(probe.skyError).toBeLessThan(.000002);expect(probe.normalSpread).toBeLessThan(.000002);expect(probe.peakError).toBeLessThan(.000002);expect(errors).toEqual([]);
+});
+
+for(const manualFallback of[false,true])test(`whitecap coverage integrates the coupled wave and noise footprint${manualFallback?' without float-linear support':''}`,async({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  if(manualFallback)await page.addInitScript(()=>{
+    WebGL2RenderingContext.prototype.getExtension=new Proxy(WebGL2RenderingContext.prototype.getExtension,{
+      apply(target,context,args){return args[0]==='OES_texture_float_linear'?null:Reflect.apply(target,context,args);}
+    });
+  });
+  await page.goto('/tests/browser/fixtures/whitecap-footprint-probe.html');
+  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__WHITECAP_FOOTPRINT_PROBE__);},{timeout:60000}).toBe(true);
+  const probe=await page.evaluate(()=>{const{samples,...summary}=(window as any).__WHITECAP_FOOTPRINT_PROBE__;return summary;});
+  console.log(`Whitecap footprint probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
+  expect(typeof probe.floatLinearSupported).toBe('boolean');if(manualFallback)expect(probe.floatLinearSupported).toBe(false);
+  expect(probe.count).toBe(probe.floatLinearSupported?576:288);expect(probe.quadratureError).toBeLessThan(.0001);expect(probe.denseError).toBeLessThan(.001);expect(probe.manualError).toBeLessThan(.001);
+  expect(probe.unfilteredError).toBe(0);expect(probe.qualityStates).toEqual({balanced:false,high:true,ultra:true});expect(probe.oracleConvergence).toBeLessThan(.001);expect(probe.inactive).toBeGreaterThan(0);
+  expect(probe.filteredRMSE).toBeLessThan(probe.originalRMSE*.35);expect(probe.derivativesBeforeDiscard).toBe(true);expect(probe.error).toBe(0);expect(errors).toEqual([]);
 });
 
 test('sea foam follows scene lighting and the rotated diffuse environment',async({page})=>{
