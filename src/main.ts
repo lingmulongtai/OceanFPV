@@ -385,7 +385,7 @@ async function boot() {
       world.scene.backgroundRotation.y=time*0.00015;
       world.scene.environmentRotation.y=world.scene.backgroundRotation.y;
       if(world.light==='day'&&photoSky) {world.sun.copy(photoSky.sun).applyAxisAngle(new T.Vector3(0,1,0),world.scene.backgroundRotation.y);world.sunlight.position.copy(world.sun).multiplyScalar(280).add(world.sunlight.target.position);}
-      world.ocean.setFoamLighting(world.scene,world.sunlight,world.hemisphere);
+      world.ocean.setLighting(world.scene,world.sunlight,world.hemisphere);
       renderer.info.reset();composer.render();frameCount++;
       sceneDirty=false;wasFrozen=frozen;renderedFov=camera.fov;renderedPosition.copy(camera.position);renderedOrientation.copy(camera.quaternion);renderedOcean=world.ocean.material;renderedOceanVersion=world.ocean.material.version;
     }
@@ -405,7 +405,7 @@ async function boot() {
   world.advanceVessels(0);
   camera.position.copy(world.cruise.root.localToWorld(new T.Vector3(180,68,-245)));camera.lookAt(world.cruise.root.localToWorld(new T.Vector3(0,20,-5)));
   world.update(0,camera.position,sea,flight.position,flight.orientation,0);
-  world.ocean.setFoamLighting(world.scene,world.sunlight,world.hemisphere);
+  world.ocean.setLighting(world.scene,world.sunlight,world.hemisphere);
   composer.render();
   $<HTMLButtonElement>('start').disabled=false;
   $('start-note').textContent=missingSurfaces.length?'一部の素材を読み込めませんでした。標準素材でプレイできます。':innerWidth<600?'PCのキーボードまたは接続コントローラーでプレイできます。':'インストール不要 · キーボード / Xbox / USB送信機';

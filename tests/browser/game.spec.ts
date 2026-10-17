@@ -734,6 +734,17 @@ test('wake reflections follow the surface gradient on both sides and rotated hea
   expect(probe.count).toBe(4035);expect(probe.maximum).toBeLessThan(.00005);expect(probe.symmetryError).toBeLessThan(.00001);expect(probe.rotationError).toBeLessThan(.00001);expect(errors).toEqual([]);
 });
 
+test('ocean sky reflection follows the normal and preserves premultiplied object coverage',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+ await page.goto('/tests/browser/fixtures/sky-reflection-probe.html');
+ await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SKY_REFLECTION_PROBE__);},{timeout:60000}).toBe(true);
+ const probe=await page.evaluate(()=>{const {samples,...summary}=(window as any).__SKY_REFLECTION_PROBE__;return summary;});
+ console.log(`Sky reflection probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
+ expect(probe.count).toBe(165);expect(probe.maximum).toBeLessThan(.000003);expect(probe.alphaError).toBeLessThan(.000001);expect(probe.compositeError).toBeLessThan(.000001);
+ // Three.js transmission alpha omits the Fresnel term: bound its known neutral-glass approximation.
+ expect(probe.glassObjects[3]).toBeGreaterThan(0);expect(probe.glassObjects[3]).toBeLessThan(1);expect(probe.glassError).toBeLessThan(.03);expect(probe.nestedStateError).toBe(0);expect(probe.nestedRestored).toBe(true);expect(errors).toEqual([]);
+});
+
 test('sun glint uses its microfacet angle while sky reflection keeps the surface angle',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
  await page.goto('/tests/browser/fixtures/sun-glint-probe.html');

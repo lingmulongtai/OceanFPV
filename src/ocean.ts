@@ -14,6 +14,7 @@ import {type CliffSurface} from './cliff';
 import {CliffDepth,CLIFF_DEPTH_SIZE} from './cliff-depth';
 import {cruiseHullCode} from './cruise-hull';
 import {wakeSurfaceCode} from './wake-surface';
+import {captureReflectedGeometry,oceanReflectionCode} from './ocean-reflection';
 
 function radialGeometry(quality='high') {
   const segments=quality==='ultra'?512:quality==='high'?384:192,rings=quality==='ultra'?360:quality==='high'?280:170;
@@ -110,7 +111,9 @@ export class Ocean {
     const reflect=this.mesh.onBeforeRender.bind(this.mesh);
     this.mesh.onBeforeRender=(renderer,scene,camera,...args)=> {
       if(this.reflectedView===camera&&!this.mesh.forceUpdate)return;
-      reflect(renderer,scene,camera,...args);this.reflectedView=camera;
+      if(this.material.uniforms.hasFoamEnvironment.value)captureReflectedGeometry(renderer,scene,()=>reflect(renderer,scene,camera,...args));
+      else reflect(renderer,scene,camera,...args);
+      this.reflectedView=camera;
     };
     this.mesh.getRenderTarget().texture.generateMipmaps=true;this.mesh.getRenderTarget().texture.minFilter=T.LinearMipmapLinearFilter;
     this.mesh.rotation.x=-Math.PI/2;this.mesh.frustumCulled=false;
@@ -128,6 +131,7 @@ export class Ocean {
       wakePoints:{value:Array.from({length:2*WAKE_SAMPLES},()=>new T.Vector4())},wakeBounds:{value:Array.from({length:2},()=>new T.Vector4())},
       reflectionSize:{value:1536},
       foamEnvironment:{value:null},hasFoamEnvironment:{value:false},foamEnvironmentIntensity:{value:0},foamEnvironmentRotation:{value:new T.Matrix3()},
+      skyReflectionIntensity:{value:1},skyReflectionRotation:{value:new T.Matrix3()},
       foamSunIrradiance:{value:new T.Color(0)},foamSkyIrradiance:{value:new T.Color(0)},foamGroundIrradiance:{value:new T.Color(0)},foamHemisphereDirection:{value:new T.Vector3(0,1,0)},
       islands:{value:BATHY_COASTS.map(c=>new T.Vector4(c.x,c.z,c.size,c.sizeZ??c.size))},
     });
@@ -158,6 +162,7 @@ export class Ocean {
       ${wakeSurfaceCode}
       ${waterOpticsCode}
       uniform sampler2D mirrorSampler;
+      uniform float skyReflectionIntensity;uniform mat3 skyReflectionRotation;
       uniform sampler2D foamEnvironment;uniform bool hasFoamEnvironment;uniform float foamEnvironmentIntensity;
       uniform mat3 foamEnvironmentRotation;uniform vec3 foamSunIrradiance,foamSkyIrradiance,foamGroundIrradiance,foamHemisphereDirection;
       #include <cube_uv_reflection_fragment>
@@ -166,6 +171,7 @@ export class Ocean {
       uniform mat4 cruiseInverse;
       uniform vec4 wakePoints[${2*WAKE_SAMPLES}],wakeBounds[2];
       varying vec3 worldPosition;varying vec2 waveCoordinate;varying vec4 mirrorCoord;
+      ${oceanReflectionCode}
       vec3 foamIllumination(vec3 normal) {
         vec3 irradiance=mix(foamGroundIrradiance,foamSkyIrradiance,0.5*dot(normal,foamHemisphereDirection)+0.5);
         irradiance+=foamSunIrradiance*max(dot(normal,sunDirection),0.0);
@@ -256,7 +262,7 @@ export class Ocean {
         float mirrorFootprint=max(length(dFdx(reflectionUV)),length(dFdy(reflectionUV)))*reflectionSize;
         float reflectionLOD=log2(max(1.0,max(mirrorFootprint,sqrt(unresolvedVariance)*distortion*reflectionSize)));
         if(hullCutout)discard;
-        vec3 reflected=textureLod(mirrorSampler,clamp(reflectionUV,0.001,0.999),reflectionLOD).rgb;float shoreFoam=0.0;
+        vec3 reflected=seaReflection(view,normal,unresolvedVariance,normalFootprint,reflectionUV,reflectionLOD);float shoreFoam=0.0;
         // Optical depth follows the displaced fragment and includes the detailed cliff shelf.
         vec3 bottom=coastalBottom(p);float bottomHeight=bottom.x,depth=max(worldPosition.y-bottomHeight,0.0);
         float wash=0.65+0.35*sin(time*1.2+bottomHeight*1.8);
@@ -281,13 +287,15 @@ export class Ocean {
       }`;
   }
   private foamRotation=new T.Matrix4();
-  setFoamLighting(scene:T.Scene,sunlight:T.DirectionalLight,hemisphere:T.HemisphereLight) {
+  setLighting(scene:T.Scene,sunlight:T.DirectionalLight,hemisphere:T.HemisphereLight) {
     const u=this.material.uniforms,environment=scene.environment;
     const height=(environment?.image as {height?:number}|undefined)?.height;
     const valid=environment?.mapping===T.CubeUVReflectionMapping&&height!==undefined&&height>=64;
     u.hasFoamEnvironment.value=valid;u.foamEnvironment.value=valid?environment:null;
     u.foamEnvironmentIntensity.value=scene.environmentIntensity;
     u.foamEnvironmentRotation.value.setFromMatrix4(this.foamRotation.makeRotationFromEuler(scene.environmentRotation)).transpose();
+    u.skyReflectionIntensity.value=scene.backgroundIntensity;
+    u.skyReflectionRotation.value.setFromMatrix4(this.foamRotation.makeRotationFromEuler(scene.backgroundRotation)).transpose();
     u.foamSunIrradiance.value.copy(sunlight.color).multiplyScalar(sunlight.intensity);
     u.foamSkyIrradiance.value.copy(hemisphere.color).multiplyScalar(hemisphere.intensity);
     u.foamGroundIrradiance.value.copy(hemisphere.groundColor).multiplyScalar(hemisphere.intensity);
