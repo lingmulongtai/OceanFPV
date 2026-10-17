@@ -87,8 +87,10 @@ for(const peer of [false,true])test(peer?'expired rock response and peer both re
   const requests:string[]=[],errors:string[]=[];page.on('request',request=>{const map=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(request.url());if(map)requests.push(map[1]);});page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(({peer})=> {
     const timeout=AbortSignal.timeout,controllers=new WeakMap<AbortSignal,AbortController>(),fetch=window.fetch.bind(window),selected=new Set<string>();
+    const cacheRequests:{map:string;cache:RequestCache}[]=[];(window as any).__SURFACE_FETCHES__=cacheRequests;
     AbortSignal.timeout=ms=>{const deadline=timeout.call(AbortSignal,ms),controller=new AbortController();deadline.addEventListener('abort',()=>controller.abort(deadline.reason),{once:true});controllers.set(controller.signal,controller);return controller.signal;};
     window.fetch=async(input,init)=> {
+      const texture=/seaside_rock_(diff|nor_gl|rough)_4k.jpg$/.exec(String(input))?.[1];if(texture)cacheRequests.push({map:texture,cache:init?.cache??'default'});
       const map=/seaside_rock_(rough|nor_gl)_4k.jpg$/.exec(String(input))?.[1],expire=!!map&&!selected.has(map)&&(map==='rough'||peer);if(expire)selected.add(map!);
       const response=await fetch(input,init);
       if(expire){const controller=controllers.get(init!.signal as AbortSignal);if(!controller)throw new Error('Missing controlled texture deadline');controller.abort(new DOMException('Controlled response deadline','TimeoutError'));}
@@ -96,14 +98,14 @@ for(const peer of [false,true])test(peer?'expired rock response and peer both re
     };
   },{peer});
   await ready(page);
-  const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {failures:w.surfaceFailures,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),note:document.querySelector('#start-note')!.textContent};});
+  const state=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {failures:w.surfaceFailures,detail:[w.coastalRockDetail.map,w.coastalRockDetail.normalMap,w.coastalRockDetail.roughnessMap].map(Boolean),note:document.querySelector('#start-note')!.textContent,cacheRequests:(window as any).__SURFACE_FETCHES__ as {map:string;cache:RequestCache}[]};});
   console.log(`Recovered surface delivery: ${JSON.stringify({state,requests})}`);
   expect(state.detail).toEqual([true,true,true]);expect(state.note).not.toContain('標準素材');
   const recovered=state.failures.filter((failure:any)=>failure.asset==='seaside_rock'&&failure.recovered),controlled=recovered.filter((failure:any)=>failure.map==='rough');
   expect(controlled).toEqual([expect.objectContaining({asset:'seaside_rock',map:'rough',phase:'body',message:'Controlled response deadline',aborted:true,abortReason:'TimeoutError',attempt:1,recovered:true})]);
   expect(state.failures.filter((failure:any)=>!failure.recovered)).toEqual([]);expect(['fetch','body']).toContain(controlled[0].phase);
   expect(requests.length).toBe(3+recovered.length);
-  for(const map of ['diff','nor_gl','rough']){const failures=recovered.filter((failure:any)=>failure.map===map);expect(failures.length).toBeLessThanOrEqual(1);expect(requests.filter(request=>request===map).length).toBe(1+failures.length);}
+  for(const map of ['diff','nor_gl','rough']){const failures=recovered.filter((failure:any)=>failure.map===map);expect(failures.length).toBeLessThanOrEqual(1);expect(requests.filter(request=>request===map).length).toBe(1+failures.length);expect(state.cacheRequests.filter(request=>request.map===map).map(request=>request.cache)).toEqual(failures.length?['default','reload']:['default']);}
   expect(requests.filter(map=>map==='rough').length).toBe(2);
   if(peer){expect(recovered.filter((failure:any)=>failure.map==='nor_gl')).toEqual([expect.objectContaining({phase:'body',message:'Controlled response deadline',attempt:1,recovered:true})]);expect(requests.filter(map=>map==='diff').length).toBe(1);}
   expect(errors).toEqual([]);
