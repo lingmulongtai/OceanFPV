@@ -22,7 +22,7 @@ test('swell keeps large-wave height while steady local wind foam remains intermi
   let time=0;for(let tick=0;tick<960;tick++){time+=1/120;swell.update(time,SEA_BANDS.swell);uniform.update(time,SEA_SCALE.swell);}
   for(let band=0;band<3;band++){
     const a=swell.cascades[band],b=uniform.cascades[band];
-    assert.deepEqual(a.tangentX,b.tangentX);assert.deepEqual(a.tangentZ,b.tangentZ);
+    for(let i=0;i<a.tangentX.length;i++)if(i%4!==3)assert.equal(a.tangentX[i],b.tangentX[i]);assert.deepEqual(a.tangentZ,b.tangentZ);
     for(let i=0;i<a.displacement.length;i++)if(i%4!==3)assert.equal(a.displacement[i],b.displacement[i]);
   }
   const mean=(sea:SpectralSea)=>sea.cascades[2].displacement.reduce((sum,value,i)=>sum+(i%4===3?value:0),0)/(128*128);

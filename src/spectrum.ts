@@ -119,7 +119,10 @@ export class WaveCascade {
       const hx=heightScale*this.tangentX[i+1],hz=heightScale*this.tangentZ[i+1],jacobian=xx*zz-xz*zx;
       const slope=Math.hypot(hz*zx-zz*hx,xz*hx-hz*xx)/Math.max(jacobian,0.2);
       const breaking=Math.max((0.55-jacobian)*3.6,(slope-0.6)*2.2);
-      this.displacement[i+3]=Math.max(reset?0:this.displacement[i+3]*Math.exp(-dt*0.85),Math.max(0,Math.min(1,breaking)));
+      const injection=Math.max(0,Math.min(1,breaking));
+      this.displacement[i+3]=Math.max(reset?0:this.displacement[i+3]*Math.exp(-dt*0.85),injection);
+      // Spare tangent alpha carries fresh foam; XYZ remains the geometric derivative.
+      this.tangentX[i+3]=Math.max(reset?0:this.tangentX[i+3]*Math.exp(-dt*1.6),injection);
     }
   }
   sample(x:number,z:number,channel=1,data=this.displacement) {
