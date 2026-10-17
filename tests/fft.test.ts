@@ -2,6 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {inverseFFT} from '../src/spectrum';
 
+test('inverse FFT retains legacy mutation order for overlapping channel views',()=> {
+  // These are the old in-place write results, not two independent IDFT channels.
+  for(const [shift,expected]of [[0,[1.6875,-0.1875,-0.375,0]],[1,[0.75,0.25,-0.625,-0.375,4]]] as const) {
+    const storage=Float64Array.from({length:4+shift},(_,i)=>i+1);
+    inverseFFT(storage.subarray(0,4),storage.subarray(shift),2);
+    assert.deepEqual([...storage],expected);
+  }
+});
+
 test('inverse FFT plans match independent complex IDFT and Parseval across reused sizes',()=> {
   for(const n of [8,2,16,4,8,2]) {
     const count=n*n,sourceReal=Float64Array.from({length:count},(_,i)=>Math.sin(i*1.73)+Math.cos(i*0.41)),sourceImaginary=Float64Array.from({length:count},(_,i)=>Math.cos(i*2.19)-Math.sin(i*0.37));
