@@ -103,26 +103,29 @@ export class World {
     this.surfaceGroups.push({asset:'aerial_grass_rock',resolution:'2k',materials:[this.groundCover],colour:true});
     this.scene.fog = new T.FogExp2(0x9facac,0.00019);
   }
-  async loadSurfaceTextures(renderer:T.WebGLRenderer,lightingReady:Promise<unknown>) {
+  async loadSurfaceTextures(renderer:T.WebGLRenderer,prepareLighting:(texturesReady:Promise<unknown>)=>Promise<unknown>) {
     const textures=loadSurfaces(this.surfaceGroups,renderer.capabilities.getMaxAnisotropy(),this.surfaceFailures);
-    const cliff=await CoastalCliff.load(renderer,this.shorelineWash);
-    if(cliff&&this.headlandMesh){this.installCliff(cliff,this.headlandMesh);}else cliff?.dispose();
-    const [missing,forest,rocks]=await Promise.all([textures,CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady),CoastalRocks.load(renderer,this.rockPatches,this.shorelineWash)]);
-    if(!this.cliff)missing.push('coastal cliff');
-    // Keep the painted terrain colours only when photographs are unavailable.
-    this.groundMaterials.forEach(material=>{if(material.map)material.vertexColors=false;material.needsUpdate=true;});
-    this.ocean.material.uniforms.seabedMap.value=this.coastalRockDetail.map;
-    this.ocean.material.uniforms.hasSeabedMap.value=!!this.coastalRockDetail.map;
-    if(forest) {
-      this.forest=forest;this.scene.add(forest.group);
-      for(const site of this.treeSites)for(const mesh of site.fallback){this.scene.remove(mesh);mesh.geometry.dispose();(mesh.material as T.Material).dispose();}
-    }else missing.push('coastal tree');
-    if(rocks) {
-      this.rocks=rocks;this.scene.add(rocks.group);
-      for(const patch of this.rockPatches)if(patch.fallback){this.scene.remove(patch.fallback);patch.fallback.geometry.dispose();}
-      this.fallbackRockObstacles=[];
-    }else missing.push('coastal rock');
-    return missing;
+    const lightingReady=Promise.all([prepareLighting(textures),textures]);
+    const assetsReady=CoastalCliff.load(renderer,this.shorelineWash).then(async cliff=> {
+      if(cliff&&this.headlandMesh){this.installCliff(cliff,this.headlandMesh);}else cliff?.dispose();
+      const [missing,forest,rocks]=await Promise.all([textures,CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady),CoastalRocks.load(renderer,this.rockPatches,this.shorelineWash)]);
+      if(!this.cliff)missing.push('coastal cliff');
+      // Keep the painted terrain colours only when photographs are unavailable.
+      this.groundMaterials.forEach(material=>{if(material.map)material.vertexColors=false;material.needsUpdate=true;});
+      this.ocean.material.uniforms.seabedMap.value=this.coastalRockDetail.map;
+      this.ocean.material.uniforms.hasSeabedMap.value=!!this.coastalRockDetail.map;
+      if(forest) {
+        this.forest=forest;this.scene.add(forest.group);
+        for(const site of this.treeSites)for(const mesh of site.fallback){this.scene.remove(mesh);mesh.geometry.dispose();(mesh.material as T.Material).dispose();}
+      }else missing.push('coastal tree');
+      if(rocks) {
+        this.rocks=rocks;this.scene.add(rocks.group);
+        for(const patch of this.rockPatches)if(patch.fallback){this.scene.remove(patch.fallback);patch.fallback.geometry.dispose();}
+        this.fallbackRockObstacles=[];
+      }else missing.push('coastal rock');
+      return missing;
+    });
+    const [missing]=await Promise.all([assetsReady,lightingReady]);return missing;
   }
   private installCliff(cliff:CoastalCliff,mesh:T.Mesh<T.BufferGeometry,T.MeshStandardMaterial>) {
     const ground=new CliffGround(mesh.geometry,COASTS[0]);

@@ -395,12 +395,11 @@ async function boot() {
     if(now-fpsTime>1000) {$('fps').textContent=frozen?'PAUSED':`${Math.round(frameCount*1000/(now-fpsTime))} FPS`;frameCount=0;fpsTime=now;}
   }
   world.updateGates(false,0);
-  const lightingReady=loadPhotographicSky().then(loadedSky=> {
+  const missingSurfaces=await world.loadSurfaceTextures(renderer,texturesReady=>loadPhotographicSky(texturesReady).then(loadedSky=> {
     if(!supported)return;
     photoSky=loadedSky;
     if(photoSky){const generator=new T.PMREMGenerator(renderer);photoEnvironment=generator.fromEquirectangular(photoSky.texture);generator.dispose();applySettings();}
-  });
-  const [missingSurfaces]=await Promise.all([world.loadSurfaceTextures(renderer,lightingReady),lightingReady]);
+  }));
   if(!supported)return;
   world.advanceVessels(0);
   camera.position.copy(world.cruise.root.localToWorld(new T.Vector3(180,68,-245)));camera.lookAt(world.cruise.root.localToWorld(new T.Vector3(0,20,-5)));

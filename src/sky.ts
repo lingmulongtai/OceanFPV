@@ -2,11 +2,15 @@ import * as T from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
 /** A self-hosted CC0 captured sky; optional, with procedural atmosphere fallback. */
-export async function loadPhotographicSky() {
+export async function loadPhotographicSky(decodeReady:Promise<unknown>=Promise.resolve()) {
   try {
     const url=new URL(`${import.meta.env.BASE_URL}textures/kloofendal_48d_partly_cloudy_puresky_4k.hdr`,document.baseURI);
     const response=await fetch(url,{signal:AbortSignal.timeout(25000)});if(!response.ok)return null;
-    const parsed=new HDRLoader().parse(await response.arrayBuffer());
+    const buffer=await response.arrayBuffer();
+    // Keep the network transfer parallel without blocking other texture deadlines
+    // with HDR conversion and the subsequent lighting bake.
+    await decodeReady;
+    const parsed=new HDRLoader().parse(buffer);
     const {data,width,height}=parsed;
     const samples:number[]=[];let brightest=0,sunX=0,sunY=0;
     for(let y=0;y<height/2;y+=3)for(let x=0;x<width;x+=3) {

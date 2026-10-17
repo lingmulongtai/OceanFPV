@@ -146,6 +146,14 @@ for(const peer of [false,true])test(peer?'expired rock response and peer both re
   expect(errors).toEqual([]);
 });
 
+test('photographic sky downloads before material readiness but defers decoding',async({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto('/tests/browser/fixtures/sky-decode-probe.html');
+  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SKY_DECODE_PROBE__);},{timeout:60000}).toBe(true);
+  const probe=await page.evaluate(()=>(window as any).__SKY_DECODE_PROBE__);console.log(`Sky decode ordering: ${JSON.stringify(probe)}`);
+  expect(probe.before).toEqual({parseCalls:0,settled:false});expect(probe.parseCalls).toBe(1);expect(probe.settled).toBe(true);expect([probe.width,probe.height,probe.bytes]).toEqual([4096,2048,67108864]);expect(errors).toEqual([]);
+});
+
 test('one missing rock detail map retains coherent macro terrain and grass rendering',async({page})=> {
   await recordGroundPrograms(page);const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/seaside_rock_nor_gl_4k.jpg',route=>route.abort());await ready(page);
