@@ -142,5 +142,16 @@
     "md5": "5799b2bdb5f515e848b49cc6944b236e",
     "asset": "seaside_rock",
     "license": "CC0-1.0"
+  },
+  {
+    "bytes": 17385661,
+    "sha256": "1bebd7cbbfb5c48a642f03d93bffbabb2c42d0b109061f37a72259d1cbdb3053",
+    "file": "kloppenheim_06_puresky_4k.hdr",
+    "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/4k/kloppenheim_06_puresky_4k.hdr",
+    "md5": "63e9826c43b973f8b6ecb07cb6a89227",
+    "asset": "kloppenheim_06_puresky",
+    "license": "CC0-1.0",
+    "downloadedAt": "2026-10-17T14:11:07.851Z",
+    "authors": {"Greg Zaal": "Original", "Jarod Guest": "Sky edits"}
   }
 ]
