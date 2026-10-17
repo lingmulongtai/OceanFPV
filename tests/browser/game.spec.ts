@@ -304,8 +304,8 @@ test('cruise departure and lighting remain valid far along the straight route',a
 });
 
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
-  // Measured CI software startup alone took 198 s; retain time for real input and reset.
-  test.setTimeout(420000);
+  // CI startup reached 278 s and the complete scenario 428 s; keep the 60 s flight-phase deadlines.
+  test.setTimeout(600000);
   // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
   await page.setViewportSize({width:320,height:240});
   await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());
@@ -322,16 +322,53 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
     return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused};
   });
   expect(waiting.worldTime).toBeGreaterThan(9);expect(waiting.error).toBeLessThan(1e-6);expect(waiting.flightTime).toBeCloseTo(waiting.worldTime,6);expect(waiting.crashed).toBe(false);expect(waiting.armed).toBe(true);expect(waiting.paused).toBe(false);
+  let safetyRecoveries=0;
+  async function recoverRenderPause() {
+    const state=await page.evaluate(()=>{const a=(window as any).__OCEANFPV__;return {...a.getState(),crashed:a.flight.crashed,title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};});
+    expect(state.crashed).toBe(false);if(!state.paused)return;
+    expect(state.open).toBe(true);expect(state.title).toBe('描画が長時間止まりました');expect(state.copy).toContain('処理の遅れが10秒を超えました');
+    expect(++safetyRecoveries,'bounded software-renderer safety-pause recovery').toBeLessThanOrEqual(2);
+    console.log(`Keyboard safety-pause recovery ${safetyRecoveries}: ${JSON.stringify(state)}`);
+    const paused=await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#resume')!.click();if(document.activeElement instanceof HTMLElement)document.activeElement.blur();return (window as any).__OCEANFPV__.getState().paused;});
+    expect(paused).toBe(false);
+  }
+  async function holdUntil(key:string,kind:'altitude'|'speed',threshold:number,forward:number[]=[0,0,-1]) {
+    const deadline=Date.now()+60000;
+    while(Date.now()<deadline){
+      await recoverRenderPause();await page.keyboard.down(key);
+      let result;
+      try {
+        result=await page.evaluate(async({kind,threshold,forward,budget})=>{
+          const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
+          for(;;){
+            const state=a.getState(),flight=a.flight,value=kind==='altitude'?flight.position.y:flight.velocity.x*forward[0]+flight.velocity.z*forward[2];
+            if(flight.crashed||state.paused||value>threshold)return {value,paused:state.paused,crashed:flight.crashed};
+            if(performance.now()>deadline)throw new Error(`Keyboard ${kind} did not advance: ${JSON.stringify({...state,value,threshold})}`);
+            await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
+          }
+        },{kind,threshold,forward,budget:Math.max(0,deadline-Date.now())});
+        // Keep real pitch input held until Escape reaches the browser; slow
+        // protocol replies must not insert a long neutral/coasting phase.
+        if(kind==='speed'&&!result.paused&&!result.crashed)await page.keyboard.press('Escape');
+      }finally {await page.keyboard.up(key);}
+      expect(result.crashed).toBe(false);if(result.paused)continue;
+      expect(result.value).toBeGreaterThan(threshold);return;
+    }
+    throw new Error(`Keyboard ${kind} exceeded the 60 s phase deadline`);
+  }
   const launchAltitude=waiting.altitude;
-  await page.keyboard.down('Space');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(launchAltitude+3);await page.keyboard.up('Space');
+  await holdUntil('Space','altitude',launchAltitude+3);
   const beforePitch=await page.evaluate(()=> {
     const flight=(window as any).__OCEANFPV__.flight,forward=flight.position.clone().set(0,0,-1).applyQuaternion(flight.orientation).setY(0).normalize();
     return {altitude:flight.position.y,forward:forward.toArray(),speed:flight.velocity.dot(forward)};
   });
   expect(beforePitch.altitude).toBeGreaterThan(launchAltitude+2);
-  const forwardSpeed=()=>page.evaluate((forward:number[])=> {const v=(window as any).__OCEANFPV__.flight.velocity;return v.x*forward[0]+v.z*forward[2];},beforePitch.forward);
-  await page.keyboard.down('KeyW');await expect.poll(forwardSpeed).toBeGreaterThan(Math.max(0.8,beforePitch.speed+0.8));await page.keyboard.up('KeyW');
-  await page.keyboard.press('Escape');await expect(page.locator('#pause-dialog')).toBeVisible();
+  // Reproduce the observed 11.3 s CI key-up stall and exercise normal recovery.
+  await page.evaluate(async()=>{const start=performance.now();while(performance.now()-start<10100){/* Actual main-thread stall. */}await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));});
+  await expect(page.locator('#pause-title')).toHaveText('描画が長時間止まりました');
+  await holdUntil('KeyW','speed',Math.max(0.8,beforePitch.speed+0.8),beforePitch.forward);
+  expect(safetyRecoveries).toBeGreaterThanOrEqual(1);
+  await expect(page.locator('#pause-dialog')).toBeVisible();await expect(page.locator('#pause-title')).toHaveText('フライトを一時停止');
   const paused=await page.evaluate((forward:number[])=>{const flight=(window as any).__OCEANFPV__.flight;return {position:flight.position.toArray(),speed:flight.velocity.x*forward[0]+flight.velocity.z*forward[2]};},beforePitch.forward);
   expect(paused.speed).toBeGreaterThan(.5);
   await page.waitForTimeout(300);expect(await page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.toArray())).toEqual(paused.position);
@@ -347,8 +384,10 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
 });
 test('render delays keep world and flight coupled and unsafe gaps pause without a jump',async({page})=> {
   test.setTimeout(300000);
-  await ready(page);await page.locator('#start').click();
+  await ready(page);
   const result=await page.evaluate(async()=> {
+    // Start and the controlled stall share one task, excluding slow click replies.
+    document.querySelector<HTMLButtonElement>('#start')!.click();
     const app=(window as any).__OCEANFPV__,world=app.world,flight=app.flight;
     flight.position.set(400,100,400);flight.previous.copy(flight.position);flight.velocity.set(0,0,0);
     let ticks=0,mismatches=0;const original=flight.step;
@@ -394,7 +433,8 @@ test('fixed dialog views stop GPU draws and redraw changed settings',async({page
   const help=await snapshot();expect(await snapshot()).toEqual(help);
   await page.locator('[data-close="help-dialog"]').last().click();
   const moving=await snapshot();expect(moving.time).toBeGreaterThan(help.time);expect(moving.draws).toBeGreaterThan(help.draws);
-  await page.locator('#start').click();await page.locator('#open-settings').click();
+  // Open the fixed view before a slow Start reply can trigger a render pause.
+  await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#start')!.click();document.querySelector<HTMLButtonElement>('#open-settings')!.click();});
   const stopped=await snapshot();expect(await snapshot()).toEqual(stopped);
   await page.locator('#fov').fill('65');await page.locator('#fov').dispatchEvent('input');
   const changed=await snapshot();expect(changed.time).toBe(stopped.time);expect(changed.fov).toBe(65);expect(changed.draws).toBeGreaterThan(stopped.draws);expect(await snapshot()).toEqual(changed);
@@ -549,6 +589,7 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
 });
 test('lighting and sea settings persist across a full reload', async ({page})=> {
   test.setTimeout(300000);
+  await page.setViewportSize({width:480,height:320});
   await ready(page);
   // This test covers persistence; ordinary pointer interactions are checked in
   // the scene tests. Batch DOM events to avoid animation-frame actionability
@@ -560,7 +601,7 @@ test('lighting and sea settings persist across a full reload', async ({page})=> 
     return {open:document.querySelector<HTMLDialogElement>('#settings-dialog')!.open,light:saved.light,sea:saved.sea};
   });
   expect(chosen).toEqual({open:true,light:'blue',sea:'calm'});
-  await page.keyboard.press('Escape');await expect(page.locator('#settings-dialog')).not.toBeVisible();
+  // Reload from the fixed dialog view, avoiding unrelated resumed sea draws.
   await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
   expect(persisted).toEqual({light:'blue',sea:'calm'});
@@ -645,6 +686,8 @@ test('nearshore displacement and geometric normals match CPU sampling on the GPU
   expect(probe.mipCount).toBeGreaterThanOrEqual(448);expect(probe.mipError).toBeLessThan(0.001);expect(probe.manualMipError).toBeLessThan(0.000003);expect(probe.longWaveError).toBeLessThan(0.005);expect(probe.subpixelMaximum).toBeLessThan(0.000001);
 });
 test('all passenger tenders have real surface contacts and free space around their bows',async({page})=> {
+  // The full-scene CI contact probe completed correctly at 184 s, beyond the default 180 s.
+  test.setTimeout(300000);
   await ready(page);
   const evidence=await page.evaluate(async()=> {
     const app=(window as any).__OCEANFPV__,world=app.world,T=await import('/node_modules/three/build/three.module.js' as string),model=await import('/src/tender.ts' as string),root=world.cruise.root;
