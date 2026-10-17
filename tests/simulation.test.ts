@@ -95,7 +95,7 @@ test('coastal trees root on dry rendered triangles below 35 degrees',()=> {
 test('ship names follow the curved hull at a small offset on both sides',()=> {
   const hull=cruiseHullGeometry(),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(hull,material);mesh.updateMatrixWorld();
   for(const side of [-1,1]) {
-    const name=hullNameGeometry(side),p=name.attributes.position,n=name.attributes.normal;
+    const name=hullNameGeometry(side,cruiseHullSidePose),p=name.attributes.position,n=name.attributes.normal;
     for(let i=0;i<p.count;i++) {
       const vertex=new Vector3().fromBufferAttribute(p,i),normal=new Vector3().fromBufferAttribute(n,i),hits=new Raycaster(vertex,normal.negate()).intersectObject(mesh);
       assert.ok(hits.length>0);assert.ok(hits[0].distance>0.03&&hits[0].distance<0.05);

@@ -26,10 +26,10 @@ export function upperHullSidePose(y:number,z:number,side:number,length=260,beam=
   }
   point.x*=side;normal.x*=side;return {point,normal};
 }
-export function hullNameGeometry(side:number) {
+export function hullNameGeometry(side:number,sidePose:(y:number,z:number,side:number)=>{point:T.Vector3;normal:T.Vector3}=upperHullSidePose) {
   const columns=32,positions:number[]=[],uvs:number[]=[],indices:number[]=[];
   for(let row=0;row<2;row++)for(let column=0;column<=columns;column++) {
-    const u=column/columns,pose=upperHullSidePose(5.2+(row-0.5)*2.8,-96+(u-0.5)*23,side);
+    const u=column/columns,pose=sidePose(5.2+(row-0.5)*2.8,-96+(u-0.5)*23,side);
     const p=pose.point.addScaledVector(pose.normal,0.04);positions.push(p.x,p.y,p.z);uvs.push(side>0?1-u:u,row);
   }
   for(let column=0;column<columns;column++) {

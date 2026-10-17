@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import * as T from 'three';
-import {cruiseHullContains,cruiseHullGeometry,cruiseHullHalfWidth,cruiseHullSection,cruiseHullSidePose} from '../src/cruise-hull';
+import {cruiseHullContains,cruiseHullGeometry,cruiseHullHalfWidth,cruiseHullSection,cruiseHullSidePose,cruiseHullSurface} from '../src/cruise-hull';
 import {closedHullGeometry,hullHalfWidth} from '../src/hull';
 
 test('cruise aft shoulder tapers continuously to the transom and supports its promenade',()=> {
@@ -30,11 +30,15 @@ test('cruise profile keeps closed outward triangles and leaves legacy vessels un
   model.dispose();legacy.dispose();
 });
 
-test('aft fitted fixtures and section widths agree with the rendered cruise triangles',()=> {
+test('fitted fixtures and section widths agree with the rendered cruise triangles',()=> {
   const model=cruiseHullGeometry(),material=new T.MeshBasicMaterial(),mesh=new T.Mesh(model,material);mesh.updateMatrixWorld(true);
-  for(const side of [-1,1])for(const z of [0,80,100,110,120,125,129])for(const y of [1,4.2,7.6]){
+  for(const side of [-1,1])for(const z of [-129,-125,-113,-96,-50,0,80,100,110,120,125,129])for(const y of [1,4.2,7.6]){
     const pose=cruiseHullSidePose(y,z,side),hit=new T.Raycaster(pose.point.clone().addScaledVector(pose.normal,2),pose.normal.clone().negate()).intersectObject(mesh)[0];assert.ok(hit);assert.ok(hit.point.distanceTo(pose.point)<.00002);assert.ok(pose.normal.x*side>0);
   }
   const p=model.attributes.position;for(let i=0;i<=128;i++){const section=cruiseHullSection(p.getZ(i*6));assert.ok(Math.abs(section.width-p.getX(i*6+1))<1e-12);assert.ok(Math.abs(section.top-p.getY(i*6))<1e-12);}
   model.dispose();material.dispose();
+});
+
+test('cruise surface queries reject points above, below and beyond the actual sides',()=> {
+  for(const side of [-1,1])for(const [y,z]of [[12,0],[-7.01,0],[0,-130.01],[0,130.01],[cruiseHullSection(0).top+.001,0],[9.3,-29.453125]])assert.equal(cruiseHullSurface(y,z,side),null);
 });
