@@ -23,4 +23,14 @@ vec3 seaReflection(vec3 view,vec3 normal,float variance,vec3 normalFootprint,vec
   float valid=step(0.001,coordinate.x)*step(coordinate.x,0.999)*step(0.001,coordinate.y)*step(coordinate.y,0.999);
   return sky*(1.0-clamp(planar.a,0.0,1.0)*valid)+planar.rgb*valid;
 }
+// Fade toward the visible sky along the horizon, as in web-ocean's aerial perspective.
+vec3 seaAerialPerspective(vec3 color,vec3 view,float distanceToEye,float dusk) {
+  float haze=1.0-exp(-distanceToEye*0.0001);
+  vec3 horizonColor=mix(vec3(0.45,0.62,0.72),vec3(0.62,0.45,0.32),dusk);
+  if(hasFoamEnvironment) {
+    vec3 horizon=normalize(vec3(-view.x,0.002,-view.z));
+    horizonColor=textureCubeUV(foamEnvironment,skyReflectionRotation*horizon,0.0).rgb*skyReflectionIntensity;
+  }
+  return mix(color,horizonColor,haze);
+}
 `;
