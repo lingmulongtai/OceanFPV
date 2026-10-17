@@ -433,7 +433,8 @@ test('fixed dialog views stop GPU draws and redraw changed settings',async({page
   const help=await snapshot();expect(await snapshot()).toEqual(help);
   await page.locator('[data-close="help-dialog"]').last().click();
   const moving=await snapshot();expect(moving.time).toBeGreaterThan(help.time);expect(moving.draws).toBeGreaterThan(help.draws);
-  await page.locator('#start').click();await page.locator('#open-settings').click();
+  // Open the fixed view before a slow Start reply can trigger a render pause.
+  await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#start')!.click();document.querySelector<HTMLButtonElement>('#open-settings')!.click();});
   const stopped=await snapshot();expect(await snapshot()).toEqual(stopped);
   await page.locator('#fov').fill('65');await page.locator('#fov').dispatchEvent('input');
   const changed=await snapshot();expect(changed.time).toBe(stopped.time);expect(changed.fov).toBe(65);expect(changed.draws).toBeGreaterThan(stopped.draws);expect(await snapshot()).toEqual(changed);
