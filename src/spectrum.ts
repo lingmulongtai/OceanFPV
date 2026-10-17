@@ -27,11 +27,12 @@ export function inverseFFT(real: Float64Array, imaginary: Float64Array, size: nu
       real[a]=real[b];imaginary[a]=imaginary[b];real[b]=ar;imaginary[b]=ai;
     }
     for(const {length,real:wr,imaginary:wi}of plan.stages) {
+      const half=length/2,delta=half*stride;
       for(let start=0;start<size;start+=length) {
-        for(let j=0;j<length/2;j++) {
-          const a=offset+(start+j)*stride,b=a+length/2*stride;
-          const br=real[b]*wr[j]-imaginary[b]*wi[j],bi=real[b]*wi[j]+imaginary[b]*wr[j];
-          real[b]=real[a]-br;imaginary[b]=imaginary[a]-bi;real[a]+=br;imaginary[a]+=bi;
+        for(let j=0,a=offset+start*stride;j<half;j++,a+=stride) {
+          const b=a+delta,rb=real[b],ib=imaginary[b],wrj=wr[j],wij=wi[j],ar=real[a],ai=imaginary[a];
+          const br=rb*wrj-ib*wij,bi=rb*wij+ib*wrj;
+          real[b]=ar-br;imaginary[b]=ai-bi;real[a]=ar+br;imaginary[a]=ai+bi;
         }
       }
     }
