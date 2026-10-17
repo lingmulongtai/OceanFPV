@@ -309,12 +309,19 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
   await page.setViewportSize({width:320,height:240});
   await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());
-  await expect.poll(()=>page.evaluate(()=>(window as any).__OCEANFPV__.getState().time)).toBeGreaterThan(9);
-  const waiting=await page.evaluate(()=>{
-    const a=(window as any).__OCEANFPV__,launch=a.world.launchPose(a.getState().time);
+  // Observe elapsed time and the supported launch pose in one browser task; slow
+  // software-renderer protocol responses must not consume a separate poll budget.
+  const waiting=await page.evaluate(async()=>{
+    const a=(window as any).__OCEANFPV__,deadline=performance.now()+60000;
+    while(a.getState().time<=9) {
+      const state=a.getState();
+      if(state.paused||a.flight.crashed||performance.now()>deadline)throw new Error(`Departure did not advance: ${JSON.stringify(state)}`);
+      await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
+    }
+    const launch=a.world.launchPose(a.getState().time);
     return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused};
   });
-  expect(waiting.error).toBeLessThan(1e-6);expect(waiting.flightTime).toBeCloseTo(waiting.worldTime,6);expect(waiting.crashed).toBe(false);expect(waiting.armed).toBe(true);expect(waiting.paused).toBe(false);
+  expect(waiting.worldTime).toBeGreaterThan(9);expect(waiting.error).toBeLessThan(1e-6);expect(waiting.flightTime).toBeCloseTo(waiting.worldTime,6);expect(waiting.crashed).toBe(false);expect(waiting.armed).toBe(true);expect(waiting.paused).toBe(false);
   const launchAltitude=waiting.altitude;
   await page.keyboard.down('Space');await expect.poll(()=>page.evaluate(()=> (window as any).__OCEANFPV__.flight.position.y)).toBeGreaterThan(launchAltitude+3);await page.keyboard.up('Space');
   const beforePitch=await page.evaluate(()=> {
