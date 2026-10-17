@@ -209,7 +209,9 @@ export class World {
     }
     geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.setAttribute('groundCover',new T.Float32BufferAttribute(cover,1));geo.computeVertexNormals();
     const material=new T.MeshStandardMaterial({vertexColors:true,roughness:0.96});this.surfaceGroups.push({asset:'rocky_terrain',resolution:'2k',materials:[material],colour:true});
-    blendGroundCover(material,this.groundCover,this.coastalRockDetail);wetCoastalSurface(material,this.shorelineWash);this.groundMaterials.push(material);
+    const cliff=coast===COASTS[0]?new T.MeshStandardMaterial():undefined;
+    if(cliff)this.surfaceGroups.push({asset:'marble_cliff_05',resolution:'4k',materials:[cliff],colour:true});
+    blendGroundCover(material,this.groundCover,this.coastalRockDetail,cliff);wetCoastalSurface(material,this.shorelineWash);this.groundMaterials.push(material);
     const mesh=new T.Mesh(geo,material);mesh.position.set(x,0,z);mesh.receiveShadow=mesh.castShadow=true;this.scene.add(mesh);
     if(coast===COASTS[0])this.headlandMesh=mesh;
     const crownParts:T.BufferGeometry[]=[];
