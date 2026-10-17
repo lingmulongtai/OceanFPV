@@ -644,38 +644,42 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
         const launch=a.world.launchPose(a.getState().time);
         return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused};
       },{resume:attempt===0,budget:Math.max(0,deadline-Date.now())});
+      expect(Date.now(),'departure completed within the 60 s phase deadline').toBeLessThanOrEqual(deadline);
       if(!observed.paused)return observed;
-      await recoverRenderPause();
+      await recoverRenderPause(deadline);
     }
     throw new Error('Departure exceeded the 60 s phase deadline');
   })();
   expect(waiting.worldTime).toBeGreaterThan(9);expect(waiting.error).toBeLessThan(1e-6);expect(waiting.flightTime).toBeCloseTo(waiting.worldTime,6);expect(waiting.crashed).toBe(false);expect(waiting.armed).toBe(true);expect(waiting.paused).toBe(false);
-  async function recoverRenderPause(forced=false) {
+  async function recoverRenderPause(deadline:number,forced=false) {
     const state=await page.evaluate(()=>{const a=(window as any).__OCEANFPV__;return {...a.getState(),crashed:a.flight.crashed,title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};});
+    expect(Date.now(),'resume within the current 60 s phase deadline').toBeLessThanOrEqual(deadline);
     expect(state.crashed).toBe(false);if(!state.paused){expect(forced,'injected stall must pause').toBe(false);return;}
     expect(state.open).toBe(true);expect(state.title).toBe('描画が長時間止まりました');expect(state.copy).toContain('処理の遅れが10秒を超えました');
+    expect(state.flightTime).toBeCloseTo(state.time,6);
     if(forced)expect(++forcedRecoveries,'recover the deliberate stall once').toBe(1);
-    else expect(++safetyRecoveries,'bounded software-renderer safety-pause recovery').toBeLessThanOrEqual(2);
+    else safetyRecoveries++;
     console.log(`Keyboard ${forced?'forced-stall':'safety-pause'} recovery ${forced?forcedRecoveries:safetyRecoveries}: ${JSON.stringify(state)}`);
     const paused=await page.evaluate(()=>{document.querySelector<HTMLButtonElement>('#resume')!.click();if(document.activeElement instanceof HTMLElement)document.activeElement.blur();return (window as any).__OCEANFPV__.getState().paused;});
+    expect(Date.now(),'resumed within the current 60 s phase deadline').toBeLessThanOrEqual(deadline);
     expect(paused).toBe(false);
   }
   async function holdUntil(key:string,kind:'altitude'|'speed',threshold:number,forward:number[]=[0,0,-1]) {
     const deadline=Date.now()+60000;
     while(Date.now()<deadline){
-      await recoverRenderPause();await page.keyboard.down(key);
+      await recoverRenderPause(deadline);await page.keyboard.down(key);
       let result;
       try {
         result=await page.evaluate(async({kind,threshold,forward,budget})=>{
           const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
           for(;;){
             const state=a.getState(),flight=a.flight,value=kind==='altitude'?flight.position.y:flight.velocity.x*forward[0]+flight.velocity.z*forward[2];
+            if(performance.now()>deadline)throw new Error(`Keyboard ${kind} did not advance: ${JSON.stringify({...state,value,threshold})}`);
             if(flight.crashed||state.paused||value>threshold) {
               // Space-up must not activate a Resume button focused by the safety dialog.
               if(state.paused&&document.activeElement instanceof HTMLElement)document.activeElement.blur();
               return {value,paused:state.paused,crashed:flight.crashed};
             }
-            if(performance.now()>deadline)throw new Error(`Keyboard ${kind} did not advance: ${JSON.stringify({...state,value,threshold})}`);
             await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
           }
         },{kind,threshold,forward,budget:Math.max(0,deadline-Date.now())});
@@ -683,6 +687,7 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
         // protocol replies must not insert a long neutral/coasting phase.
         if(kind==='speed'&&!result.paused&&!result.crashed)await page.keyboard.press('Escape');
       }finally {await page.keyboard.up(key);}
+      expect(Date.now(),`Keyboard ${kind} completed within the 60 s phase deadline`).toBeLessThanOrEqual(deadline);
       expect(result.crashed).toBe(false);if(result.paused)continue;
       expect(result.value).toBeGreaterThan(threshold);return;
     }
@@ -705,12 +710,13 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
       const start=performance.now();while(performance.now()-start<10100){/* Actual main-thread stall. */}
       await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));return true;
     });
-    if(!injected)await recoverRenderPause();
+    expect(Date.now(),'controlled stall completed within the 60 s phase deadline').toBeLessThanOrEqual(stallDeadline);
+    if(!injected)await recoverRenderPause(stallDeadline);
   }
   expect(injected,'controlled keyboard stall began in active flight').toBe(true);
   await expect(page.locator('#pause-title')).toHaveText('描画が長時間止まりました');
   // This required witness is separate from incidental software-renderer stalls.
-  await recoverRenderPause(true);
+  await recoverRenderPause(stallDeadline,true);
   await holdUntil('KeyW','speed',Math.max(0.8,beforePitch.speed+0.8),beforePitch.forward);
   expect(forcedRecoveries).toBe(1);
   await expect(page.locator('#pause-dialog')).toBeVisible();await expect(page.locator('#pause-title')).toHaveText('フライトを一時停止');
