@@ -322,11 +322,14 @@ test('missing cliff leaves the original headland and its placements intact',asyn
 
 test('cliff join keeps fallback rock rendering and collision records together',async({page})=> {
   await page.route('**/models/rock_07/**',route=>route.abort());await ready(page);
-  const state=await page.evaluate(()=>{
+  const state=await page.evaluate(async()=>{
     const w=(window as any).__OCEANFPV__.world,ground=w.cliffGround,matrices=w.rockPatches.filter((p:any)=>p.fallback).map((p:any)=>p.fallback.count);
-    return {cliff:!!w.cliff,rocks:!!w.rocks,visible:matrices.reduce((n:number,count:number)=>n+count,0),contacts:w.fallbackRockObstacles.length,inside:w.fallbackRockObstacles.filter((p:any)=>ground.excludes(p.x,p.z,p.radius)).length};
+    const T=await import('/node_modules/three/build/three.module.js' as string),coast=w.islands[0],mesh=w.rockPatches[0].fallback,matrix=new T.Matrix4();mesh.geometry.computeBoundingBox();let lowShelf=0,aboveWater=0;
+    for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,matrix);const e=matrix.elements,y=ground.heightAt(e[12],e[14]);if(y>=-2&&y<=14)lowShelf++;if(mesh.geometry.boundingBox.clone().applyMatrix4(matrix).max.y>0)aboveWater++;}
+    return {cliff:!!w.cliff,rocks:!!w.rocks,visible:matrices.reduce((n:number,count:number)=>n+count,0),contacts:w.fallbackRockObstacles.length,inside:w.fallbackRockObstacles.filter((p:any)=>ground.excludes(p.x,p.z,p.radius)).length,northwest:{profile:coast.profile,count:mesh.count,lowShelf,aboveWater}};
   });
   expect(state.cliff).toBe(true);expect(state.rocks).toBe(false);expect(state.contacts).toBeLessThan(270);expect(state.visible).toBe(state.contacts);expect(state.inside).toBe(0);
+  expect(state.northwest.profile).toBe('trenyken');expect(state.northwest.count).toBeGreaterThan(60);expect(state.northwest.lowShelf).toBe(state.northwest.count);expect(state.northwest.aboveWater).toBe(state.northwest.count);
 });
 
 test('detailed cliff water height gradient and attenuation agree on the GPU',async({page})=> {
