@@ -304,8 +304,8 @@ test('cruise departure and lighting remain valid far along the straight route',a
 });
 
 test('keyboard flight climbs, pitches, pauses without drift and resets after collision', async ({page})=> {
-  // Measured CI software startup alone took 198 s; retain time for real input and reset.
-  test.setTimeout(420000);
+  // CI startup reached 278 s and the complete scenario 428 s; keep the 60 s flight-phase deadlines.
+  test.setTimeout(600000);
   // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
   await page.setViewportSize({width:320,height:240});
   await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());
