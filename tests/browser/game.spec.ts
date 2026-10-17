@@ -618,14 +618,23 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
   // Input/physics use a small buffer; separate scene and ULTRA checks cover image quality.
   await page.setViewportSize({width:320,height:240});
   await ready(page);let safetyRecoveries=0,forcedRecoveries=0;
+  // Compile the first FPV draw while normally paused, as in the radio/Xbox fixtures.
+  const warmup=await page.evaluate(async()=> {
+    const a=(window as any).__OCEANFPV__;
+    document.querySelector<HTMLButtonElement>('#start')!.click();document.querySelector<HTMLButtonElement>('#home')!.click();
+    for(let i=0;i<2;i++)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+    document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!.finish();
+    return {paused:a.getState().paused,time:a.getState().time,flightTime:a.getState().flightTime,cameraError:a.camera.position.distanceTo(a.flight.position)};
+  });
+  expect(warmup).toEqual({paused:true,time:0,flightTime:0,cameraError:0});console.log(`Keyboard first flight draw: ${JSON.stringify(warmup)}`);
   // Observe elapsed time and the supported launch pose in one browser task; slow
   // software-renderer protocol responses must not consume a separate poll budget.
   const waiting=await (async()=>{
     const deadline=Date.now()+60000;
     for(let attempt=0;Date.now()<deadline;attempt++) {
-      const observed=await page.evaluate(async({start,budget})=>{
+      const observed=await page.evaluate(async({resume,budget})=>{
         const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
-        if(start)document.querySelector<HTMLButtonElement>('#start')!.click();
+        if(resume)document.querySelector<HTMLButtonElement>('#resume')!.click();
         while(a.getState().time<=9) {
           const state=a.getState();
           if(a.flight.crashed||performance.now()>deadline)throw new Error(`Departure did not advance: ${JSON.stringify(state)}`);
@@ -634,7 +643,7 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
         }
         const launch=a.world.launchPose(a.getState().time);
         return {altitude:a.flight.position.y,error:a.flight.position.distanceTo(launch.position),worldTime:a.getState().time,flightTime:a.getState().flightTime,crashed:a.flight.crashed,armed:a.flight.armed,paused:a.getState().paused};
-      },{start:attempt===0,budget:Math.max(0,deadline-Date.now())});
+      },{resume:attempt===0,budget:Math.max(0,deadline-Date.now())});
       if(!observed.paused)return observed;
       await recoverRenderPause();
     }
