@@ -28,7 +28,7 @@ async function boot() {
   } catch {
     show('unsupported',true);$('start-note').textContent='WebGL2を利用できません。';return;
   }
-  renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=0.7;
+  renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.AgXToneMapping;renderer.toneMappingExposure=0.7;
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;
   renderer.info.autoReset=false;
   const world=new World(await loadCruiseOcclusion());
