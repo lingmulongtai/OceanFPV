@@ -889,6 +889,26 @@ test('fixed dialog views stop GPU draws and redraw changed settings',async({page
   const paused=await snapshot();expect(await snapshot()).toEqual(paused);
 });
 
+test('context loss during shader preparation ends polling and retains reload recovery',async({page})=> {
+  test.setTimeout(SCENE_LOAD_TIMEOUT+30000);await page.setViewportSize({width:320,height:240});
+  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript({path:'tests/browser/fixtures/shader-loss-startup.mjs'});
+  const started=Date.now();await page.goto('/?test=1',{timeout:SCENE_LOAD_TIMEOUT});
+  await page.waitForFunction(()=> (window as any).__SHADER_LOSS_STARTUP__.loss,{},{timeout:Math.max(1,SCENE_LOAD_TIMEOUT-(Date.now()-started))});
+  await expect(page.locator('#unsupported')).toBeVisible();await expect(page.locator('#start')).toBeDisabled();
+  await expect(page.locator('#unsupported-reason')).toContainText('GPU');await expect(page.locator('#unsupported button')).toBeFocused();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__SHADER_LOSS_STARTUP__.pending10),{timeout:2000}).toBe(0);
+  const before=await page.evaluate(()=>(window as any).__SHADER_LOSS_STARTUP__.scheduled10);
+  await page.waitForTimeout(100);
+  const result=await page.evaluate(()=>({...(window as any).__SHADER_LOSS_STARTUP__,gameReady:performance.getEntriesByName('oceanfpv:game-ready').length,lost:document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!.isContextLost(),debug:typeof(window as any).__OCEANFPV__}));
+  if(result.parallel)expect(result.held).toBeGreaterThan(0);else expect(result.held).toBe(0);
+  expect(result.loss.trusted).toBe(true);expect(result.pending10).toBe(0);expect(result.scheduled10).toBe(before);expect(before).toBeGreaterThan(0);
+  expect(result.gameReady).toBe(0);expect(result.lost).toBe(true);expect(result.debug).toBe('undefined');expect(errors).toEqual([]);
+  if(process.env.OCEANFPV_NATIVE_GPU==='1') {expect(result.gpu).toContain('Direct3D11');expect(result.gpu).not.toMatch(/SwiftShader|Microsoft Basic/);}
+  if(process.env.OCEANFPV_EXPECT_SOFTWARE==='1')expect(result.gpu).toContain('SwiftShader');
+  await test.info().attach('startup-shader-context-loss',{body:JSON.stringify(result,null,2),contentType:'application/json'});
+});
+
 test('lost WebGL context closes modal layers and leaves recovery reachable',async({page})=> {
   await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());await page.keyboard.press('Escape');
   await expect(page.locator('#pause-dialog')).toBeVisible();

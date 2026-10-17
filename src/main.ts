@@ -445,6 +445,20 @@ async function boot() {
   camera.position.copy(world.cruise.root.localToWorld(new T.Vector3(180,68,-245)));camera.lookAt(world.cruise.root.localToWorld(new T.Vector3(0,20,-5)));
   world.update(0,camera.position,sea,flight.position,flight.orientation,0);
   world.ocean.setLighting(world.scene,world.sunlight,world.hemisphere);
+  performance.mark('oceanfpv:first-view-ready');
+  performance.mark(renderer.extensions.has('KHR_parallel_shader_compile')?'oceanfpv:parallel-shaders-supported':'oceanfpv:parallel-shaders-unavailable');
+  performance.mark('oceanfpv:scene-shaders-start');
+  const previousTarget=renderer.getRenderTarget(),previousFace=renderer.getActiveCubeFace(),previousMip=renderer.getActiveMipmapLevel();
+  let shadersReady:Promise<unknown>;
+  try {
+    // RenderPass draws into the composer's linear HDR buffer. Match that target
+    // while selecting programs, then restore it before yielding to the browser.
+    renderer.setRenderTarget(composer.readBuffer);
+    shadersReady=renderer.compileAsync(world.scene,camera);
+  } finally {renderer.setRenderTarget(previousTarget,previousFace,previousMip);}
+  await shadersReady;
+  if(!supported)return;
+  performance.mark('oceanfpv:scene-shaders-ready');
   performance.mark('oceanfpv:first-draw-start');
   composer.render();
   performance.mark('oceanfpv:first-draw-submitted');
