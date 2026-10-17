@@ -184,27 +184,35 @@ test('late photographed skies keep the selected preset, deduplicate and relight 
     localStorage.setItem('oceanfpv:settings',JSON.stringify({quality:'balanced',light:'blue',sea:'breeze'}));
     const read=Response.prototype.arrayBuffer;(window as any).__HDR_BODIES__=[];
     Response.prototype.arrayBuffer=async function(){const buffer=await read.call(this);if(this.url.endsWith('.hdr'))(window as any).__HDR_BODIES__.push(this.url);return buffer;};
+    const raf=requestAnimationFrame.bind(window),frames={frozen:false};(window as any).__SKY_PRESET_FRAMES__=frames;
+    window.requestAnimationFrame=callback=>raf(time=>{if(!frames.frozen)callback(time);});
   });
   let releaseDay!:()=>void,releaseGolden!:()=>void;
   const dayGate=new Promise<void>(resolve=>releaseDay=resolve),goldenGate=new Promise<void>(resolve=>releaseGolden=resolve);
   await page.route('**/textures/*.hdr',async route=>{const response=await route.fetch();await (route.request().url().includes('kloppenheim_06')?goldenGate:dayGate);await route.fulfill({response});});
   try {
     await ready(page);expect(requests).toEqual([]);
-    await page.waitForFunction(()=>(window as any).__OCEANFPV__.getState().time>0.1);
-    await page.evaluate(()=> {
+    const timing=await page.evaluate(()=> {
+      const a=(window as any).__OCEANFPV__,initial={time:a.getState().time,hidden:document.hidden,pause:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};
       document.querySelector<HTMLButtonElement>('#open-settings')!.click();
+      // This verifies resource races and a nonzero sky rotation, independently
+      // of software-rendered frame cadence or the flight clock's 10-second cap.
+      (window as any).__SKY_PRESET_FRAMES__.frozen=true;
+      a.world.scene.backgroundRotation.set(0,.2,0);a.world.scene.environmentRotation.copy(a.world.scene.backgroundRotation);
       const select=document.querySelector<HTMLSelectElement>('#light')!;select.value='day';select.dispatchEvent(new Event('input',{bubbles:true}));
       // Other controls must share the same in-flight DAY request.
       const rate=document.querySelector<HTMLInputElement>('#rate')!;for(const value of ['650','700']){rate.value=value;rate.dispatchEvent(new Event('input',{bubbles:true}));}
       select.value='golden';select.dispatchEvent(new Event('input',{bubbles:true}));
+      return initial;
     });
+    console.log(`Sky race initial timing: ${JSON.stringify(timing)}`);
     await expect.poll(()=>requests.length,{timeout:60000}).toBe(2);
     releaseDay();
-    await page.waitForFunction(()=>(window as any).__HDR_BODIES__.some((url:string)=>url.includes('kloofendal_48d')));
+    await page.waitForFunction(()=>(window as any).__HDR_BODIES__.some((url:string)=>url.includes('kloofendal_48d')),{},{polling:50,timeout:60000});
     const stale=await page.evaluate(()=>{const w=(window as any).__OCEANFPV__.world;return {light:w.light,photo:!!w.scene.background.isDataTexture,forest:w.forest.bakeScene.environment===w.scene.environment};});
     expect(stale).toEqual({light:'golden',photo:false,forest:true});
     releaseGolden();
-    await page.waitForFunction(()=>!!(window as any).__OCEANFPV__.world.scene.background.isDataTexture,{},{timeout:60000});
+    await page.waitForFunction(()=>!!(window as any).__OCEANFPV__.world.scene.background.isDataTexture,{},{polling:50,timeout:60000});
     const completed=await page.evaluate(()=> {
       const w=(window as any).__OCEANFPV__.world,background=w.scene.background,environment=w.scene.environment;
       const direction=w.sun.clone().set(0.7769250679233294,0.1391393441638262,0.6140257989188974).applyAxisAngle(w.sun.clone().set(0,1,0),w.scene.backgroundRotation.y);
