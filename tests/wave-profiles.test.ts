@@ -22,7 +22,7 @@ test('swell keeps large-wave height while steady local wind foam remains intermi
   let time=0;for(let tick=0;tick<960;tick++){time+=1/120;swell.update(time,SEA_BANDS.swell);uniform.update(time,SEA_SCALE.swell);}
   for(let band=0;band<3;band++){
     const a=swell.cascades[band],b=uniform.cascades[band];
-    assert.deepEqual(a.tangentX,b.tangentX);assert.deepEqual(a.tangentZ,b.tangentZ);
+    for(let i=0;i<a.tangentX.length;i++)if(i%4!==3)assert.equal(a.tangentX[i],b.tangentX[i]);assert.deepEqual(a.tangentZ,b.tangentZ);
     for(let i=0;i<a.displacement.length;i++)if(i%4!==3)assert.equal(a.displacement[i],b.displacement[i]);
   }
   const mean=(sea:SpectralSea)=>sea.cascades[2].displacement.reduce((sum,value,i)=>sum+(i%4===3?value:0),0)/(128*128);
@@ -52,10 +52,10 @@ test('a short-band profile change invalidates cadence and clears foam in every c
   for(const c of sea.cascades)for(let i=3;i<c.displacement.length;i+=4)c.displacement[i]=1;
   assert.equal(sea.update(6,changed),true);assert.equal(sea.profileVersion,revision+1);
   const fresh=new SpectralSea();fresh.update(6,changed);
-  for(let i=0;i<3;i++)assert.deepEqual(sea.cascades[i].displacement,fresh.cascades[i].displacement);
+  for(let i=0;i<3;i++){assert.deepEqual(sea.cascades[i].displacement,fresh.cascades[i].displacement);assert.deepEqual(sea.cascades[i].tangentX,fresh.cascades[i].tangentX);}
   assert.equal(sea.update(6,[...changed]),false);
   changed[2]=.75;assert.deepEqual(sea.heightScales,[2.15,2.15,1.15]);assert.equal(sea.update(6,changed),true);
   const next=sea.profileVersion;assert.equal(sea.update(6.05,changed),true);assert.equal(sea.profileVersion,next);
   assert.equal(sea.update(6.04,changed),true);const rewound=new SpectralSea();rewound.update(6.04,changed);
-  for(let i=0;i<3;i++)assert.deepEqual(sea.cascades[i].displacement,rewound.cascades[i].displacement);
+  for(let i=0;i<3;i++){assert.deepEqual(sea.cascades[i].displacement,rewound.cascades[i].displacement);assert.deepEqual(sea.cascades[i].tangentX,rewound.cascades[i].tangentX);}
 });

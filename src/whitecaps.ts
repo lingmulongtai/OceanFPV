@@ -3,8 +3,15 @@ export const whitecapCode=`
 uniform bool whitecapFiltering;
 float whitecapPoint(vec2 q,vec2 p) {
   float a=fieldSample(displacement0,cascadeUV(q,433.0)).w,b=fieldSample(displacement1,cascadeUV(q,97.0)).w,c=fieldSample(displacement2,cascadeUV(q,23.3)).w;
+  float density=max(max(a,b),c);
+  float fresh=max(max(fieldSample(tangentX0,cascadeUV(q,433.0)).w,fieldSample(tangentX1,cascadeUV(q,97.0)).w),fieldSample(tangentX2,cascadeUV(q,23.3)).w);
+  // Fresh crests stay dense; older foam breaks into wind-aligned streaks (web-ocean).
+  vec2 wind=vec2(0.7648421873,0.6442176872);
+  vec2 aligned=vec2(dot(p,wind),dot(p,vec2(-wind.y,wind.x)));
+  float streak=smoothstep(0.25,0.75,foamNoise(aligned*vec2(0.035,0.11)))*1.5;
+  float breakup=mix(streak,1.0,clamp(fresh/max(density,0.00001),0.0,1.0));
   float modulation=foamNoise(p*0.53+vec2(time*0.12,-time*0.09));
-  return smoothstep(0.12,0.8,max(max(a,b),c))*smoothstep(0.42,0.76,modulation);
+  return clamp(smoothstep(0.12,0.8,density)*smoothstep(0.42,0.76,modulation)*breakup,0.0,1.0);
 }
 float whitecapFootprint(vec2 q,vec2 p,vec2 qdx,vec2 qdy,vec2 pdx,vec2 pdy) {
   float footprint=max(length(qdx),length(qdy)),point=whitecapPoint(q,p);
