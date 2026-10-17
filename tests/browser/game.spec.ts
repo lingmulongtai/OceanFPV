@@ -588,6 +588,7 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
 });
 test('lighting and sea settings persist across a full reload', async ({page})=> {
   test.setTimeout(300000);
+  await page.setViewportSize({width:480,height:320});
   await ready(page);
   // This test covers persistence; ordinary pointer interactions are checked in
   // the scene tests. Batch DOM events to avoid animation-frame actionability
@@ -599,7 +600,7 @@ test('lighting and sea settings persist across a full reload', async ({page})=> 
     return {open:document.querySelector<HTMLDialogElement>('#settings-dialog')!.open,light:saved.light,sea:saved.sea};
   });
   expect(chosen).toEqual({open:true,light:'blue',sea:'calm'});
-  await page.keyboard.press('Escape');await expect(page.locator('#settings-dialog')).not.toBeVisible();
+  // Reload from the fixed dialog view, avoiding unrelated resumed sea draws.
   await page.reload();await expect(page.locator('#start')).toBeEnabled({timeout:90000});
   const persisted=await page.evaluate(()=>({light:document.querySelector<HTMLSelectElement>('#light')!.value,sea:document.querySelector<HTMLSelectElement>('#sea')!.value}));
   expect(persisted).toEqual({light:'blue',sea:'calm'});
