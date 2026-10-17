@@ -668,7 +668,7 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
     const deadline=Date.now()+60000;
     while(Date.now()<deadline){
       await recoverRenderPause(deadline);await page.keyboard.down(key);
-      let result;
+      let result,pauseDeadline:number|undefined;
       try {
         result=await page.evaluate(async({kind,threshold,forward,budget})=>{
           const a=(window as any).__OCEANFPV__,deadline=performance.now()+budget;
@@ -683,15 +683,57 @@ test('keyboard flight climbs, pitches, pauses without drift and resets after col
             await new Promise<void>(finish=>requestAnimationFrame(()=>finish()));
           }
         },{kind,threshold,forward,budget:Math.max(0,deadline-Date.now())});
-        // Keep real pitch input held until Escape reaches the browser; slow
-        // protocol replies must not insert a long neutral/coasting phase.
-        if(kind==='speed'&&!result.paused&&!result.crashed)await page.keyboard.press('Escape');
+        // Accept progress within its original budget, before slow key cleanup.
+        expect(Date.now(),`Keyboard ${kind} completed within the 60 s phase deadline`).toBeLessThanOrEqual(deadline);
+        expect(result.crashed).toBe(false);
+        if(!result.paused) {
+          expect(result.value).toBeGreaterThan(threshold);
+          if(kind==='speed'){pauseDeadline=Date.now()+60000;await pauseWithEscape(pauseDeadline);}
+        }
       }finally {await page.keyboard.up(key);}
-      expect(Date.now(),`Keyboard ${kind} completed within the 60 s phase deadline`).toBeLessThanOrEqual(deadline);
-      expect(result.crashed).toBe(false);if(result.paused)continue;
-      expect(result.value).toBeGreaterThan(threshold);return;
+      if(kind==='altitude')expect(Date.now(),'Keyboard altitude completed within the 60 s phase deadline').toBeLessThanOrEqual(deadline);
+      if(pauseDeadline!==undefined)expect(Date.now(),'Escape and key release completed within the 60 s pause deadline').toBeLessThanOrEqual(pauseDeadline);
+      if(!result.paused)return;
     }
     throw new Error(`Keyboard ${kind} exceeded the 60 s phase deadline`);
+  }
+  async function pauseWithEscape(deadline:number) {
+    await page.evaluate(()=> {
+      const a=(window as any).__OCEANFPV__,witness={trusted:false,recovered:false,error:'',after:null as unknown};
+      (window as any).__KEYBOARD_ESCAPE_WITNESS__=witness;
+      // A safety pause can open while the native key travels to the browser.
+      // Recover it in capture, then let the real Escape handler pause normally.
+      const onEscape=(event:KeyboardEvent)=> {
+        if(event.code!=='Escape')return;
+        window.removeEventListener('keydown',onEscape,true);witness.trusted=event.isTrusted;
+        const state=a.getState(),title=document.querySelector('#pause-title')!.textContent,copy=document.querySelector('#pause-copy')!.textContent,open=document.querySelector<HTMLDialogElement>('#pause-dialog')!.open;
+        if(a.flight.crashed)witness.error='Flight crashed before Escape';
+        else if(state.paused) {
+          if(!open||title!=='描画が長時間止まりました'||!copy!.includes('処理の遅れが10秒を超えました')||Math.abs(state.time-state.flightTime)>1e-6)witness.error=`Unexpected pause before Escape: ${JSON.stringify({...state,title,copy,open})}`;
+          else {
+            document.querySelector<HTMLButtonElement>('#resume')!.click();
+            if(document.activeElement instanceof HTMLElement)document.activeElement.blur();
+            witness.recovered=true;if(a.getState().paused)witness.error='Safety resume before Escape was rejected';
+            console.log(`Keyboard Escape safety-pause recovery: ${JSON.stringify(state)}`);
+          }
+        }
+      };
+      const afterEscape=(event:KeyboardEvent)=> {
+        if(event.code!=='Escape')return;
+        window.removeEventListener('keydown',afterEscape);
+        witness.after={paused:a.getState().paused,title:document.querySelector('#pause-title')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open,crashed:a.flight.crashed};
+      };
+      window.addEventListener('keydown',onEscape,true);
+      window.addEventListener('keydown',afterEscape);
+    });
+    // Keep real pitch held until the native Escape pauses; no neutral coast.
+    await page.keyboard.press('Escape');
+    const witness=await page.evaluate(()=>{const witness=(window as any).__KEYBOARD_ESCAPE_WITNESS__;delete (window as any).__KEYBOARD_ESCAPE_WITNESS__;return witness as {trusted:boolean;recovered:boolean;error:string;after:unknown};});
+    expect(Date.now(),'Escape completed within the 60 s pause deadline').toBeLessThanOrEqual(deadline);
+    expect(witness.error).toBe('');expect(witness.trusted).toBe(true);
+    expect(witness.after).toEqual({paused:true,title:'フライトを一時停止',open:true,crashed:false});
+    if(witness.recovered)safetyRecoveries++;
+    console.log(`Keyboard native Escape pause: ${JSON.stringify(witness)}`);
   }
   const launchAltitude=waiting.altitude;
   await holdUntil('Space','altitude',launchAltitude+3);
