@@ -4,7 +4,14 @@ import { MeshBVH } from 'three-mesh-bvh';
 
 export type RoomSurface='floor'|'ceiling'|'back'|'partition'|'front'|'balcony'|'aft-floor'|'aft-ceiling'|'aft-back';
 const WIDTH=256,HEIGHT=384,TILE_X=128,TILE_Y=64,PAD=2;
+export const CABIN_ATLAS_BYTES=WIDTH*HEIGHT*4;
 const atlasUV=(chart:number,u:number,v:number)=>[(chart%2*TILE_X+PAD+T.MathUtils.clamp(u,0,1)*(TILE_X-2*PAD))/WIDTH,(Math.floor(chart/2)*TILE_Y+PAD+T.MathUtils.clamp(v,0,1)*(TILE_Y-2*PAD))/HEIGHT];
+
+/** Restore raw visibility bytes without image decoding or colour conversion. */
+export function cabinOcclusionTexture(pixels:Uint8Array) {
+  if(pixels.byteLength!==CABIN_ATLAS_BYTES)throw new Error('Invalid cabin visibility atlas length');
+  const texture=new T.DataTexture(pixels,WIDTH,HEIGHT,T.RGBAFormat);texture.channel=1;texture.magFilter=T.LinearFilter;texture.minFilter=T.LinearFilter;texture.generateMipmaps=false;texture.needsUpdate=true;return texture;
+}
 
 /** Dedicated charts leave photographed UV0, positions and normals intact. */
 export function roomOcclusionUV(geometry:T.BufferGeometry,floor=0,cabin=0,side=1,surface?:RoomSurface,end=1) {
@@ -80,5 +87,5 @@ export function bakeCabinOcclusion(blockers:T.BufferGeometry[],floor:number,cabi
       const pixel=((Math.floor(index/2)*TILE_Y+y)*WIDTH+index%2*TILE_X+x)*4;pixels[pixel]=pixels[pixel+1]=pixels[pixel+2]=value;
     }});room.dispose();
   }
-  const texture=new T.DataTexture(pixels,WIDTH,HEIGHT,T.RGBAFormat);texture.channel=1;texture.magFilter=T.LinearFilter;texture.minFilter=T.LinearFilter;texture.generateMipmaps=false;texture.needsUpdate=true;return texture;
+  return cabinOcclusionTexture(pixels);
 }
