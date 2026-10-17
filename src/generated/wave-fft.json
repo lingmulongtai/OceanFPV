@@ -1,0 +1,11 @@
+{
+  "compiler": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "target": "wasm32-unknown-unknown",
+  "source": "scripts/wave-fft.rs",
+  "sourceSHA256": "72794807e8b94ade02e0e1d142694f55bf489bcb42807df0196d237d828b71fa",
+  "byteLength": 1089,
+  "sha256": "8d1e5b764c20cb372b824c5bae96c39c302c217222d0e872ab4ac65492daa11d",
+  "memoryBytes": 2097152,
+  "imports": [],
+  "arithmetic": "Scalar f64; no SIMD, fast-math, fused operations, or precision reduction. JS supplies twiddles."
+}
