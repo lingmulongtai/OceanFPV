@@ -686,6 +686,8 @@ test('nearshore displacement and geometric normals match CPU sampling on the GPU
   expect(probe.mipCount).toBeGreaterThanOrEqual(448);expect(probe.mipError).toBeLessThan(0.001);expect(probe.manualMipError).toBeLessThan(0.000003);expect(probe.longWaveError).toBeLessThan(0.005);expect(probe.subpixelMaximum).toBeLessThan(0.000001);
 });
 test('all passenger tenders have real surface contacts and free space around their bows',async({page})=> {
+  // The full-scene CI contact probe completed correctly at 184 s, beyond the default 180 s.
+  test.setTimeout(300000);
   await ready(page);
   const evidence=await page.evaluate(async()=> {
     const app=(window as any).__OCEANFPV__,world=app.world,T=await import('/node_modules/three/build/three.module.js' as string),model=await import('/src/tender.ts' as string),root=world.cruise.root;
