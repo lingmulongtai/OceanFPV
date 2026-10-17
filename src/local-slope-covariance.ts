@@ -29,13 +29,16 @@ vec3 localSlopeCovarianceAt(vec2 p,vec3 lod) {
   vec3 tx=vec3(1,0,0)+scaleBands(ax,bx,cx,1.0),tz=vec3(0,0,1)+scaleBands(az,bz,cz,1.0);
   return deformedSlopeCovariance(covariance,mat2(tx.xz,tz.xz));
 }
-float localSpectralVarianceAt(vec2 p,vec3 lod) {
-  float fallback=spectralVarianceAt(p,lod);if(!localSlopeMomentsEnabled)return fallback;
+vec3 localSpectralCovarianceAt(vec2 p,vec3 lod) {
+  float variance=spectralVarianceAt(p,lod);vec3 fallback=vec3(variance,variance,0.0);if(!localSlopeMomentsEnabled)return fallback;
   vec3 coast=nearshoreAt(p);
   // Preserve the coastal height/gradient approximation, with a continuous return offshore.
   float blend=(1.0-smoothstep(0.0,0.03,abs(coast.x-1.0)))*(1.0-smoothstep(0.0,0.002,length(coast.yz)));
   if(blend<=0.0)return fallback;
   vec3 covariance=localSlopeCovarianceAt(p,lod);
-  return mix(fallback,0.5*(covariance.x+covariance.y)*coast.x*coast.x,blend);
+  return mix(fallback,covariance*coast.x*coast.x,blend);
+}
+float localSpectralVarianceAt(vec2 p,vec3 lod) {
+  vec3 covariance=localSpectralCovarianceAt(p,lod);return 0.5*(covariance.x+covariance.y);
 }
 `;

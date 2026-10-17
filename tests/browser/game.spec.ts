@@ -814,9 +814,20 @@ test('sun glint uses its microfacet angle while sky reflection keeps the surface
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
  await page.goto('/tests/browser/fixtures/sun-glint-probe.html');
  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SUN_GLINT_PROBE__);},{timeout:60000}).toBe(true);
- const probe=await page.evaluate(()=>{const p=(window as any).__SUN_GLINT_PROBE__;return {gpu:p.gpu,count:p.count,sunError:p.sunError,skyError:p.skyError,normalSpread:p.normalSpread,peakError:p.peakError,changed:p.changed};});
+ const probe=await page.evaluate(()=>{const p=(window as any).__SUN_GLINT_PROBE__;return {gpu:p.gpu,count:p.count,sunError:p.sunError,skyError:p.skyError,normalSpread:p.normalSpread,peakError:p.peakError,radianceError:p.radianceError,changed:p.changed};});
  console.log(`Sun glint probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
- expect(probe.count).toBe(54);expect(probe.changed).toBeGreaterThan(6);expect(probe.sunError).toBeLessThan(.000002);expect(probe.skyError).toBeLessThan(.000002);expect(probe.normalSpread).toBeLessThan(.000002);expect(probe.peakError).toBeLessThan(.000002);expect(errors).toEqual([]);
+ expect(probe.count).toBe(54);expect(probe.changed).toBeGreaterThan(6);expect(probe.sunError).toBeLessThan(.000002);expect(probe.skyError).toBeLessThan(.000002);expect(probe.normalSpread).toBeLessThan(.000002);expect(probe.peakError).toBeLessThan(.000002);expect(probe.radianceError).toBeLessThan(.000002);expect(errors).toEqual([]);
+});
+
+test('Gaussian glints normalize in the wave frame and retain anisotropic masking',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+ await page.goto('/tests/browser/fixtures/gaussian-glint-probe.html');
+ await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__GAUSSIAN_GLINT_PROBE__);},{timeout:60000}).toBe(true);
+ const p=await page.evaluate(()=>(window as any).__GAUSSIAN_GLINT_PROBE__);console.log(`Gaussian glint probe: ${JSON.stringify(p)}`);
+ if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(p.gpu).toContain('Direct3D11');
+ expect(p.covarianceCount).toBe(15);expect(p.covarianceError).toBeLessThan(.000001);expect(p.normalizationCount).toBe(15);expect(p.normalizationError).toBeLessThan(.002);
+ expect(p.invarianceCount).toBe(15);expect(p.invarianceError).toBeLessThan(.00001);expect(p.smithCount).toBe(54);expect(p.smithError).toBeLessThan(.000002);expect(p.smithModelError).toBeLessThan(.006);
+ expect(p.backfaceCount).toBe(3);expect(p.backfaceError).toBe(0);expect(p.glError).toBe(0);expect(errors).toEqual([]);
 });
 
 for(const manualFallback of[false,true])test(`whitecap coverage integrates the coupled wave and noise footprint${manualFallback?' without float-linear support':''}`,async({page})=>{

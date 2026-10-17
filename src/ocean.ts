@@ -18,6 +18,7 @@ import {captureReflectedGeometry,oceanReflectionCode} from './ocean-reflection';
 import {whitecapCode} from './whitecaps';
 import {SlopeMoments,slopeMomentSampleCode} from './slope-moments';
 import {localSlopeCovarianceCode} from './local-slope-covariance';
+import {anisotropicGlintCode} from './anisotropic-glint';
 
 function radialGeometry(quality='high') {
   const segments=quality==='ultra'?512:quality==='high'?384:192,rings=quality==='ultra'?360:quality==='high'?280:170;
@@ -171,6 +172,7 @@ export class Ocean {
     this.material.fragmentShader=`${spectralCode}
       ${slopeMomentSampleCode}
       ${localSlopeCovarianceCode}
+      ${anisotropicGlintCode}
       ${wakeSurfaceCode}
       ${waterOpticsCode}
       uniform sampler2D mirrorSampler;
@@ -226,7 +228,8 @@ export class Ocean {
         vec3 ripple=ripplesAt(p,waterFootprint);
         normal=normalize(vec3(normal.x-ripple.x*normal.y,normal.y,normal.z-ripple.y*normal.y));
         vec3 normalFootprint=fwidth(normal);
-        float unresolvedVariance=localSpectralVarianceAt(waveCoordinate,lod)+ripple.z;
+        vec3 unresolvedCovariance=localSpectralCovarianceAt(waveCoordinate,lod)+vec3(ripple.z,ripple.z,0.0);
+        float unresolvedVariance=0.5*(unresolvedCovariance.x+unresolvedCovariance.y);
         // Resolve porous shoreline foam before hull discard; average subpixel pores.
         vec3 grain=vec3(noise(p*24.0),noise(p*52.08+8.6),noise(p*114.96));
         vec3 grainResolved=1.0-smoothstep(vec3(0.25),vec3(0.5),waterFootprint*vec3(24.0,52.08,114.96));
@@ -290,6 +293,14 @@ export class Ocean {
         float a2=pow(0.12,4.0)+min(0.2,unresolvedVariance+0.15*dot(normalFootprint,normalFootprint));
         float nh=max(dot(normal,halfV),0.0),nl=max(dot(normal,sunDirection),0.001),den=nh*nh*(a2-1.0)+1.0;
         float distribution=a2/(3.14159*den*den+0.000001),masking=2.0*nv/(nv+sqrt(a2+(1.0-a2)*nv*nv));masking*=2.0*nl/(nl+sqrt(a2+(1.0-a2)*nl*nl));
+        if(localSlopeMomentsEnabled) {
+          mat3 slopeFrame=slopeNormalFrame(normal);
+          vec3 covariance=unresolvedCovariance*min(1.0,0.2/max(max(unresolvedCovariance.x,unresolvedCovariance.y),0.0000001));
+          covariance=slopeFrameCovariance(slopeFrame,covariance);
+          float base=pow(0.12,4.0)+0.15*dot(normalFootprint,normalFootprint);covariance+=vec3(base,base,0.0);
+          distribution=gaussianSlopeDistribution(slopeFrameDirection(slopeFrame,halfV),covariance);
+          masking=gaussianSlopeMasking(slopeFrameDirection(slopeFrame,view),slopeFrameDirection(slopeFrame,sunDirection),covariance);
+        }
         vec3 glint=sunColor*distribution*masking*sunFresnel*0.19/max(4.0*nv,0.1);
         float breaking=whitecapFootprint(waveCoordinate,p,foamQDx,foamQDy,foamPDx,foamPDy),foam=foamEnabled?clamp(breaking*0.82+wakeFoam+shoreFoam*0.8,0.0,0.97):0.0;
         vec3 foamColor=vec3(0.78,0.86,0.84)*(0.76+filteredGrain*0.3)*foamIllumination(normal);
