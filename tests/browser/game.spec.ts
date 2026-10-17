@@ -823,13 +823,20 @@ test('Xbox mapping, arm safety and disconnect pause work through Gamepad API', a
     (window as any).__pad.axes=[0,-1,0,-0.5];
     do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
     while((app.flight.position.y<=7||app.flight.position.y<=initial+1)&&performance.now()-start<20000);
-    return {initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks(),seaScale:app.world.ocean.material.uniforms.seaScale.value};
+    const climbed={initial,altitude:app.flight.position.y,armed:app.flight.armed,source:app.input.source,sticks:app.input.sticks(),seaScale:app.world.ocean.material.uniforms.seaScale.value};
+    // Disconnect before another protocol round trip can queue a slow sea draw
+    // and make the independent render-stall safeguard win this input test.
+    (window as any).__pad=null;const disconnectedAt=performance.now();
+    do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+    while(!app.getState().paused&&performance.now()-disconnectedAt<20000);
+    return {...climbed,disconnect:{title:document.querySelector('#pause-title')!.textContent,waited:performance.now()-disconnectedAt}};
   });
   expect(climbed.altitude).toBeGreaterThan(7);expect(climbed.altitude-climbed.initial).toBeGreaterThan(1);
   expect(climbed.armed).toBe(true);expect(climbed.source).toBe('xbox');
   expect(climbed.seaScale).toBe(2.15);
   expect(climbed.sticks.throttle).toBe(1);expect(climbed.sticks.pitch).toBeLessThan(0);expect(climbed.sticks.absoluteThrottle).toBe(false);
-  await page.evaluate(()=> {(window as any).__pad=null;});await expect(page.locator('#pause-title')).toHaveText('コントローラー接続が切れました');
+  expect(climbed.disconnect.title).toBe('コントローラー接続が切れました');expect(climbed.disconnect.waited).toBeLessThanOrEqual(20000);
+  await expect(page.locator('#pause-title')).toHaveText('コントローラー接続が切れました');
   await page.locator('#resume').click();await expect(page.locator('#pause-dialog')).toBeVisible();
   expect(await page.evaluate(()=> (window as any).__OCEANFPV__.getState().paused)).toBe(true);
 });
