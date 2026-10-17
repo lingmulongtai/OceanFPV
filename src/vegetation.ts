@@ -22,7 +22,7 @@ export class CoastalForest {
   private quality='high';
   private light='';
 
-  static async load(renderer:T.WebGLRenderer,sites:TreeSite[],lighting:T.Scene,lightingReady:Promise<unknown>) {
+  static async load(renderer:T.WebGLRenderer,sites:TreeSite[],lighting:T.Scene,lightingReady:Promise<unknown>,onReady?:(forest:CoastalForest)=>void) {
     const manager=new T.LoadingManager(),loader=new GLTFLoader(manager);let timer:ReturnType<typeof setTimeout>|undefined,expired=false;
     try {
       const url=new URL(`${import.meta.env.BASE_URL}models/island_tree_02/island_tree_02_1k.gltf`,document.baseURI);
@@ -32,7 +32,9 @@ export class CoastalForest {
       const model=await Promise.race([pending,new Promise<never>((_,reject)=> {timer=setTimeout(()=>{expired=true;manager.abort();reject(new Error('Tree asset deadline'));},45000);})]);
       clearTimeout(timer);model.scene.updateMatrixWorld(true);
       await lightingReady;
-      return new CoastalForest(renderer,model.scene,sites.flatMap(site=>site.matrices),lighting);
+      const forest=new CoastalForest(renderer,model.scene,sites.flatMap(site=>site.matrices),lighting);
+      // Publish in the same task as the bake so a queued light change can relight it.
+      onReady?.(forest);return forest;
     } catch {if(timer)clearTimeout(timer);return null;}
   }
   private constructor(renderer:T.WebGLRenderer,source:T.Group,matrices:T.Matrix4[],lighting:T.Scene) {

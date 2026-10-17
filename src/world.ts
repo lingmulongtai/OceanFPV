@@ -108,14 +108,14 @@ export class World {
     const lightingReady=Promise.all([prepareLighting(textures),textures]);
     const assetsReady=CoastalCliff.load(renderer,this.shorelineWash).then(async cliff=> {
       if(cliff&&this.headlandMesh){this.installCliff(cliff,this.headlandMesh);}else cliff?.dispose();
-      const [missing,forest,rocks]=await Promise.all([textures,CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady),CoastalRocks.load(renderer,this.rockPatches,this.shorelineWash)]);
+      const [missing,forest,rocks]=await Promise.all([textures,CoastalForest.load(renderer,this.treeSites,this.scene,lightingReady,forest=>{this.forest=forest;}),CoastalRocks.load(renderer,this.rockPatches,this.shorelineWash)]);
       if(!this.cliff)missing.push('coastal cliff');
       // Keep the painted terrain colours only when photographs are unavailable.
       this.groundMaterials.forEach(material=>{if(material.map)material.vertexColors=false;material.needsUpdate=true;});
       this.ocean.material.uniforms.seabedMap.value=this.coastalRockDetail.map;
       this.ocean.material.uniforms.hasSeabedMap.value=!!this.coastalRockDetail.map;
       if(forest) {
-        this.forest=forest;this.scene.add(forest.group);
+        this.scene.add(forest.group);
         for(const site of this.treeSites)for(const mesh of site.fallback){this.scene.remove(mesh);mesh.geometry.dispose();(mesh.material as T.Material).dispose();}
       }else missing.push('coastal tree');
       if(rocks) {
