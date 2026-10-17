@@ -2,6 +2,7 @@
  * Unshifted frequency indexing; inverse transforms include 1/N² normalization.
  * See docs/OCEAN_RESEARCH.md and OceanLab's MIT spectrum compute reference. */
 import {createWaveSpectrum} from './wave-spectrum';
+import {createWaveFFT,type WaveFFT} from './wave-fft';
 export function waveVectorLength(x:number,y:number) {
   const squared=x*x+y*y;
   // Wave derivatives fit normal squares; retain hypot at numeric extremes.
@@ -23,6 +24,18 @@ function fftPlan(size:number) {
     stages.push({length,real,imaginary});
   }
   plan={swaps:Uint32Array.from(swaps),stages};fftPlans.set(size,plan);return plan;
+}
+let waveFFT:WaveFFT|null=null;
+export function installWaveFFT(exports:WebAssembly.Exports|null) {
+  waveFFT=exports?createWaveFFT(exports,fftPlan(128)):null;return waveFFT!==null;
+}
+export function waveFFTActive(){return waveFFT!==null;}
+function inverseWaveFFT(real:Float64Array,imaginary:Float64Array,size:number) {
+  if(size===128&&waveFFT) {
+    if(waveFFT(real,imaginary,size))return;
+    waveFFT=null;
+  }
+  inverseFFT(real,imaginary,size);
 }
 export function inverseFFT(real: Float64Array, imaginary: Float64Array, size: number) {
   if (size < 2 || (size & (size - 1)) || real.length !== size * size || imaginary.length !== real.length) throw new Error('FFT requires a square power-of-two field');
@@ -101,7 +114,7 @@ export class WaveCascade {
       const packed=1-this.directionX[i];this.fields[0].real[i]=hr*packed;this.fields[0].imaginary[i]=hi*packed;
       const direction=this.directionZ[i];this.fields[1].real[i]=-hi*direction;this.fields[1].imaginary[i]=hr*direction;
     }
-    this.fields.forEach(f=>inverseFFT(f.real,f.imaginary,n));
+    this.fields.forEach(f=>inverseWaveFFT(f.real,f.imaginary,n));
     const h=this.fields[0].real,dx=this.fields[0].imaginary,dz=this.fields[1].real;
     const derivative= n/(2*this.length);let slopeEnergy=0,heightEnergy=0;
     for(let z=0;z<n;z++) for(let x=0;x<n;x++) {
