@@ -1,5 +1,7 @@
 # Coastal fine detail
 
+The northwestern island now also uses a captured 20 m rock layer: see [cliff material](CLIFF_MATERIAL.md) for its current sampler budget, fallback and numerical verification. The measurements below record the original fine phase change.
+
 The photographed 2 m rock detail formerly repeated at identical phases across large ground surfaces. At a low viewing angle its normals formed regular corrugated bands. Fine colour, roughness and normal maps now share deterministic per-cell offsets with a smooth crossfade. Local texture scale and the original tangent frames are retained; explicit gradients prevent phase changes from choosing incorrect mip levels.
 
 The change applies when all three fine maps are available. Incomplete assets retain the existing macro/grass material, and restoring the assets restores the complete material. The 90 m macro colour, 15 m grass, captured boulders and underwater texture are separate. Large photographed slab patterns remain visible; this change addresses fine repetition rather than completing the terrain's appearance.
