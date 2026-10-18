@@ -108,3 +108,38 @@ cover pending work, both completion statuses, zero-timeout polling, context-loss
 races and failed waits/allocations. This removes pre-existing queued GPU work
 from texture deadlines; it does not guarantee that later compositing or slow
 network delivery cannot stall.
+
+## Missing-sky flight verification
+
+Main `d50942c`, [run 39085042199, shard 2](https://github.com/lingmulongtai/OceanFPV/actions/runs/39085042199/job/117549705295),
+passed the procedural CubeTexture assertion but exhausted the 60-second keyboard
+takeoff phase. Start's protocol call took 19.42 seconds, and two Space-down calls
+took 16.46 and 15.01 seconds. Both observations were genuine ten-second stall
+pauses without a crash, and both ordinary resumes succeeded. The final assertion
+ran after 61.14 seconds. This trace does not identify the precise source of those
+stalls or establish a broken sky fallback or flight simulation.
+
+The fixture now completes its real first FPV draw while ordinarily paused,
+checking over one million triangles, procedural sky, a synchronized camera,
+zero flight/world time and no GL error. This is setup before the original
+60-second flight interval. Only a detected SwiftShader renderer then separates
+scene geometry from keyboard timing; the procedural background, actual RAF,
+clock, physics, collision and DOM input continue. Native mode retains the full
+scene throughout. Paused dialog controls are blurred before releasing Space.
+The absolute deadline is checked before accepting lift or completing recovery;
+recovery has no arbitrary attempt quota. Late HDR delivery after real context
+loss must still produce no further draw calls and keep Start disabled.
+
+The normal case passed with RTX4050/Direct3D11 in 27.1 seconds, retaining
+11,482,185 triangles, and with forced SwiftShader in 1.8 minutes, proving the
+same full draw before 13 background/composer triangles during input execution.
+Both reported procedural sky and zero GL error. A separate native experiment
+with one actual active 10.1-second main-thread stall resumed and completed the
+case about 12.1 seconds after the flight interval began. Six repeated active
+stalls failed at the unchanged deadline: the last stall returned at 61.071
+seconds, and the first error was the original 60-second takeoff rejection.
+Expected-failure status alone was not counted as proof of that negative case.
+
+These are fixture/flight and resource-lifetime checks, not sustained FPS,
+physical-controller acceptance, or a production rendering change. Full CI and
+actual public-product verification remain separate gates.
