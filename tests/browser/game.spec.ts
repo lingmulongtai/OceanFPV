@@ -1073,7 +1073,7 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
   await ready(page);
   // Preserve real DOM handlers and RAF input polling while avoiding a rendered
   // actionability wait for every calibration step on software-rendered CI.
-  const result=await page.evaluate(async()=> {
+  const result=await page.evaluate(async(isolateRendering)=> {
     const app=(window as any).__OCEANFPV__,pad=(window as any).__pad;
     const click=(selector:string)=>document.querySelector<HTMLButtonElement>(selector)!.click();
     const recoveries:{phase:string;elapsed:number;time:number;flightTime:number;throttle:number}[]=[];
@@ -1120,16 +1120,24 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
     document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!.finish();
     const warmup={paused:app.getState().paused,time:app.getState().time,flightTime:app.getState().flightTime,cameraError:app.camera.position.distanceTo(app.flight.position)};
     if(!warmup.paused||warmup.time!==0||warmup.flightTime!==0||warmup.cameraError>1e-6)throw new Error(`Radio first draw drifted: ${JSON.stringify(warmup)}`);
+    const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,fullTriangles=app.getState().triangles,debug=gl.getExtension('WEBGL_debug_renderer_info');
+    // As in the keyboard fixture, keep software raster cost outside input timing.
+    // Native mode and image tests retain the full scene; CPU/RAF/physics still run.
+    if(isolateRendering){app.world.scene.visible=false;app.invalidate();for(let i=0;i<2;i++)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));gl.finish();}
+    const rendering={isolated:isolateRendering,visible:app.world.scene.visible,fullTriangles,controlTriangles:app.getState().triangles,renderer:debug?gl.getParameter(debug.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER),glError:gl.getError()};
     console.log(`Radio first flight draw: ${JSON.stringify(warmup)}`);click('#resume');
     if(app.getState().paused)throw new Error('Radio low-throttle resume was rejected');
     const startTime=app.getState().time;await until(()=>app.getState().time>startTime+1,'zero-throttle deck wait',true);
     const launch=app.world.launchPose(app.getState().time),waiting={crashed:app.flight.crashed,armed:app.flight.armed,flightTime:app.getState().flightTime,error:app.flight.position.distanceTo(launch.position)},altitude=app.flight.position.y;
     pad.axes=[0,0,0,-0.8];await until(()=>app.flight.position.y>altitude+1,'radio takeoff',true);
-    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,warmup,waiting,climb:app.flight.position.y-altitude,seaScale:app.world.ocean.material.uniforms.seaScale.value,started:document.querySelector('#intro')!.classList.contains('hidden'),recoveries};
-  });
+    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,warmup,waiting,climb:app.flight.position.y-altitude,seaScale:app.world.ocean.material.uniforms.seaScale.value,started:document.querySelector('#intro')!.classList.contains('hidden'),recoveries,rendering};
+  },process.env.OCEANFPV_NATIVE_GPU!=='1');
   expect(result.opened).toBe(true);expect(result.source).toBe('radio');expect(result.min).toBe(-0.8);expect(result.max).toBe(0.9);expect(result.saved).toBe(-0.8);
   expect(result.rejected.dialog).toBe(true);expect(result.rejected.toast).toContain('スロットルを下げ');expect(result.rejected.playing).toBe(false);expect(result.started).toBe(true);
   expect(result.warmup).toEqual({paused:true,time:0,flightTime:0,cameraError:0});
+  expect(result.rendering.fullTriangles).toBeGreaterThan(1e6);expect(result.rendering.visible).toBe(!result.rendering.isolated);expect(result.rendering.glError).toBe(0);
+  if(result.rendering.isolated)expect(result.rendering.controlTriangles).toBeLessThan(100);else {expect(result.rendering.controlTriangles).toBeGreaterThan(1e6);expect(result.rendering.renderer).toContain('Direct3D11');}
+  console.log(`Radio control rendering: ${JSON.stringify(result.rendering)}`);
   expect(result.seaScale).toBe(2.15);
   expect(result.waiting.crashed).toBe(false);expect(result.waiting.armed).toBe(true);expect(result.waiting.flightTime).toBeGreaterThan(1);expect(result.waiting.error).toBeLessThan(1e-6);expect(result.climb).toBeGreaterThan(1);
   for(const recovery of result.recoveries){expect(['zero-throttle deck wait','radio takeoff']).toContain(recovery.phase);expect(recovery.elapsed).toBeLessThanOrEqual(20000);expect(recovery.throttle).toBeLessThanOrEqual(.12);expect(recovery.time).toBe(recovery.flightTime);}

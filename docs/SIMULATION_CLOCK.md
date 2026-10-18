@@ -17,3 +17,7 @@
 時計APIの仕様を確認した資料：[requestAnimationFrame](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame)、[performance.now](https://developer.mozilla.org/en-US/docs/Web/API/Performance/now)。requestAnimationFrameの時刻は同一フレーム内のコールバック間で共有されるため、入力処理が時計をリセットした後の採取にはperformance.nowを使用する。
 
 実機Xbox・USB送信機、他GPU/ブラウザ、長いプレイセッションの受入は未確認。公開CIと本番の確認結果はPRに記録する。
+
+送信機の入力回帰は、実際の最初の飛行描画を通常停止中に完了し、時刻0・カメラ一致と100万超の描画三角形を確認する。キーボード回帰と同じく、ソフトウェア描画ではその後の入力・物理検証から全景の描画負荷を分離する。実際のRAF、時計、波、船、接触、送信機のpollとDOM操作は維持し、nativeモードは飛行中も全景を描く。このソフトウェア検証は画質や持続FPSの合格ではない。
+
+移動の各20秒期限は維持する。10秒を超える遅延の保護停止だけを識別し、実際のスロットル低下と通常の再開操作を期限内で実行する。衝突や別の停止、時間切れを合格にしない。実際の10.1秒停止からの離陸成功と、繰り返し停止して進まない場合の元の20秒期限での拒否を別々に確認した。製品の時計・保護停止・アーム条件は変更していない。
