@@ -19,19 +19,24 @@ gl_FragColor=vec4(sunFresnel,fresnel,glint.r,response);}`});
 const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,.1,10),target=new T.WebGLRenderTarget(1,1,{type:T.FloatType}),pixel=new Float32Array(4);
 scene.add(new T.Mesh(new T.PlaneGeometry(2,2),material));camera.position.z=1;
 const fresnel=cosine=>.0204+.9796*(1-cosine)**5,samples=[];
-let sunError=0,skyError=0,normalSpread=0,peakError=0,radianceError=0,changed=0;
+let sunError=0,skyError=0,normalSpread=0,peakError=0,radianceError=0,changed=0,skyChanged=0,flatError=0;
 for(const [eyeElevation,sunElevation]of [[46,46],[9,9],[5,46],[15,46],[20,9],[35,9]]){
  const e=eyeElevation*Math.PI/180,l=sunElevation*Math.PI/180,view=new T.Vector3(Math.cos(e),Math.sin(e),0),sun=new T.Vector3(-Math.cos(l),Math.sin(l),0),half=view.clone().add(sun).normalize();
  uniforms.probeView.value.copy(view);uniforms.sunDirection.value.copy(sun);const expectedSun=fresnel(view.dot(half)),responses=[];
  for(const [normalIndex,normal]of [new T.Vector3(0,1,0),half,new T.Vector3(0,Math.cos(.3),Math.sin(.3))].entries())for(const variance of [0,.04,.2]){
   uniforms.probeNormal.value.copy(normal);uniforms.probeVariance.value=variance;renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
-  const expectedSky=fresnel(Math.max(normal.dot(view),.015)),errorSun=Math.abs(pixel[0]-expectedSun),errorSky=Math.abs(pixel[1]-expectedSky);
+  // An angular construction independently checks the production vector blend.
+  const tilt=Math.atan2(.55*Math.hypot(normal.x,normal.z),.55*normal.y+.45),azimuth=Math.atan2(normal.z,normal.x);
+  const skyCosine=Math.sin(tilt)*(Math.cos(azimuth)*view.x+Math.sin(azimuth)*view.z)+Math.cos(tilt)*view.y;
+  const expectedSky=fresnel(Math.max(skyCosine,.015)),originalSky=fresnel(Math.max(normal.dot(view),.015)),errorSun=Math.abs(pixel[0]-expectedSun),errorSky=Math.abs(pixel[1]-expectedSky);
   if(!pixel.every(Number.isFinite))throw new Error('Non-finite production sun lighting');
   sunError=Math.max(sunError,errorSun);skyError=Math.max(skyError,errorSky);responses.push(pixel[0]);if(Math.abs(expectedSun-expectedSky)>.001)changed++;
   radianceError=Math.max(radianceError,Math.abs(pixel[2]-pixel[3]*expectedSun)/Math.max(pixel[3],.0001));
-  if(normalIndex===1||(normalIndex===0&&eyeElevation===sunElevation))peakError=Math.max(peakError,Math.abs(pixel[0]-pixel[1]));
+  if(Math.abs(expectedSky-originalSky)>.001)skyChanged++;
+  if(normalIndex===0){flatError=Math.max(flatError,Math.abs(pixel[1]-originalSky));if(eyeElevation===sunElevation)peakError=Math.max(peakError,Math.abs(pixel[0]-pixel[1]));}
+  if(pixel[1]<.020399||pixel[1]>1.000001)throw new Error('Unbounded environment reflectance');
   samples.push({eyeElevation,sunElevation,normalIndex,variance,normalView:normal.dot(view),normalLight:normal.dot(sun),viewHalf:view.dot(half),actual:[...pixel],expectedSun,expectedSky,errorSun,errorSky});
  }
  normalSpread=Math.max(normalSpread,Math.max(...responses)-Math.min(...responses));
 }
-const gl=renderer.getContext(),ext=gl.getExtension('WEBGL_debug_renderer_info');window.__SUN_GLINT_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',count:samples.length,sunError,skyError,normalSpread,peakError,radianceError,changed,samples};
+const gl=renderer.getContext(),ext=gl.getExtension('WEBGL_debug_renderer_info');window.__SUN_GLINT_PROBE__={gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'unavailable',count:samples.length,sunError,skyError,normalSpread,peakError,radianceError,changed,skyChanged,flatError,glError:gl.getError(),samples};
