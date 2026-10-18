@@ -1198,13 +1198,14 @@ test('half-float array slope moments retain signed layers and filtered mip level
  expect(probe.integrationCount).toBe(9);expect(probe.integrationMaximum).toBeLessThan(.000001);expect(probe.scalarMaximum).toBeLessThan(.000001);expect(probe.disabledMaximum).toBe(0);expect(probe.mipFallbackError).toBe(0);expect(probe.mipFallbackValue).toBeCloseTo(.3,6);
 });
 
-test('sun glint uses its microfacet angle while sky reflection keeps the surface angle',async({page})=>{
+test('sun glint keeps its microfacet angle while environment Fresnel smooths wave contrast',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
  await page.goto('/tests/browser/fixtures/sun-glint-probe.html');
  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SUN_GLINT_PROBE__);},{timeout:60000}).toBe(true);
- const probe=await page.evaluate(()=>{const p=(window as any).__SUN_GLINT_PROBE__;return {gpu:p.gpu,count:p.count,sunError:p.sunError,skyError:p.skyError,normalSpread:p.normalSpread,peakError:p.peakError,radianceError:p.radianceError,changed:p.changed};});
+ const probe=await page.evaluate(()=>{const p=(window as any).__SUN_GLINT_PROBE__;return {gpu:p.gpu,count:p.count,sunError:p.sunError,skyError:p.skyError,normalSpread:p.normalSpread,peakError:p.peakError,radianceError:p.radianceError,changed:p.changed,skyChanged:p.skyChanged,flatError:p.flatError,glError:p.glError};});
  console.log(`Sun glint probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
  expect(probe.count).toBe(54);expect(probe.changed).toBeGreaterThan(6);expect(probe.sunError).toBeLessThan(.000002);expect(probe.skyError).toBeLessThan(.000002);expect(probe.normalSpread).toBeLessThan(.000002);expect(probe.peakError).toBeLessThan(.000002);expect(probe.radianceError).toBeLessThan(.000002);expect(errors).toEqual([]);
+ expect(probe.skyChanged).toBeGreaterThan(6);expect(probe.flatError).toBeLessThan(.000002);expect(probe.glError).toBe(0);
 });
 
 test('Gaussian glints normalize in the wave frame and retain anisotropic masking',async({page})=>{
