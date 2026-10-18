@@ -284,7 +284,10 @@ export class Ocean {
           wakeFoam+=(edge*0.22+bowFoam*0.75)*smoothstep(0.2,0.65,n)*smoothstep(0.2,3.0,speed);
         }
         normal=normalize(vec3(normal.x-wakeGradient.x*normal.y,normal.y,normal.z-wakeGradient.y*normal.y));
-        float nv=max(dot(normal,view),0.015),fresnel=0.0204+0.9796*pow(1.0-nv,5.0);
+        float nv=max(dot(normal,view),0.015);
+        // web-ocean's environment-only normal blend softens continuous bright contours.
+        vec3 environmentNormal=normalize(mix(normal,vec3(0.0,1.0,0.0),0.45));
+        float fresnel=0.0204+0.9796*pow(1.0-max(dot(environmentNormal,view),0.015),5.0);
         float distortion=0.012+0.16/max(distanceToEye,2.0);
         vec2 reflectionUV=mirrorUV+normal.xz*distortion;
         float mirrorFootprint=max(length(dFdx(reflectionUV)),length(dFdy(reflectionUV)))*reflectionSize;

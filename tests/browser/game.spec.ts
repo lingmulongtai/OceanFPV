@@ -889,6 +889,26 @@ test('fixed dialog views stop GPU draws and redraw changed settings',async({page
   const paused=await snapshot();expect(await snapshot()).toEqual(paused);
 });
 
+test('context loss during shader preparation ends polling and retains reload recovery',async({page})=> {
+  test.setTimeout(SCENE_LOAD_TIMEOUT+30000);await page.setViewportSize({width:320,height:240});
+  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript({path:'tests/browser/fixtures/shader-loss-startup.mjs'});
+  const started=Date.now();await page.goto('/?test=1',{timeout:SCENE_LOAD_TIMEOUT});
+  await page.waitForFunction(()=> (window as any).__SHADER_LOSS_STARTUP__.loss,{},{timeout:Math.max(1,SCENE_LOAD_TIMEOUT-(Date.now()-started))});
+  await expect(page.locator('#unsupported')).toBeVisible();await expect(page.locator('#start')).toBeDisabled();
+  await expect(page.locator('#unsupported-reason')).toContainText('GPU');await expect(page.locator('#unsupported button')).toBeFocused();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__SHADER_LOSS_STARTUP__.pending10),{timeout:2000}).toBe(0);
+  const before=await page.evaluate(()=>(window as any).__SHADER_LOSS_STARTUP__.scheduled10);
+  await page.waitForTimeout(100);
+  const result=await page.evaluate(()=>({...(window as any).__SHADER_LOSS_STARTUP__,gameReady:performance.getEntriesByName('oceanfpv:game-ready').length,lost:document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!.isContextLost(),debug:typeof(window as any).__OCEANFPV__}));
+  if(result.parallel)expect(result.held).toBeGreaterThan(0);else expect(result.held).toBe(0);
+  expect(result.loss.trusted).toBe(true);expect(result.pending10).toBe(0);expect(result.scheduled10).toBe(before);expect(before).toBeGreaterThan(0);
+  expect(result.gameReady).toBe(0);expect(result.lost).toBe(true);expect(result.debug).toBe('undefined');expect(errors).toEqual([]);
+  if(process.env.OCEANFPV_NATIVE_GPU==='1') {expect(result.gpu).toContain('Direct3D11');expect(result.gpu).not.toMatch(/SwiftShader|Microsoft Basic/);}
+  if(process.env.OCEANFPV_EXPECT_SOFTWARE==='1')expect(result.gpu).toContain('SwiftShader');
+  await test.info().attach('startup-shader-context-loss',{body:JSON.stringify(result,null,2),contentType:'application/json'});
+});
+
 test('lost WebGL context closes modal layers and leaves recovery reachable',async({page})=> {
   await ready(page);await page.evaluate(()=>document.querySelector<HTMLButtonElement>('#start')!.click());await page.keyboard.press('Escape');
   await expect(page.locator('#pause-dialog')).toBeVisible();
@@ -1053,13 +1073,33 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
   await ready(page);
   // Preserve real DOM handlers and RAF input polling while avoiding a rendered
   // actionability wait for every calibration step on software-rendered CI.
-  const result=await page.evaluate(async()=> {
+  const result=await page.evaluate(async(isolateRendering)=> {
     const app=(window as any).__OCEANFPV__,pad=(window as any).__pad;
     const click=(selector:string)=>document.querySelector<HTMLButtonElement>(selector)!.click();
-    const until=async(check:()=>boolean,label:string)=> {
-      const start=performance.now();
-      do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));if(check())return;}while(performance.now()-start<20000);
-      throw new Error(`Radio UI did not reach ${label}`);
+    const recoveries:{phase:string;elapsed:number;time:number;flightTime:number;throttle:number}[]=[];
+    const until=async(check:()=>boolean,label:string,recoverMovement=false)=> {
+      const start=performance.now(),deadline=start+20000;
+      const checkDeadline=()=>{if(performance.now()>deadline)throw new Error(`Radio UI did not reach ${label} within 20000 ms: ${JSON.stringify({elapsed:performance.now()-start,state:app.getState(),recoveries})}`);};
+      do {
+        await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));checkDeadline();
+        if(recoverMovement) {
+          const state=app.getState();if(app.flight.crashed)throw new Error(`Radio ${label} crashed`);
+          if(state.paused) {
+            const reason={title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};
+            if(!reason.open||reason.title!=='描画が長時間止まりました'||!reason.copy!.includes('処理の遅れが10秒を超えました')||state.time!==state.flightTime)throw new Error(`Unexpected radio pause: ${JSON.stringify({...state,...reason})}`);
+            // Use the ordinary low-throttle interlock and resume handler.
+            const axes=pad.axes;pad.axes=[...axes.slice(0,3),0.9];click('#resume');
+            const throttle=app.input.sticks().throttle;
+            if(app.getState().paused||throttle>0.12)throw new Error('Radio low-throttle safety resume was rejected');
+            if(document.activeElement instanceof HTMLElement)document.activeElement.blur();
+            recoveries.push({phase:label,elapsed:performance.now()-start,time:state.time,flightTime:state.flightTime,throttle});
+            console.log(`Radio safety-pause recovery: ${JSON.stringify(recoveries.at(-1))}`);
+            pad.axes=axes;checkDeadline();
+          }
+        }
+        if(check()){checkDeadline();return;}
+      }while(performance.now()<deadline);
+      checkDeadline();throw new Error(`Radio UI did not reach ${label}`);
     };
     click('#open-settings');click('[data-tab="controller"]');
     const source=document.querySelector<HTMLSelectElement>('#input-source')!;source.value='radio';source.dispatchEvent(new Event('input',{bubbles:true}));
@@ -1080,18 +1120,27 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
     document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!.finish();
     const warmup={paused:app.getState().paused,time:app.getState().time,flightTime:app.getState().flightTime,cameraError:app.camera.position.distanceTo(app.flight.position)};
     if(!warmup.paused||warmup.time!==0||warmup.flightTime!==0||warmup.cameraError>1e-6)throw new Error(`Radio first draw drifted: ${JSON.stringify(warmup)}`);
+    const gl=document.querySelector<HTMLCanvasElement>('#scene')!.getContext('webgl2')!,fullTriangles=app.getState().triangles,debug=gl.getExtension('WEBGL_debug_renderer_info');
+    // As in the keyboard fixture, keep software raster cost outside input timing.
+    // Native mode and image tests retain the full scene; CPU/RAF/physics still run.
+    if(isolateRendering){app.world.scene.visible=false;app.invalidate();for(let i=0;i<2;i++)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));gl.finish();}
+    const rendering={isolated:isolateRendering,visible:app.world.scene.visible,fullTriangles,controlTriangles:app.getState().triangles,renderer:debug?gl.getParameter(debug.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER),glError:gl.getError()};
     console.log(`Radio first flight draw: ${JSON.stringify(warmup)}`);click('#resume');
     if(app.getState().paused)throw new Error('Radio low-throttle resume was rejected');
-    const startTime=app.getState().time;await until(()=>app.getState().time>startTime+1,'zero-throttle deck wait');
+    const startTime=app.getState().time;await until(()=>app.getState().time>startTime+1,'zero-throttle deck wait',true);
     const launch=app.world.launchPose(app.getState().time),waiting={crashed:app.flight.crashed,armed:app.flight.armed,flightTime:app.getState().flightTime,error:app.flight.position.distanceTo(launch.position)},altitude=app.flight.position.y;
-    pad.axes=[0,0,0,-0.8];await until(()=>app.flight.position.y>altitude+1,'radio takeoff');
-    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,warmup,waiting,climb:app.flight.position.y-altitude,seaScale:app.world.ocean.material.uniforms.seaScale.value,started:document.querySelector('#intro')!.classList.contains('hidden')};
-  });
+    pad.axes=[0,0,0,-0.8];await until(()=>app.flight.position.y>altitude+1,'radio takeoff',true);
+    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,warmup,waiting,climb:app.flight.position.y-altitude,seaScale:app.world.ocean.material.uniforms.seaScale.value,started:document.querySelector('#intro')!.classList.contains('hidden'),recoveries,rendering};
+  },process.env.OCEANFPV_NATIVE_GPU!=='1');
   expect(result.opened).toBe(true);expect(result.source).toBe('radio');expect(result.min).toBe(-0.8);expect(result.max).toBe(0.9);expect(result.saved).toBe(-0.8);
   expect(result.rejected.dialog).toBe(true);expect(result.rejected.toast).toContain('スロットルを下げ');expect(result.rejected.playing).toBe(false);expect(result.started).toBe(true);
   expect(result.warmup).toEqual({paused:true,time:0,flightTime:0,cameraError:0});
+  expect(result.rendering.fullTriangles).toBeGreaterThan(1e6);expect(result.rendering.visible).toBe(!result.rendering.isolated);expect(result.rendering.glError).toBe(0);
+  if(result.rendering.isolated)expect(result.rendering.controlTriangles).toBeLessThan(100);else {expect(result.rendering.controlTriangles).toBeGreaterThan(1e6);expect(result.rendering.renderer).toContain('Direct3D11');}
+  console.log(`Radio control rendering: ${JSON.stringify(result.rendering)}`);
   expect(result.seaScale).toBe(2.15);
   expect(result.waiting.crashed).toBe(false);expect(result.waiting.armed).toBe(true);expect(result.waiting.flightTime).toBeGreaterThan(1);expect(result.waiting.error).toBeLessThan(1e-6);expect(result.climb).toBeGreaterThan(1);
+  for(const recovery of result.recoveries){expect(['zero-throttle deck wait','radio takeoff']).toContain(recovery.phase);expect(recovery.elapsed).toBeLessThanOrEqual(20000);expect(recovery.throttle).toBeLessThanOrEqual(.12);expect(recovery.time).toBe(recovery.flightTime);}
 });
 for(const light of ['blue','golden'])test(`${light} lighting and sea settings persist across a full reload`, async ({page})=> {
   test.setTimeout(300000);
@@ -1149,13 +1198,14 @@ test('half-float array slope moments retain signed layers and filtered mip level
  expect(probe.integrationCount).toBe(9);expect(probe.integrationMaximum).toBeLessThan(.000001);expect(probe.scalarMaximum).toBeLessThan(.000001);expect(probe.disabledMaximum).toBe(0);expect(probe.mipFallbackError).toBe(0);expect(probe.mipFallbackValue).toBeCloseTo(.3,6);
 });
 
-test('sun glint uses its microfacet angle while sky reflection keeps the surface angle',async({page})=>{
+test('sun glint keeps its microfacet angle while environment Fresnel smooths wave contrast',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
  await page.goto('/tests/browser/fixtures/sun-glint-probe.html');
  await expect.poll(async()=>{expect(errors).toEqual([]);return page.evaluate(()=>!!(window as any).__SUN_GLINT_PROBE__);},{timeout:60000}).toBe(true);
- const probe=await page.evaluate(()=>{const p=(window as any).__SUN_GLINT_PROBE__;return {gpu:p.gpu,count:p.count,sunError:p.sunError,skyError:p.skyError,normalSpread:p.normalSpread,peakError:p.peakError,radianceError:p.radianceError,changed:p.changed};});
+ const probe=await page.evaluate(()=>{const p=(window as any).__SUN_GLINT_PROBE__;return {gpu:p.gpu,count:p.count,sunError:p.sunError,skyError:p.skyError,normalSpread:p.normalSpread,peakError:p.peakError,radianceError:p.radianceError,changed:p.changed,skyChanged:p.skyChanged,flatError:p.flatError,glError:p.glError};});
  console.log(`Sun glint probe: ${JSON.stringify(probe)}`);if(process.env.OCEANFPV_NATIVE_GPU==='1')expect(probe.gpu).toContain('Direct3D11');
  expect(probe.count).toBe(54);expect(probe.changed).toBeGreaterThan(6);expect(probe.sunError).toBeLessThan(.000002);expect(probe.skyError).toBeLessThan(.000002);expect(probe.normalSpread).toBeLessThan(.000002);expect(probe.peakError).toBeLessThan(.000002);expect(probe.radianceError).toBeLessThan(.000002);expect(errors).toEqual([]);
+ expect(probe.skyChanged).toBeGreaterThan(6);expect(probe.flatError).toBeLessThan(.000002);expect(probe.glError).toBe(0);
 });
 
 test('Gaussian glints normalize in the wave frame and retain anisotropic masking',async({page})=>{

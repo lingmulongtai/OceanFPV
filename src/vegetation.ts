@@ -23,6 +23,7 @@ export class CoastalForest {
   private light='';
 
   static async load(renderer:T.WebGLRenderer,sites:TreeSite[],lighting:T.Scene,lightingReady:Promise<unknown>,onReady?:(forest:CoastalForest)=>void) {
+    performance.mark('oceanfpv:tree-model-start');
     const manager=new T.LoadingManager(),loader=new GLTFLoader(manager);let timer:ReturnType<typeof setTimeout>|undefined,expired=false;
     try {
       const url=new URL(`${import.meta.env.BASE_URL}models/island_tree_02/island_tree_02_1k.gltf`,document.baseURI);
@@ -30,12 +31,15 @@ export class CoastalForest {
         if(expired)model.scene.traverse(object=>{if(object instanceof T.Mesh)object.geometry.dispose();});return model;
       });
       const model=await Promise.race([pending,new Promise<never>((_,reject)=> {timer=setTimeout(()=>{expired=true;manager.abort();reject(new Error('Tree asset deadline'));},45000);})]);
+      performance.mark('oceanfpv:tree-model-ready');
       clearTimeout(timer);model.scene.updateMatrixWorld(true);
       await lightingReady;
+      performance.mark('oceanfpv:tree-build-start');
       const forest=new CoastalForest(renderer,model.scene,sites.flatMap(site=>site.matrices),lighting);
+      performance.mark('oceanfpv:tree-build-ready');
       // Publish in the same task as the bake so a queued light change can relight it.
       onReady?.(forest);return forest;
-    } catch {if(timer)clearTimeout(timer);return null;}
+    } catch {performance.mark('oceanfpv:tree-load-failed');if(timer)clearTimeout(timer);return null;}
   }
   private constructor(renderer:T.WebGLRenderer,source:T.Group,matrices:T.Matrix4[],lighting:T.Scene) {
     this.points=matrices.map(matrix=>{const position=new T.Vector3(),q=new T.Quaternion(),scale=new T.Vector3();matrix.decompose(position,q,scale);return {matrix,position,scale,yaw:new T.Euler().setFromQuaternion(q,'YXZ').y};});
@@ -62,7 +66,9 @@ export class CoastalForest {
     const tile=512;this.atlas=new T.WebGLRenderTarget(tile*4,tile*2,{depthBuffer:true});this.atlas.texture.colorSpace=T.SRGBColorSpace;
     this.atlas.texture.generateMipmaps=true;this.atlas.texture.minFilter=T.LinearMipmapLinearFilter;
     const half=this.span/2;this.bakeCamera=new T.OrthographicCamera(-half,half,half,-half,0.1,100);
+    performance.mark('oceanfpv:tree-atlas-start');
     this.relight(renderer,lighting);
+    performance.mark('oceanfpv:tree-atlas-submitted');
     this.spriteMaterial=new T.MeshBasicMaterial({map:this.atlas.texture,alphaTest:0.4,side:T.DoubleSide});
     this.spriteMaterial.onBeforeCompile=shader=> {
       shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nattribute float treeFrame;').replace('#include <uv_vertex>','#include <uv_vertex>\nvMapUv=(vMapUv+vec2(mod(treeFrame,4.0),floor(treeFrame/4.0)))/vec2(4.0,2.0);');

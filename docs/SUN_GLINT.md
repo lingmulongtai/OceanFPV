@@ -1,5 +1,10 @@
 # Direct sunlight on the ocean
 
+The subsequent [environmental Fresnel follow-up](ENVIRONMENT_FRESNEL.md) smooths
+only the environment's angle. The direct-sun correction below is retained;
+the historical surface-angle and mirror-peak comparisons describe its original
+baseline, before that separate appearance adjustment.
+
 The ocean used the surface-to-view angle for both sky reflection and direct sunlight. A GGX microfacet reflects direct light using the view-to-half-vector angle instead. Direct sunlight now uses that angle; the sky keeps its existing surface angle. This follows the angle contract in the installed Three.js `BRDF_GGX` implementation.
 
 The correction can increase or decrease a highlight depending on its angles. With a horizontal surface, eye/sun elevations of 5°/46° previously multiplied the direct-light Fresnel term by 8.11; at 35°/9° the old term was only 0.30 of the corrected value. The mirror peak retains the same reflectance.

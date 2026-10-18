@@ -11,12 +11,17 @@ const profiles={
 export async function loadPhotographicSky(decodeReady:Promise<unknown>=Promise.resolve(),preset:PhotographicSkyPreset='day') {
   try {
     const url=new URL(`${import.meta.env.BASE_URL}textures/${profiles[preset].file}`,document.baseURI);
+    performance.mark(`oceanfpv:photo-${preset}-download-start`);
     const response=await fetch(url,{signal:AbortSignal.timeout(25000)});if(!response.ok)return null;
     const buffer=await response.arrayBuffer();
+    performance.mark(`oceanfpv:photo-${preset}-download-ready`);
     // Keep the network transfer parallel without blocking other texture deadlines
     // with HDR conversion and the subsequent lighting bake.
     await decodeReady;
-    return decodePhotographicSky(buffer,preset);
+    performance.mark(`oceanfpv:photo-${preset}-decode-start`);
+    const sky=decodePhotographicSky(buffer,preset);
+    performance.mark(`oceanfpv:photo-${preset}-decode-ready`);
+    return sky;
   } catch {return null;}
 }
 
