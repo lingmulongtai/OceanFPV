@@ -1076,10 +1076,30 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
   const result=await page.evaluate(async()=> {
     const app=(window as any).__OCEANFPV__,pad=(window as any).__pad;
     const click=(selector:string)=>document.querySelector<HTMLButtonElement>(selector)!.click();
-    const until=async(check:()=>boolean,label:string)=> {
-      const start=performance.now();
-      do {await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));if(check())return;}while(performance.now()-start<20000);
-      throw new Error(`Radio UI did not reach ${label}`);
+    const recoveries:{phase:string;elapsed:number;time:number;flightTime:number;throttle:number}[]=[];
+    const until=async(check:()=>boolean,label:string,recoverMovement=false)=> {
+      const start=performance.now(),deadline=start+20000;
+      const checkDeadline=()=>{if(performance.now()>deadline)throw new Error(`Radio UI did not reach ${label} within 20000 ms: ${JSON.stringify({elapsed:performance.now()-start,state:app.getState(),recoveries})}`);};
+      do {
+        await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));checkDeadline();
+        if(recoverMovement) {
+          const state=app.getState();if(app.flight.crashed)throw new Error(`Radio ${label} crashed`);
+          if(state.paused) {
+            const reason={title:document.querySelector('#pause-title')!.textContent,copy:document.querySelector('#pause-copy')!.textContent,open:document.querySelector<HTMLDialogElement>('#pause-dialog')!.open};
+            if(!reason.open||reason.title!=='描画が長時間止まりました'||!reason.copy!.includes('処理の遅れが10秒を超えました')||state.time!==state.flightTime)throw new Error(`Unexpected radio pause: ${JSON.stringify({...state,...reason})}`);
+            // Use the ordinary low-throttle interlock and resume handler.
+            const axes=pad.axes;pad.axes=[...axes.slice(0,3),0.9];click('#resume');
+            const throttle=app.input.sticks().throttle;
+            if(app.getState().paused||throttle>0.12)throw new Error('Radio low-throttle safety resume was rejected');
+            if(document.activeElement instanceof HTMLElement)document.activeElement.blur();
+            recoveries.push({phase:label,elapsed:performance.now()-start,time:state.time,flightTime:state.flightTime,throttle});
+            console.log(`Radio safety-pause recovery: ${JSON.stringify(recoveries.at(-1))}`);
+            pad.axes=axes;checkDeadline();
+          }
+        }
+        if(check()){checkDeadline();return;}
+      }while(performance.now()<deadline);
+      checkDeadline();throw new Error(`Radio UI did not reach ${label}`);
     };
     click('#open-settings');click('[data-tab="controller"]');
     const source=document.querySelector<HTMLSelectElement>('#input-source')!;source.value='radio';source.dispatchEvent(new Event('input',{bubbles:true}));
@@ -1102,16 +1122,17 @@ test('radio calibration, axis assignment and low-throttle arming', async ({page}
     if(!warmup.paused||warmup.time!==0||warmup.flightTime!==0||warmup.cameraError>1e-6)throw new Error(`Radio first draw drifted: ${JSON.stringify(warmup)}`);
     console.log(`Radio first flight draw: ${JSON.stringify(warmup)}`);click('#resume');
     if(app.getState().paused)throw new Error('Radio low-throttle resume was rejected');
-    const startTime=app.getState().time;await until(()=>app.getState().time>startTime+1,'zero-throttle deck wait');
+    const startTime=app.getState().time;await until(()=>app.getState().time>startTime+1,'zero-throttle deck wait',true);
     const launch=app.world.launchPose(app.getState().time),waiting={crashed:app.flight.crashed,armed:app.flight.armed,flightTime:app.getState().flightTime,error:app.flight.position.distanceTo(launch.position)},altitude=app.flight.position.y;
-    pad.axes=[0,0,0,-0.8];await until(()=>app.flight.position.y>altitude+1,'radio takeoff');
-    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,warmup,waiting,climb:app.flight.position.y-altitude,seaScale:app.world.ocean.material.uniforms.seaScale.value,started:document.querySelector('#intro')!.classList.contains('hidden')};
+    pad.axes=[0,0,0,-0.8];await until(()=>app.flight.position.y>altitude+1,'radio takeoff',true);
+    return {opened,source:app.input.source,min,max,saved:saved.calibration[0].min,rejected,warmup,waiting,climb:app.flight.position.y-altitude,seaScale:app.world.ocean.material.uniforms.seaScale.value,started:document.querySelector('#intro')!.classList.contains('hidden'),recoveries};
   });
   expect(result.opened).toBe(true);expect(result.source).toBe('radio');expect(result.min).toBe(-0.8);expect(result.max).toBe(0.9);expect(result.saved).toBe(-0.8);
   expect(result.rejected.dialog).toBe(true);expect(result.rejected.toast).toContain('スロットルを下げ');expect(result.rejected.playing).toBe(false);expect(result.started).toBe(true);
   expect(result.warmup).toEqual({paused:true,time:0,flightTime:0,cameraError:0});
   expect(result.seaScale).toBe(2.15);
   expect(result.waiting.crashed).toBe(false);expect(result.waiting.armed).toBe(true);expect(result.waiting.flightTime).toBeGreaterThan(1);expect(result.waiting.error).toBeLessThan(1e-6);expect(result.climb).toBeGreaterThan(1);
+  for(const recovery of result.recoveries){expect(['zero-throttle deck wait','radio takeoff']).toContain(recovery.phase);expect(recovery.elapsed).toBeLessThanOrEqual(20000);expect(recovery.throttle).toBeLessThanOrEqual(.12);expect(recovery.time).toBe(recovery.flightTime);}
 });
 for(const light of ['blue','golden'])test(`${light} lighting and sea settings persist across a full reload`, async ({page})=> {
   test.setTimeout(300000);
