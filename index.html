@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#10282e" />
+  <meta name="theme-color" content="#0d1114" />
   <meta name="description" content="海と船の上を自由に飛ぶ。ブラウザで遊べるFPVドローンシミュレーター。Xboxコントローラー、USB送信機、キーボードに対応。" />
   <title>OceanFPV — Fly the open water</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
@@ -13,20 +13,20 @@
     <canvas id="scene" aria-label="海、船、島の3D飛行マップ"></canvas>
     <div class="grain" aria-hidden="true"></div>
     <header class="topbar">
-      <a class="brand" href="#" id="home" aria-label="OceanFPV メニュー"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 19c6-16 10-16 15 0s10 16 15 0M3 26c6-16 10-16 15 0s10 16 15 0"/></svg><span>OCEAN<span class="brand-thin">FPV</span></span><span class="brand-tag">FLIGHT SIMULATOR</span></a>
-      <div class="top-actions"><span id="connection" class="connection"><i></i> KEYBOARD</span><span id="fps">— FPS</span><button id="open-settings" class="icon-button" aria-label="設定を開く">⚙</button><button id="open-help" class="icon-button" aria-label="操作ガイドを開く">?</button></div>
+      <a class="brand" href="#" id="home" aria-label="OceanFPV メニュー"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M3 19c6-16 10-16 15 0s10 16 15 0M3 26c6-16 10-16 15 0s10 16 15 0"/></svg><span>Ocean<span class="brand-thin">FPV</span></span><span class="brand-tag">Flight simulator</span></a>
+      <div class="top-actions"><span id="connection" class="connection"><i></i> Keyboard</span><span id="fps">— FPS</span><button id="open-settings" class="icon-button" aria-label="設定を開く"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button><button id="open-help" class="icon-button" aria-label="操作ガイドを開く"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.8.9c0 1.7-2.3 2.1-2.3 3.6"/><path d="M12 17h.01"/></svg></button></div>
     </header>
     <section id="intro" class="intro" aria-labelledby="title">
-      <div class="eyebrow"><span class="dash"></span> OPEN WATER · FREE FLIGHT</div>
-      <h1 id="title">FLY THE<br /><em>OPEN WATER.</em></h1>
+      <div class="eyebrow"><span class="dash"></span> Open water · Free flight</div>
+      <h1 id="title">Fly the<br /><em>open water</em></h1>
       <p class="intro-copy">波のすぐ上を。船のすき間を。空の果てまで。<br />海を舞台に、自由なフライトを。</p>
       <div class="mode-picker" role="group" aria-label="ゲームモード"><button class="active" id="free-mode" aria-pressed="true"><span>01</span> 自由飛行</button><button id="race-mode" aria-pressed="false"><span>02</span> タイムトライアル</button></div>
       <button class="primary launch" id="start" disabled>海へ飛び立つ <span>↗</span></button>
       <div class="start-note" id="start-note">海と空を準備しています…</div>
-      <div class="intro-meta"><span><b>260 m</b> OCEAN LINER</span><span><b>2 ships</b> LINER / COASTAL YACHT</span></div>
+      <div class="intro-meta"><span><b>260 m</b> Ocean liner</span><span><b>2 ships</b> Liner / Coastal yacht</span></div>
     </section>
-    <div id="scene-label" class="scene-label"><span>01 / THE OPEN SEA</span><b>OCEAN MERIDIAN</b><small>260 m LINER · COASTAL YACHT · FICTIONAL WATERS</small></div>
-    <div id="intro-footer" class="intro-footer"><span>WEBGL 2.0 <i>•</i> BROWSER FLIGHT</span><span>XBOX / USB RADIO / KEYBOARD</span><button id="footer-help">操作を確認 <span>→</span></button></div>
+    <div id="scene-label" class="scene-label"><span>01 / Open sea</span><b>Ocean Meridian</b><small>260 m liner · Coastal yacht · Fictional waters</small></div>
+    <div id="intro-footer" class="intro-footer"><span>WebGL 2.0 <i>·</i> Browser flight</span><span>Xbox / USB radio / Keyboard</span><button id="footer-help">操作を確認 <span>→</span></button></div>
     <section id="hud" class="hud hidden" aria-label="飛行情報">
       <div class="compass"><div id="heading-ticks">W &nbsp; · &nbsp; NW &nbsp; · &nbsp; N &nbsp; · &nbsp; NE &nbsp; · &nbsp; E</div><b id="heading">000° N</b></div>
       <div class="crosshair" aria-hidden="true"><i></i><i></i></div>
